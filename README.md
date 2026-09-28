@@ -151,6 +151,7 @@ CnvQstStudio/  WinForms GUI（net8.0-windows）：Program（双模式入口）�
 publish.ps1    一键打包 dist/CnvQstStudio.exe（配置 B / lite 单文件）
 参考资料/gd-utility/   上游文档与 C++ 参考解析器（MIT，commit 1d468f5）
 cnv示例/ qst示例/      199+247 个真实游戏样本与编辑器 UI 手工对照
+EditorProbe/           官方编辑器程序集只读探针（types/fields/il/xref/res/ex）：解枚举常量、字段表、方法 IL
 BinAnalyzer/           早期分析工具（留档）
 完善实施计划.md         本轮完善的计划与全部调研结论（已执行完毕）
 ```
@@ -165,15 +166,22 @@ BinAnalyzer/           早期分析工具（留档）
 
 ## 已解 / 未解（详见 CnvQstFormatDecoded.md 第七、八章）
 
-2026-09-28 用「造探测文件 + 官方编辑器辨认」解掉的三块：
-- **26 个条件 + 27 个动作的全部语义名**（含本地语料里样本为 0 的类型）；
-- **比较符**：就是条件记录里被 gd-utility 称作 uid 的那个字，编码 `<`(0) `<=`(1) `=`(2) `>=`(3) `>`(4) `!=`(5)；
-- **QST 本地化串表公式**：`S = 2 + 2T + O + I + E`（247 个样本零误差）——
-  多任务/多目标任务的编辑约束就此明确（串数不足官方编辑器会直接抛异常）。
+**2026-09-28 已解**（手段：探测文件交官方编辑器辨认 + 只读反汇编官方编辑器，见格式文档第八章）
+- **条件的 30 种、动作的 29 槽全部拿到官方名**（含本地语料里样本为 0 的类型）；
+- **比较符**：条件记录里被 gd-utility 称作 uid 的那个字就是它——`<`=0 `<=`=1 `=`=2 `>=`=3 `>`=4 `!=`=5
+  （官方 `ScriptableCondition+Comparison` 枚举 + 编辑器实测，两路互证）；那个字前面的字节是 **body 版本**；
+- **step flags**：低 3 位 = OnceOnly(1) / AlwaysShow(2) / Unimportant(4)，正是编辑器的三个开关；
+- **对话 id** = 根节点文本（NPC 名）的 FNV1 哈希（`CnvQstTool hash <文本>` 可直接算）；
+- **节点类型**补齐 5=Generic、8=Random；linkId = 目标节点的展平序号（官方 `EstablishIds` 就是按下标编号）；
+- **QST 本地化串表公式**：`S = 2 + 2T + O + I + E`，槽位顺序为
+  每 task `[标题, 描述, OnAccept 事件…, Objectives…, OnComplete 事件…]`（247 个样本零误差 +
+  官方 QuestEditor 逐槽核实）——多任务编辑的约束就此完全明确。
 
-仍未解（不影响解析与写回，均按"保留原字节"处理）：
-step 的 +0x50 位与编辑器 {Once Only/Always Show/Unimportant} 的对应、task 的 +0xA8/0xAC、
-objective/event/头部的若干 unknown、条件集合 logic 字的引擎语义（本地观测 0=AND、1=OR）、
-官方条件下拉里仍未定位的 4 项（IsChallenge、Hasbuff、HasKilledFaction、HasKilledMonsterClass，
-26 个槽位已排满 → 必为某 type 的 subType 变体）。
-`CnvQstTool vocab` 可打印逐项证据等级与待核对清单。
+**仍未解**（不影响解析与写回，均按"保留原字节"处理）
+- `flags` 的高 3 位（语料 0x8/0x10/0x20）：官方编辑器只用低 3 位，高位属游戏侧语义；
+- QST 头部 +0x10、task 的 +0xA8/0xAC、objective/event 的若干 u32、两个版本门控 flag 位；
+- 条件里"任务引用标识"要哈希的字符串（编辑器自身也显示 `?`）；
+- bodyVersion 除 0/1 之外是否还有别的版本。
+
+`CnvQstTool vocab` 打印逐项证据等级；`probe` 造探测文件；`EditorProbe` 只读反汇编官方编辑器
+（`types` / `fields` / `il` / `xref` / `res` / `ex`）。

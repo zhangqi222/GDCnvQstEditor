@@ -16,14 +16,14 @@ public static class Probe
     public sealed record Item(string File, byte[] Data, string Note);
 
     /// <summary>
-    /// 条件类型探测：默认合成**一个**对话（26 个节点，一节点一个类型）；split=true 时一类型一文件
+    /// 条件类型探测：默认合成**一个**对话（30 个节点，一节点一个类型）；split=true 时一类型一文件
     /// （某个类型让编辑器报错时用它隔离）。节点文本写着我们当前的猜测名，编辑器里可直接对照。
     /// </summary>
     public static List<Item> CondTypes(bool split = false)
     {
         var nodes = new List<Node>();
         var items = new List<Item>();
-        for (uint t = 0; t < 26; t++)
+        for (uint t = 0; t < 30; t++)          // 官方条件共 30 种（0–29）
         {
             string label = Names.ConditionLabel(t);
             var rec = Rec(true, t, DefaultSub(t), "T" + t, 10000);
@@ -40,7 +40,7 @@ public static class Probe
         {
             byte[] data = BuildCnv("probe cond（每个节点一个条件类型）", nodes);
             items.Add(new Item("probe_cond.cnv", data,
-                "26 个节点 = 条件 type 0–25；展开每个节点的 Conditions，官方编辑器会显示它的官方名。" +
+                "30 个节点 = 条件 type 0–29；展开每个节点的 Conditions，官方编辑器会显示它的官方名。" +
                 "节点文本里写着我们当前的猜测名。"));
         }
         return items;
@@ -141,7 +141,7 @@ public static class Probe
     public static List<Item> SubVariantsAll(bool split)
     {
         var items = new List<Item>();
-        for (uint t = 0; t < 26; t++) items.AddRange(SubVariants(t, split));
+        for (uint t = 0; t < 30; t++) items.AddRange(SubVariants(t, split));
         return items;
     }
 

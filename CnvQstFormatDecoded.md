@@ -37,18 +37,28 @@
 +0x00  char[4]  "CNV "
 +0x04  u32      version            加载器拒绝 <5
 +0x08  u32      本地化块偏移       写而不读（独立见证）
-+0x0C  u32      对话 id
++0x0C  u32      对话 id            = FNV1(根节点文本)，见下
 +0x10           根节点（内联记录，每文件恰 1 个 type=0）
 ```
+
+**对话 id = 根文本（NPC 名）的 FNV1-32 哈希**（2026-09-28 从官方编辑器 `Conversation.Write`
+与 `cmiCopyId_Click`（"Copy Id"菜单）逐指令读出，并在 3 个样本上逐值核对通过）：
+
+- 算法：`h = 0x811C9DC5; foreach (byte b in Encoding.Unicode.GetBytes(text)) h = (h ^ b) * 16777619;`
+  （编辑器 `Utility.FNV1::Hash(string, unicode)`；unicode=false 时用 ASCII 字节）
+- 核对：`npc_refugee_02b.cnv` 根文本 "Marcus" → `0xFD22C016` = 文件头部实测值；
+  "Alex" → `0x93EF8495`、`gdareab/npc_alicia.cnv` "Alicia" → `0x7659527A` 同样吻合。
+- 同一算法再左移 8 位即条件/动作参数里的"任务引用标识"（编辑器显示为 `?` 的那些大数）。
+- CLI：`CnvQstTool hash <文本>` 可直接算出来。
 
 ### 2.2 节点（Step，深度前序递归）
 
 ```
 i32     childCount            上限 100000，递归深度上限 512
 u32     type
-u32     unknown               → ConversationStep+0x50，语义未知
-u32     linkId                仅 type==7
-string  voPath                仅 version>=6（配音路径；v5 无此字段——写回时必须按版本门控）
+u32     flags                 ← 官方字段名就是 flags（旧文档称 unknown，见下）
+i32     linkId                仅 type==7（值 = 目标节点的展平序号；无链接时编辑器写 -1）
+string  voPath                仅 version>=6（配音路径；编辑器字段名 audioFile）
 i32 n ; ConditionCollection(n)
 i32 m ; ActionCollection(m)
 childCount × step
@@ -56,20 +66,43 @@ childCount × step
 
 节点没有额外尾字段：一个节点的范围 = 自身字段 + 整棵子树。
 
-**节点类型**（`GetTypeTag`/`GetSortOrder`；语料分布：1×6169、6×5897、2×3783、7×3119、3×990、4×848、8×4、0×480）：
+**flags 位（官方 `ConversationStep.Flag` 枚举 + 三处 IL 互证）**：
+
+| 位 | 值 | 名字 | 编辑器树中的标记 / 菜单项 |
+|---|---|---|---|
+| 0 | 0x01 | OnceOnly | 文本前加 `*`；菜单 `cmiStepOnceOnly`（`flags & 1`）|
+| 1 | 0x02 | AlwaysShow | 文本前加 `+`；菜单 `cmiStepAlwaysShow`（`flags & 2`）|
+| 2 | 0x04 | Unimportant | 文本前加 `-`；菜单 `cmiStepUnimportant`（`flags & 4`）|
+
+证据链（`EditorProbe` 反汇编 `G:\Grim Dawn\ConversationEditor.exe`）：
+① `ConversationStep+Flag` 枚举常量直接写着 `None=0, OnceOnly=1, AlwaysShow=2, Unimportant=4`；
+② 三个菜单处理器分别 `ToggleFlag(1/2/4)` 并用同值 `and` 判断勾选态；
+③ `ConversationStep.Text()` 依次用 `flags & 2 → "+"`、`flags & 1 → "*"`、`flags & 4 → "-"` 拼树文本。
+
+**但语料里出现的却是 0x8(83)、0x10(57)、0x20(43)、0x4(3)** ——即 bit3/bit4/bit5，编辑器并不暴露这几位
+（读进同一个 u32、原样写回，不解释）。所以**编辑器只认低 3 位**，高位是游戏侧标志，语义未知，
+按"保留原字节"处理。注意：`flags` 的三位与 step 类型无关（语料里只出现在 speech 节点上，但那是用法使然）。
+
+**节点类型**（官方 `ConversationStep+Type` 枚举：Node=0, Speech=1, Continue=2, Accept=3, Decline=4,
+Generic=5, End=6, Link=7, Random=8；语料分布：1×6169、6×5897、2×3783、7×3119、3×990、4×848、8×4、0×480）：
 
 | type | 标签 | 含义 |
 |---|---|---|
-| 0 | — | 根（每文件恰一） |
+| 0 | — | 根（每文件恰一，枚举名 Node）|
 | 1 | — | NPC 台词（speech），可用性检查挂在这类节点上 |
 | 2 | `tagContinue` | 玩家选项 |
 | 3 | `tagAccept` | 玩家选项 |
 | 4 | `tagDecline` | 玩家选项 |
+| 5 | — | Generic（枚举存在，语料无使用）|
 | 6 | `tagEndConversation` | 结束对话 |
 | 7 | （跟随链接） | 跳转，携带 linkId |
-| 8 | — | selector：文本经由可用的 type 1 子节点解析 |
+| 8 | — | **Random**：从可用子节点中随机取（旧文档称 selector，以官方枚举为准）|
 
-type 5 存在于枚举但无文件使用。加载器运行时会把"无子节点的 type 2"重映射为 6（仅运行时；解析器报告文件原貌）。
+**linkId = 目标节点的展平序号**：编辑器 `Conversation.EstablishIds()` 就是
+`for (i = 0; i < steps.Count; i++) steps[i].SetId(i);`（`GetSteps()` 为深度前序），
+写盘时 `WriteInt32(link.GetId())`，无链接写 `-1`。因此本项目把 linkId 当索引用是正确的。
+
+加载器运行时会把"无子节点的 type 2"重映射为 6（仅运行时；解析器报告文件原貌）。
 
 ### 2.3 图与文本的联结（无显式索引）
 
@@ -196,23 +229,42 @@ ConditionCollection(n)            ActionCollection(n)
 **logic 字**（语义未经引擎证实，本地观测+金样直接证据）：0=AND（jailor_01 多条条件均为 AND 列表）、
 1=OR（mq_burrwitch 双条件处 `{HasToken, ServerHasToken}` OR 列表；446 样本全量一致）。
 
-### 4.1 条件的第 3 个字 = 比较符（2026-09-28 修正）
+### 4.1 条件的第 3 个字 = 比较符；第 2 个字节 = body 版本（2026-09-28 定案）
 
-条件记录里 `u32 type + u8 subType` 之后那个 u32，gd-utility 称为 **uid**——**实测它不是 uid，是比较符**：
+```
+条件： u32 type; u8 bodyVersion; u32 comparison; <body>
+动作： u32 type; u8 bodyVersion;               <body>   ← 动作没有 comparison
+```
 
-- 造探测文件：同一条件（HasFaction / "SURVIVORS" / 10000）、同一 subType=1，**只改这个字**，
-  官方编辑器显示的比较符随之变化（该字=1 → 显示 `<=`）。
-- 反证：jailor_01 的 `HasFaction "SURVIVORS" >= 10000`（编辑器真机显示 `>=`）该字=3，
-  而探测文件同条件该字=1 显示 `<=`——两者只差这一个字。
-- `census` 分布与该解释吻合：**没有比较符的条件**（OnQuest / HasToken / ServerHasToken / QuestBlocked /
-  QuestTaskComplete / OnQuestTask / LuaScript / HasQuestObjective / CheckRandomValue / OwnsDLC）
-  该字恒为 2；**有比较符的条件**取 0/3/4/5（HasItem 3×191 + 0×51、HasFaction 3×57 + 0×18 + 4×5、
-  HasMoney 3×37 + 0×15、IsDifficulty 2×22 + 5×1）。
-- 动作没有这个字；**QST 的条件也不落盘这个字**（"uid 不落盘"在 QST 侧成立），
-  故 QST 条件无从表达比较符——与语料相符。
-- 0..5 的完整符号对应由 `probe uid` 交官方编辑器读出（待回填，见 §7）。
+官方字段名（`Common.ScriptableCondition` 的字段表与其 `Read` 的 IL）：`type`（枚举 Type）、
+`version`（byte）、`comparison`（枚举 Comparison）。`ScriptableCondition.Read` 全文只有两句：
+`version = ReadUInt8(); comparison = ReadInt32();`；`ScriptableAction.Read` 只有 `version = ReadUInt8();`。
 
-`ScriptRecord.Uid` 字段名沿用，含义按此更正；GUI 里该输入框已改标"比较符（条件）"。
+**比较符 = comparison，取值来自官方枚举**（`Common.ScriptableCondition+Comparison`）：
+
+| 值 | 名字 | 符号 | | 值 | 名字 | 符号 |
+|---|---|---|---|---|---|---|
+| 0 | Less | `<` | | 3 | GreaterEqual | `>=` |
+| 1 | LessEqual | `<=` | | 4 | Greater | `>` |
+| 2 | Equal | `=` | | 5 | NotEqual | `!=` |
+
+两路独立验证：
+- **实测**：`probe uid` 造出"同条件、同 bodyVersion、只改此字"的 6 个节点，
+  官方编辑器显示 `<` `<=` `=` `>=` `>` `!=`（HasFaction 与 IsDifficulty 两类型结果一致，
+  见 `反馈截图/probe_uid_*.png`）；
+- **静态**：从编辑器内嵌 `Common.dll` 直接读到该枚举的常量值。
+- 语料印证：无比较符概念的条件该字恒为 2（`=`）；HasItem/HasMoney/HasFaction 多为 3（`>=`）；
+  IsDifficulty 为 2（`=`）——正是 mq_burrwitch 按难度分档给经验所需；jailor_01 为 3（`>=`）。
+- 动作记录没有这个字；**QST 条件也不落盘这个字**（"uid 不落盘"在 QST 侧成立），
+  故 QST 条件无从表达比较符——与语料一致。
+
+**bodyVersion（旧文档称 subType）= 条件 body 的版本号**：`i`/`b` 两类字段只在 version==1 时存在
+（gd-utility 的"小写字母仅当 subType==1"由此得到解释）。语料里 HasFaction / HasItem /
+HasQuestObjective / CheckRandomValue / LuaScript 恒为 1，其余多为 0。
+**取错版本会让编辑器按另一套布局去读，直接错位**——首轮 `probe cmp`（把 HasFaction 的这个字节
+扫 0..5）就是这么把编辑器读崩的（OutOfMemory）。
+
+`ScriptRecord.Uid` 字段名沿用（含义为 comparison）；GUI 两个输入框已改标"比较符（条件）"与"body 版本"。
 
 ### 4.2 body 规格
 
@@ -253,6 +305,16 @@ ConditionCollection(n)            ActionCollection(n)
 | 23 | `I` | **HasTribute** | `HasTribute <= 10000` |
 | 24 | `I` | **EarnedDevotion** | `EarnedDevotion <= 10000` |
 | 25 | `I B` | **HasMastery** | `HasMastery 10000 True`（MasteryName = SkillClass 枚举）|
+| 26 | `I` | **IsChallenge** | 官方 `challenge`（枚举 Normal=0/Epic=1/Legendary=2）+ 比较符 |
+| 27 | `S B` | **HasBuff** | 官方 `buffName`(string) + `has`(bool) |
+| 28 | `I I I` | **HasKilledMonsterClass** | 官方 `monsterClass1/monsterClass2`（枚举 Common/Champion/Hero/Boss/Quest/SuperBoss）+ `count` |
+| 29 | `I I I` | **HasKilledFaction** | 官方 `faction1/faction2`（枚举 Player/Survivors/Aetherials/Cthonians/Outlaws/Beasts/User0..46…）+ `count` |
+
+> **条件共 30 种（0–29）**，后 4 种是 gd-utility 基于旧版 Game.dll 的表所没有的——2026-09-28 从官方编辑器
+> 内嵌 `Common.dll` 的 `Common.ScriptableCondition+Type` 枚举直接读到（`IsChallenge=26, HasBuff=27,
+> HasKilledMonsterClass=28, HasKilledFaction=29`）。这 4 种的字段布局取自各自类的字段表与 `Read` 的 IL
+> （例：`HasKilledFaction.Read` = base.Read + ReadInt32 faction1 + ReadInt32 faction2 + ReadUInt32 count）。
+> 本地 446 样本里没有它们的实例，故以 `probe cond`（现覆盖 0–29）交官方编辑器复核。
 
 官方条件下拉共 30 项，二进制 26 槽已全部落位，**尚余 4 项未定位**：
 IsChallenge（I+比较符）、Hasbuff（S+B）、HasKilledFaction / HasKilledMonsterClass（两个数组+KillCount）。
@@ -260,7 +322,10 @@ IsChallenge（I+比较符）、Hasbuff（S+B）、HasKilledFaction / HasKilledMo
 
 ### 4.4 动作（27 个可用槽，官方编辑器逐类型辨认完毕）
 
-> 证据见 `反馈截图/probe_act.cnv.png`。（动作 0/16：工厂返回 null，无文件使用。）
+> 证据见 `反馈截图/probe_act.cnv.png`。**动作共 29 槽（0–28）**，官方枚举把 0 命名为
+> `DEPRECATED_BeginQuest`、16 命名为 `OpenMerchantWindow`——工厂对这两项返回 null，
+> 这正是编辑器里点 "OperMerchantWindow" 就报错的原因。动作枚举取自
+> `Common.ScriptableAction+Type`，与本项目命名表逐项一致（含 9=GiveToken / 10=RemoveToken）。
 
 | type | body | 名字 | 编辑器实显 |
 |---|---|---|---|
@@ -333,37 +398,65 @@ CNV 侧 21,290 节点 / 11,326 条件+动作来自 gd 语料（480 文件）。
 
 ## 七、仍然未知（按"保留原字节"策略贯穿解析与写回）
 
-**字段语义类**
-- step 的 +0x50 字：仅 speech 步非零，语料 0x8×83、0x10×57、0x20×43、0x4×3（四个位、三个开关）
-  ——对应编辑器的 {Once Only / Always Show / Unimportant}，位的分配待 `probe flags` 结果回填
-- task 的 +0xA8/+0xAC、objective 的两个 u32、event 的一个 u32、头部 +0x10
-- 两个版本门控 flag 位（v≥8 / v≥9 尾字节）的语义
+**2026-09-28 已解**：比较符编码（§4.1）、flags 低 3 位（§2.2）、节点类型含 Random（§2.2）、
+对话 id = FNV1(根文本)（§2.1）、条件共 30 种（§4.3）、动作 0/16 的真名（§4.4）、
+QST 串表公式与槽位顺序（§3.3）。
 
-**比较符编码**：位置已定（条件记录里 type/subType 之后的 u32，见 §4.1），
-但 0..5 各对应哪个符号（= / > / < / >= / <= / !=）尚未读出——`probe uid` 回填。
-反向推理的约束：无比较符的条件该字恒为 2（那么 2 很可能是"＝"），有比较符的取 0/3/4/5，
-而我们实测 1 → `<=`、3 → `>=`。
+**仍未解**
 
-**4 项官方选项未定位**（26 个条件槽已排满 → 只能是某 type 的 subType 变体）：
-- IsChallenge（body 为 I+比较符）：候选 2/3/4/8/22/23/24 的某个 subType
-- Hasbuff（S+B：BuffName + HasBuff）：候选 7 HasToken / 18 ServerHasToken / 20 AnyoneHasToken
-- HasKilledFaction、HasKilledMonsterClass（两个数组 + KillCount）：候选 10 HasKilled / 16 HasKilledProxy
-  ——编辑器里 HasKilledFaction/MonsterClass 各有两个"Faction"数组，而二进制的 `P` 形态只有一组数组，
-  差额很可能正是 subType 区分的两种布局
-- OperMerchantWindow（动作，编辑器点击即报错）：疑为工厂返回 null 的 type 0/16
-- 待回填手段：`probe sub` / `probe suball`（一类型一文件，subType 0..5）
+| 未知项 | 现状 / 下一步 |
+|---|---|
+| `flags` 的高 3 位（语料 0x8×83、0x10×57、0x20×43）| 官方编辑器读入同一 u32 却只用低 3 位；这三位属游戏侧语义，未定位 |
+| QST 头部 +0x10（0..4）| 保留原字节 |
+| task 的 +0xA8/+0xAC、objective 的两个 u32、event 的一个 u32 | 保留原字节；编辑器也有对应字段可继续挖 |
+| 两个版本门控 flag 位（v≥8 / v≥9 尾字节）| 保留原字节 |
+| 条件的"任务引用标识"哈希的是哪个字符串 | 编辑器自己都显示 `?`；CONV 侧已证是 FNV1（`hash <文本>`），任务侧待定（疑似 dbr 记录路径）|
+| bodyVersion 除 0/1 外是否还有别的版本 | 语料只见 0 与 1；错版本会让编辑器错位，故未盲扫 |
 
-**动作 19 = ScriptEvent**：仍是推断（编辑器截图该行被弹窗遮住）。
-**动作 0/16**：工厂返回 null，无文件使用。
+---
 
-**QST 本地化槽位 ↔ task 映射（仍未解）**
-- 官方 QuestEditor 打开我们生成的 `qst_1task.qst` / `qst_3task.qst` 时抛
-  `ArgumentOutOfRangeException`（`LocalizationInfo(Quest, version)` → `List.get_Item`），
-  即**编辑器按自己的公式索引串表，串数不足就越界**；已给探测文件补 18 条空槽再测。
-- 反向配平（`census` / `dump` + `txt` 实测）：`mq_burrwitch` T=4 O=4 E=10 串=23、
-  `sq_harts_amulet` T=2 O=4 串=27、`mq_wakingtomisery` T=4 O=4 串=25、
-  `sq_medicalpractice` T=1 O=2 串=18——`2 + 2T + O` 远小于实际串数，**空槽数量既不等于 T 也不等于 E**，
-  说明每个 task/objective/event 各自还有固定预留槽。待 `qst_3task.qst` 在编辑器里的显示结果反推。
+## 八、解格式的三种手段（本项目的工作方法，供后续继续挖）
 
-> 官方条件 30 项 / 动作 28 项；二进制 26 条件槽（已全部落位）+ 27 可用动作槽（已全部落位）。
-> 逐项对照与证据等级：CLI `CnvQstTool vocab`；探测文件由 `CnvQstTool probe …` 生成。
+按"成本由低到高"排列，前两步已把绝大多数未知项清空：
+
+### 8.1 语料统计（`census`）——先问"语料怎么说"
+
+`CnvQstTool census <目录>` 输出条件/动作的类型分布、subType/uid 取值分布、body 字面值、
+同列表共现、logic 字、step unknown 分布、**QST 槽位配平**等。多数"字段语义"问题在语料层面
+就能收敛（例：无比较符的条件 uid 恒为 2；QST 串表条数残差 `0×247`）。
+
+### 8.2 探测文件 + 官方编辑器辨认（`probe` / `make`）——让工具自己报名字
+
+`CnvQstTool probe <cond|act|uid|sub|flags|qst|all>` 造最小合法文件，交给官方编辑器打开：
+
+- `probe cond` / `probe act`：一个文件 N 个节点，每个节点挂一个类型 → 编辑器直接显示官方名
+  （**26+27 个类型一次性辨认完毕**，包括本地语料里样本为 0 的）；
+- `probe uid`：同条件、只改比较符字 → 读出 0..5 的符号表；
+- `probe flags` / `probe sub`：验证 flags 位与 body 版本；
+- `probe qst` / `qst_order`：验证串表公式与槽位顺序。
+
+配套 `make <spec.json>` 可按手写 spec 生成任意 .cnv/.qst（条件动作用官方名书写），
+所有生成物先过"铺满 / locOffset / round-trip"三检查。
+
+### 8.3 反汇编官方编辑器（`EditorProbe`）——直接读实现
+
+官方工具是 .NET 程序集，`EditorProbe` 用 `System.Reflection.Metadata` **只读**其元数据
+（不加载、不执行），可直接得到枚举常量、字段表与方法 IL：
+
+```bash
+P=EditorProbe/bin/Release/net8.0/EditorProbe.dll
+dotnet $P types  "G:/Grim Dawn/ConversationEditor.exe" Scriptable     # 类型清单
+dotnet $P fields "_editor_extract/Common.dll" "Common.ScriptableCondition+Type"   # 枚举常量
+dotnet $P il     "G:/Grim Dawn/ConversationEditor.exe" "ConversationEditor.ConversationStep" "Read"
+dotnet $P xref   "G:/Grim Dawn/ConversationEditor.exe" ToggleFlag     # 谁调用了它
+dotnet $P res    "G:/Grim Dawn/ConversationEditor.exe"                # 列出内嵌资源
+dotnet $P ex     "…" "costura.common.dll.zip" _editor_extract/Common.dll   # 解出依赖程序集
+```
+
+要点：ConversationEditor.exe / QuestEditor.exe 本身只有 27 个类型（薄壳），真正的实现
+（`Common.ScriptableCondition_*` / `Common.ScriptableAction_*`）在 Costura 内嵌的
+`costura.common.dll.zip` 里，是 Deflate 压缩的托管程序集，先 `ex` 解出来再查。
+
+已用此法拿到的结论：Condition/Comparison/Action/Flag/StepType 五个枚举的**全部常量值**、
+`Conversation.Write`/`ConversationStep.Write`/`Read` 的**完整写读顺序**、
+对话 id 的 FNV1 算法与"Copy Id"菜单、linkId = 展平序号（`EstablishIds`）等。

@@ -9,7 +9,8 @@ public static class Creation
     /// <summary>新建对话（CNV v6）：根 → 一句 NPC 台词 → 结束对话；本地化表 = [说话人, 台词, 结束语]。</summary>
     public static CnvFile NewConversation(string speaker, string firstText, string endText = "")
     {
-        var c = new CnvFile { Version = 6, Id = 0, Valid = true };
+        // 头部 +0x0C 的"对话 id" = 根文本的 FNV1 哈希（官方编辑器 Conversation.Write / Copy Id 同款）
+        var c = new CnvFile { Version = 6, Id = Fnv1.Hash(speaker), Valid = true };
 
         var root = new CnvStep { Index = 0, Type = Names.StepRoot, Depth = 0 };
         var speech = new CnvStep { Index = 1, Type = Names.StepSpeech, Depth = 1, Parent = 0 };

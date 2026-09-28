@@ -29,6 +29,7 @@ public static class CliApp
             "anchors" => CmdAnchors(args, @out),
             "census" => CmdCensus(args, @out),
             "vocab" => CmdVocab(args, @out),
+            "hash" => CmdHash(args, @out),
             "make" => CmdMake(args, @out),
             "sample" => CmdSample(args, @out),
             "probe" => CmdProbe(args, @out),
@@ -57,6 +58,7 @@ public static class CliApp
           anchors     <file>                          条件/动作类型锚定工作台
           census      <dir>                           全样本类型普查（命名证据表）
           vocab                                       官方编辑器选项 ↔ 类型 ID 对照表
+          hash   <文本>                               FNV1 哈希 / 任务引用标识（官方算法）
           make   <spec.json> [-o out]                 由编写用 spec 生成 .cnv/.qst
           sample cnv|qst [-o spec.json]               输出 spec 模板
           probe  cond|act|uid|sub|suball|flags|qst|all [-o 目录] [--type N] [--sub N] [--split]
@@ -219,7 +221,8 @@ public static class CliApp
             foreach (var rec in list.Records)
             {
                 string known = rec.Named ? "" : "  ← 未命名";
-                @out.WriteLine($"{owner}  type={rec.Type,-2} sub={rec.SubType} uid={rec.Uid}  {Dump.Describe(rec)}{known}");
+                string cmp = rec.IsCondition ? $"  cmp={rec.Uid}({Names.ComparisonName(rec.Uid)} {Names.ComparisonSymbol(rec.Uid)})" : "";
+                @out.WriteLine($"{owner}  type={rec.Type,-2} bodyVer={rec.SubType}{cmp}  {Dump.Describe(rec)}{known}");
             }
         }
 
@@ -271,6 +274,18 @@ public static class CliApp
     static int CmdVocab(string[] args, TextWriter @out)
     {
         @out.Write(EditorVocab.Report());
+        return 0;
+    }
+
+    /// <summary>FNV1 哈希 / 任务引用标识（官方编辑器的 Copy Id 与引用参数同款算法）。</summary>
+    static int CmdHash(string[] args, TextWriter @out)
+    {
+        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
+        string text = args[1];
+        @out.WriteLine($"输入：{text}");
+        @out.WriteLine($"FNV1(UTF-16LE) = 0x{Fnv1.Hash(text):X8}");
+        @out.WriteLine($"FNV1(ASCII)    = 0x{Fnv1.Hash(text, false):X8}");
+        @out.WriteLine($"引用标识(hash<<8, 条件/动作参数里编辑器显示 \"?\" 的那种) = 0x{Fnv1.Reference(text):X8}");
         return 0;
     }
 

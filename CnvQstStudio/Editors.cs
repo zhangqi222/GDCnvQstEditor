@@ -70,7 +70,7 @@ internal sealed class ScriptListEditor : Panel
     private readonly ComboBox _typeCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
     private readonly NumericUpDown _subType = new() { Minimum = 0, Maximum = 255, Width = 60 };
     private readonly NumericUpDown _uid = new() { Minimum = 0, Maximum = uint.MaxValue, Width = 100 };
-    private readonly Label _uidLabel = Gui.Label(L.T("比较符（条件）", "Comparator"), 0, 0, 90);
+    private readonly Label _uidLabel = Gui.Label(L.T("比较符（条件）", "Comparator"), 0, 0, 90);  // 官方 Common.ScriptableCondition+Comparison
     private readonly DynamicFieldPanel _fields;
     private bool _building;
 
@@ -110,7 +110,7 @@ internal sealed class ScriptListEditor : Panel
         // ── 编辑选中项区：类型/subType/uid + 字段面板 ──
         var editTop = new Panel { Dock = DockStyle.Top, Height = 40 };
         var eLabel = Gui.Label(L.T("类型", "Type"), 12, 10, 44);
-        var sLabel = Gui.Label("subType", 306, 10, 60);
+        var sLabel = Gui.Label(L.T("body 版本", "Body ver"), 306, 10, 64);
         _uidLabel.Location = new Point(446, 10);
         _typeCombo.Location = new Point(60, 8);
         _subType.Location = new Point(370, 8);
@@ -161,7 +161,7 @@ internal sealed class ScriptListEditor : Panel
         public override string ToString() => Text;
     }
 
-    private static string? NameOfCond(uint t) => t < 26 ? Names.ConditionLabel(t) : null;
+    private static string? NameOfCond(uint t) => t < 30 ? Names.ConditionLabel(t) : null;
     private static string? NameOfAct(uint t) => t < 29 ? Names.ActionLabel(t) : null;
 
     private ScriptRecord? Current() =>
@@ -325,17 +325,9 @@ internal sealed class ScriptListEditor : Panel
         _changed();
     }
 
-    private static string SpecCond(uint t) => t < 26 ? CondSpecs[t] : "";
-    private static string SpecAct(uint t) => t < 29 ? (ActSpecs[t] ?? "") : "";
-
-    private static readonly string[] CondSpecs =
-    {
-        "SB","SIB","I","I","I","B","SI","SB","I","SIb","P","SIiB","L","B","SIB","SI","P","","SB","SB","SB","SI","I","I","I","IB",
-    };
-    private static readonly string?[] ActSpecs =
-    {
-        null,"SI","S","SI","I","SI","SI","I","I","S","S","L","S","S","I","I",null,"S","I","S","SI","SII","S","S","SI","I","I","I","SB",
-    };
+    // body 规格表统一取自库（原先是本文件里手抄的一份，容易与 Scriptable 脱节）
+    private static string SpecCond(uint t) => t < 30 ? Scriptable.ConditionBodySpec(t) : "";
+    private static string SpecAct(uint t) => t < 29 ? Scriptable.ActionBodySpec(t) : "";
 }
 
 /// <summary>body 字段工厂：按规格同步字段列表（换类型/改 subType 时保位带值）。</summary>

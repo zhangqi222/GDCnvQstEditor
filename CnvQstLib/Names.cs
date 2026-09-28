@@ -23,6 +23,8 @@ public static class Names
     public const uint StepDecline = 4;
     public const uint StepEnd = 6;
     public const uint StepLink = 7;
+    /// <summary>8 = 官方 ConversationStep.Type.Random（旧文档称 selector，以官方枚举为准）。</summary>
+    public const uint StepRandom = 8;
     public const uint StepSelector = 8;
 
     public static string CnvStepKind(uint type) => type switch
@@ -32,10 +34,37 @@ public static class Names
         StepContinue => "choice: continue",
         StepAccept => "choice: accept",
         StepDecline => "choice: decline",
+        5 => "generic",
         StepEnd => "end",
         StepLink => "link",
-        StepSelector => "selector",
+        StepRandom => "random",
         _ => "unknown kind",
+    };
+
+    /// <summary>
+    /// 条件的"比较符"枚举（官方 Common.ScriptableCondition+Comparison）。
+    /// 取值 0..5 由 `probe uid` 交官方编辑器实测逐值核对（见 CnvQstFormatDecoded.md §4.1）。
+    /// </summary>
+    public static string ComparisonSymbol(uint comparison) => comparison switch
+    {
+        0 => "<",
+        1 => "<=",
+        2 => "=",
+        3 => ">=",
+        4 => ">",
+        5 => "!=",
+        _ => $"?{comparison}",
+    };
+
+    public static string ComparisonName(uint comparison) => comparison switch
+    {
+        0 => "Less",
+        1 => "LessEqual",
+        2 => "Equal",
+        3 => "GreaterEqual",
+        4 => "Greater",
+        5 => "NotEqual",
+        _ => $"?{comparison}",
     };
 
     public static string? CnvStepTag(uint type) => type switch
@@ -115,6 +144,11 @@ public static class Names
         [23] = "HasTribute",
         [24] = "EarnedDevotion",
         [25] = "HasMastery",
+        // ---- 2026-09-28 从官方编辑器内嵌 Common.dll 的类型枚举直接读到（0–29 共 30 种）----
+        [26] = "IsChallenge",
+        [27] = "HasBuff",
+        [28] = "HasKilledMonsterClass",
+        [29] = "HasKilledFaction",
     };
 
     public static readonly Dictionary<uint, string> ActionEditorNames = new()

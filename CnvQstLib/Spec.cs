@@ -104,7 +104,10 @@ public static class Spec
         var c = new CnvFile
         {
             Version = (uint)(Int(root, "version") ?? 6),
-            Id = (uint)(Int(root, "id") ?? 0),
+            // 头部 +0x0C = 根文本（说话人名）的 FNV1 哈希；spec 未显式给 id 时按官方算法算
+            Id = root.TryGetProperty("id", out _)
+                ? (uint)(Int(root, "id") ?? 0)
+                : Fnv1.Hash(Str(root, "speaker") ?? ""),
         };
         if (c.Version < 5) throw new SpecException("CNV 版本必须 ≥5（加载器拒绝更旧的文件）");
 

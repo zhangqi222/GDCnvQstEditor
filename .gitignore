@@ -15,3 +15,6 @@ publish/
 
 # 探测器输出
 probe_out/
+
+# 从官方编辑器程序集解出的依赖（本地研究用，不入库）
+_editor_extract/

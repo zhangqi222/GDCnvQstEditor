@@ -136,9 +136,16 @@ public sealed class ScriptList
 public static class Scriptable
 {
     // body 规格字母（对齐 参考资料/gd-utility/src/scriptable.cpp）：
-    //   S=字符串  I=u32  B=u8  i=u32(仅 subType==1)  b=u8(仅 subType==1)
+    //   S=字符串  I=u32  B=u8  i=u32(仅 body 版本==1)  b=u8(仅 body 版本==1)
     //   P=i32 n + n×字符串 + u32 尾字
     //   L=Lua 形态：串 + i32 n + n×{u32,u8,u32,串}，条件再加固定尾部 {u32,u32,u8,u32,串}
+    //
+    // 2026-09-28 反汇编官方编辑器（Common.dll）核实：
+    //   · `ScriptableCondition.Read` = 先读 u8 version（我们原先叫 subType），再读 int32 comparison
+    //     （我们原先叫 uid）——所以那个 u8 是**条件 body 的版本**，1 才有小写字母字段。
+    //   · 条件类型共 **30 种（0–29）**，比 gd-utility 基于旧 Game.dll 的表多 4 种：
+    //     26=IsChallenge、27=HasBuff、28=HasKilledMonsterClass、29=HasKilledFaction。
+    //   · `ScriptableAction.Read` 只读 u8 version（动作没有 comparison 字）。
     private static readonly string[] CondBodies =
     {
         /* 0*/ "SB",   /* 1*/ "SIB",  /* 2*/ "I", /* 3*/ "I", /* 4*/ "I",
@@ -146,7 +153,7 @@ public static class Scriptable
         /*10*/ "P",    /*11*/ "SIiB", /*12*/ "L", /*13*/ "B", /*14*/ "SIB",
         /*15*/ "SI",   /*16*/ "P",    /*17*/ "",  /*18*/ "SB",/*19*/ "SB",
         /*20*/ "SB",   /*21*/ "SI",   /*22*/ "I", /*23*/ "I", /*24*/ "I",
-        /*25*/ "IB",
+        /*25*/ "IB",   /*26*/ "I",    /*27*/ "SB",/*28*/ "III",/*29*/ "III",
     };
 
     // 动作工厂没有 0 和 16：两处返回 null，正式文件也不使用。
@@ -191,7 +198,11 @@ public static class Scriptable
         /*22*/ ["DLC_ID"],                                      // OwnsDLC
         /*23*/ ["TributeAmount"],                               // HasTribute
         /*24*/ ["DevotionAmount"],                              // EarnedDevotion
-        /*25*/ ["MasteryName", "HasMastery"],                   // HasMastery
+        /*25*/ ["MasteryName", "HasMastery"],                    // HasMastery
+        /*26*/ ["IsChallenge"],                                  // IsChallenge
+        /*27*/ ["BuffName", "HasBuff"],                          // HasBuff
+        /*28*/ ["Faction1", "Faction2", "KillCount"],            // HasKilledMonsterClass
+        /*29*/ ["Faction1", "Faction2", "KillCount"],            // HasKilledFaction
     };
 
     private static readonly string?[]?[] ActionParams =

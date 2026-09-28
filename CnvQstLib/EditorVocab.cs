@@ -128,6 +128,11 @@ public static class EditorVocab
         [23] = ("HasTribute", Evidence.Anchored),
         [24] = ("EarnedDevotion", Evidence.Anchored),
         [25] = ("HasMastery", Evidence.Anchored),
+        // 官方编辑器内嵌 Common.dll 的类型枚举（0–29）——条件共 30 种，这 4 种是 gd-utility 旧表所缺
+        [26] = ("IsChallenge", Evidence.Engine),
+        [27] = ("HasBuff", Evidence.Engine),
+        [28] = ("HasKilledMonsterClass", Evidence.Engine),
+        [29] = ("HasKilledFaction", Evidence.Engine),
     };
 
     /// <summary>动作 type → 官方名。</summary>
@@ -162,14 +167,10 @@ public static class EditorVocab
         [28] = ("PlayVideo", Evidence.Engine),
     };
 
-    // 二进制 26 个条件槽已全部有官方名，官方下拉还剩这 4 项没有落点——
-    // 槽位已排满，它们只能是某个 type 的 subType 变体（用 `probe sub` 扫）。
+    // 2026-09-28：全部官方选项均已落位（条件 30 项 = type 0–29，动作 28 项 = type 0–28）。
+    // 下面这张表保留为空，便于日后新增官方选项时再登记候选。
     public static readonly (string name, string candidates)[] CondPending =
     {
-        ("IsChallenge", "body 为 I+比较符，候选 subType 变体：2 / 3 / 4 / 8 / 22 / 23 / 24"),
-        ("Hasbuff", "body 为 S+B，候选 subType 变体：7 HasToken / 18 ServerHasToken / 20 AnyoneHasToken"),
-        ("HasKilledFaction", "body 为两个数组+KillCount，候选 subType 变体：10 HasKilled / 16 HasKilledProxy"),
-        ("HasKilledMonsterClass", "候选 subType 变体：10 HasKilled / 16 HasKilledProxy"),
     };
 
     public static (string name, Evidence ev)? Official(bool condition, uint type) =>
@@ -196,7 +197,7 @@ public static class EditorVocab
         {
             var map = condition ? CondMap : ActMap;
             var opts = condition ? Conditions : Actions;
-            int slots = condition ? 26 : 29;
+            int slots = condition ? 30 : 29;
             sb.AppendLine($"── {(condition ? "条件" : "动作")}（官方 {opts.Length} 项 / 二进制 {slots} 槽）──");
             for (uint t = 0; t < slots; t++)
             {
@@ -230,8 +231,9 @@ public static class EditorVocab
 
         Section(true);
         Section(false);
-        sb.AppendLine("说明：比较符（=/>/</>=/<=/!=）在官方编辑器里是独立字段，但二进制 body 中未见其位置——");
-        sb.AppendLine("      目前按「保留原字节」处理，是仍待攻克的未知项（见 CnvQstFormatDecoded.md 第七章）。");
+        sb.AppendLine("比较符：条件记录里 type/body 版本之后的那个 32 位字（gd-utility 旧称 uid）即比较符，");
+        sb.AppendLine("      取值 Less=0 <=1 Equal=2 >=3 Greater=4 NotEqual=5 —— 来自官方编辑器 Common.dll 的");
+        sb.AppendLine("      ScriptableCondition+Comparison 枚举，并已用 probe uid 在编辑器里逐值实测一致。");
         return sb.ToString();
     }
 }

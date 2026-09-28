@@ -106,8 +106,12 @@ public static class Dump
         sb.Append($"{pad}{label} ({list.Records.Count})");
         sb.AppendLine($" logic={list.Logic}{LogicGuess(list.Logic)}   @0x{list.Offset:X}");
         foreach (var rec in list.Records)
-            sb.AppendLine($"{pad}  {(rec.IsCondition ? "⚑" : "⚡")} {Describe(rec)}   @0x{rec.Offset:X} +{rec.Length}");
+            sb.AppendLine($"{pad}  {(rec.IsCondition ? "⚑" : "⚡")} {Describe(rec)}{Compare(rec)}   @0x{rec.Offset:X} +{rec.Length}");
     }
+
+    /// <summary>条件的比较符（type / body 版本 之后那个字，官方 Common.ScriptableCondition+Comparison）。</summary>
+    private static string Compare(ScriptRecord rec) =>
+        rec.IsCondition ? $"  [{Names.ComparisonSymbol(rec.Uid)}]" : "";
 
     /// <summary>logic 字：0=AND、1=OR。alex_01/jailor_01(AND)/mq_burrwitch(OR) 编辑器金样对照，
     /// 全量语料与 446 样本一致；未经引擎 API 证实。</summary>
