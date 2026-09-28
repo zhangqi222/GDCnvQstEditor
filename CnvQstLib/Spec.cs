@@ -199,7 +199,7 @@ public static class Spec
             texts.Add(Str(tj, "title") ?? "");
             texts.Add(Str(tj, "desc") ?? "");
 
-            foreach (var e in Array(tj, "incentives")) task.Incentives.Add(ParseEvent(e, i));   // 编辑器 OnAccept（待验证）
+            foreach (var e in Array(tj, "incentives")) task.Incentives.Add(ParseEvent(e, i));   // 编辑器 OnAccept
             foreach (var o in Array(tj, "objectives"))
             {
                 var obj = new QstObjective();
@@ -208,9 +208,15 @@ public static class Spec
                 texts.Add(Str(o, "text") ?? "");
                 task.Objectives.Add(obj);
             }
-            foreach (var e in Array(tj, "events")) task.Events.Add(ParseEvent(e, i));           // 编辑器 OnComplete（待验证）
+            foreach (var e in Array(tj, "events")) task.Events.Add(ParseEvent(e, i));           // 编辑器 OnComplete
+            // 每个 incentive / event 各占一条本地化槽（公式里的 I、E）；槽位顺序待 probe qst 确认，
+            // 这里按"排在各自 task 块末尾"摆放，条数则严格等于公式值。
+            for (int k = 0; k < task.Incentives.Count + task.Events.Count; k++) texts.Add("");
             q.Tasks.Add(task);
         }
+
+        int want = QstFile.LocalizedTextCount(q.Tasks.Count, q.ObjectiveCount, q.IncentiveCount, q.EventCount);
+        while (texts.Count < want) texts.Add("");
 
         var lang = new LanguageBlock { Tag = new GdString("enUS") };
         foreach (var s in texts) lang.Texts.Add(new GdString(s));

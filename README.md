@@ -163,10 +163,17 @@ BinAnalyzer/           早期分析工具（留档）
 - 新建：`new cnv` / `new qst` 产物通过三检查
 - 构建：`dotnet build qstcnv.sln -c Release` 0 警告 0 错误
 
-## 已知未解（不影响解析与写回，均按"保留原字节"处理）
+## 已解 / 未解（详见 CnvQstFormatDecoded.md 第七、八章）
 
-若干字段语义（step+0x50、task+0xA8/0xAC、版本门控 flag 位等）、
-条件 6 类的语义名（2/5/13/16/23/24，另有 Hasbuff、OperMerchantWindow 未定位）、
-条件集合 logic 字的引擎定义（本地观测 0=AND、1=OR）、比较符编码、
-QST 本地化串 2 之后与 task 的精确映射——详见 CnvQstFormatDecoded.md 第七章。
-（动作 27 个可用槽已全部给出名字，其中 9 个为推断；`vocab` 命令可打印逐项证据与待核对清单。）
+2026-09-28 用「造探测文件 + 官方编辑器辨认」解掉的三块：
+- **26 个条件 + 27 个动作的全部语义名**（含本地语料里样本为 0 的类型）；
+- **比较符**：就是条件记录里被 gd-utility 称作 uid 的那个字，编码 `<`(0) `<=`(1) `=`(2) `>=`(3) `>`(4) `!=`(5)；
+- **QST 本地化串表公式**：`S = 2 + 2T + O + I + E`（247 个样本零误差）——
+  多任务/多目标任务的编辑约束就此明确（串数不足官方编辑器会直接抛异常）。
+
+仍未解（不影响解析与写回，均按"保留原字节"处理）：
+step 的 +0x50 位与编辑器 {Once Only/Always Show/Unimportant} 的对应、task 的 +0xA8/0xAC、
+objective/event/头部的若干 unknown、条件集合 logic 字的引擎语义（本地观测 0=AND、1=OR）、
+官方条件下拉里仍未定位的 4 项（IsChallenge、Hasbuff、HasKilledFaction、HasKilledMonsterClass，
+26 个槽位已排满 → 必为某 type 的 subType 变体）。
+`CnvQstTool vocab` 可打印逐项证据等级与待核对清单。

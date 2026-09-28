@@ -16,11 +16,14 @@ public sealed class BatchItem
     public bool RoundTripOk;
     public string? Error;
     public int TxtLines;
+    /// <summary>QST 专用：串表条数与公式 2+2T+O+I+E 的差值（0 = 正确）。</summary>
+    public int TextDrift;
 
-    public bool AllOk => ParseOk && Tiled && LocOk && RoundTripOk;
+    public bool AllOk => ParseOk && Tiled && LocOk && RoundTripOk && TextDrift == 0;
 
     public string FailReason =>
-        Error ?? (!ParseOk ? "解析失败" : !Tiled ? "记录未铺满文件" : !LocOk ? "未落在声明的本地化偏移" : !RoundTripOk ? "round-trip 不一致" : "");
+        Error ?? (!ParseOk ? "解析失败" : !Tiled ? "记录未铺满文件" : !LocOk ? "未落在声明的本地化偏移"
+            : !RoundTripOk ? "round-trip 不一致" : TextDrift != 0 ? $"QST 串表条数偏离公式 {TextDrift:+#;-#;0}" : "");
 }
 
 /// <summary>批量文件服务：扫描/检查/导出/回填。GUI 批量面板与 CLI 命令共用，保证行为一致。</summary>
@@ -79,6 +82,7 @@ public static class BatchOps
                 item.Tiled = q.Tiled;
                 item.LocOk = q.LocOffsetMatches;
                 if (!q.Valid) item.Error = q.Error;
+                item.TextDrift = q.Valid ? q.TextCountDrift : 0;
                 rewritten = q.Write();
                 break;
             default:

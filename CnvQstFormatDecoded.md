@@ -155,10 +155,30 @@ objective/event 沿用既有增删能力。QST 本地化逐 task 映射未解，
 
 ### 3.3 本地化块
 
-与 CNV 相同；串表条目 **0 = 任务组名、1 = 任务名**（`GetGroup`/`GetName`），
-2 起按位置对应 task 标题/描述/目标文本与空槽位（空槽位 = 长度前缀 0 的空串，
-游戏按位置回填，导出/导入必须原样保留空行）。2 之后与 task 的精确对应关系仍未定，
-浏览器/导出按 "text" 呈现（mq_burrwitch 观测：每 task 依次 [标题, 描述, 目标…] + 若干空槽）。
+与 CNV 相同；串表条目 **0 = 任务组名、1 = 任务名**（`GetGroup`/`GetName`）。
+
+**串表条数公式（2026-09-28 解出，本地 247 个 QST 样本零误差，并在官方 QuestEditor 中核实）**：
+
+```
+S = 2 + 2T + O + I + E
+  2  = 组名 + 任务名
+  2T = 每个 task 的标题 + 描述
+  O  = 每个 objective 一条
+  I  = 每个 incentive（编辑器 OnAccept）一条
+  E  = 每个 event（编辑器 OnComplete）一条
+```
+
+- 证据一（语料）：`census` 的"QST 本地化槽位配平"对 247 个文件算 `S − (2+2T+O+I+E)`，
+  结果**全部为 0**（残差直方图 `0×247`）。此前误以为"每 task 若干空槽不定"。
+- 证据二（编辑器）：串数**不足**时官方 QuestEditor 抛
+  `ArgumentOutOfRangeException`（`LocalizationInfo(Quest, version)` → `List.get_Item`）——
+  这也解释了为什么第一版探测文件（1 task / 2 objective / 1 event 只给了 6 条，实际需 7 条）直接崩溃；
+  按公式补到 7 条后正常打开，且标题/描述/目标文本全部落在预期节点上（见 `反馈截图/qst_1task.qst.png`）。
+- 空槽位 = 长度前缀 0 的空串，游戏按位置回填，导出/导入必须原样保留空行。
+- **槽位先后顺序**（objective 与 incentive/event 谁在前）由 `probe qst` 生成的 `qst_order.qst` 确认中：
+  该文件 1 task + 1 incentive + 2 objectives + 1 event，串表恰好 8 条、文本写着槽位号。
+- 增删 task/objective/event 后必须按此式重建串表 —— 这就是"多任务编辑"的全部约束所在，
+  也是本项目 2026-08 卡住的"QST 边界"问题的最终答案。
 
 ---
 

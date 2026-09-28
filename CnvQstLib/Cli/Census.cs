@@ -38,6 +38,7 @@ public static class Census
     {
         var cond = new Dictionary<uint, TypeCensus>();
         var act = new Dictionary<uint, TypeCensus>();
+        var qstShapes = new List<(string file, int T, int I, int O, int E, int S)>();
         var stepUnknown = new Dictionary<uint, StepUnknownCensus>();   // key = step Type
         var logic = new Dictionary<uint, int>();                        // logic 字 → 列表数
         var logicByLen = new Dictionary<(uint, int), int>();            // (logic, recordCount) → 列表数
@@ -134,6 +135,14 @@ public static class Census
                 case QstFile q:
                     if (!q.Valid) { filesBad++; break; }
                     filesQs++;
+                    {
+                        int ti = q.Tasks.Count;
+                        int ii = q.Tasks.Sum(t => t.Incentives.Count);
+                        int oi = q.Tasks.Sum(t => t.Objectives.Count);
+                        int ei = q.Tasks.Sum(t => t.Events.Count);
+                        int si = q.Languages.Count > 0 ? q.Languages[0].Texts.Count : 0;
+                        qstShapes.Add((Path.GetFileName(file), ti, ii, oi, ei, si));
+                    }
                     foreach (var t in q.Tasks)
                     {
                         foreach (var e in t.Incentives) { Visit(e.Conditions, true); Visit(e.Actions, false); }
@@ -154,6 +163,34 @@ public static class Census
         sb.AppendLine("logic × 列表记录数：");
         foreach (var ((lg, len), n) in logicByLen.OrderBy(k => k.Key))
             sb.AppendLine($"  logic={lg} × 长度 {len}: {n}");
+
+        sb.AppendLine();
+        sb.AppendLine("── QST 本地化槽位配平（串表条数 vs 结构）──");
+        sb.AppendLine("T=task 数  I=incentives(OnAccept) 数  O=objective 数  E=events(OnComplete) 数  S=串表条数");
+        sb.AppendLine("基准 = 2(组名+任务名) + 2T(每 task 标题+描述) + O(每 objective 一条)");
+        sb.AppendLine("形状 (T,I,O,E) : S 取值 → extra = S-基准（extra 与哪个计数相等，就是那部分的额外预留槽）");
+        foreach (var g in qstShapes
+                     .GroupBy(s => (s.T, s.I, s.O, s.E))
+                     .OrderBy(g => g.Key.T).ThenBy(g => g.Key.O).ThenBy(g => g.Key.I).ThenBy(g => g.Key.E))
+        {
+            var (t, i, o, e) = g.Key;
+            int baseV = 2 + 2 * t + o;
+            var ss = g.Select(x => x.S).Distinct().OrderBy(v => v).ToList();
+            string sv = string.Join("/", ss.Select(v => $"{v}(extra {v - baseV})"));
+            sb.AppendLine($"  T={t} I={i} O={o} E={e} ×{g.Count()} : S = {sv}");
+        }
+        sb.AppendLine("残差统计（S - 基准 - 各计数）：");
+        foreach (var cand in new (string name, Func<(string file, int T, int I, int O, int E, int S), int> f)[]
+                 {
+                     ("E", s => s.E), ("I", s => s.I), ("T", s => s.T), ("O", s => s.O),
+                     ("I+E", s => s.I + s.E), ("E+T", s => s.E + s.T), ("2E+T", s => 2 * s.E + s.T),
+                 })
+        {
+            var res = qstShapes.GroupBy(s => s.S - (2 + 2 * s.T + s.O) - cand.f(s))
+                               .OrderByDescending(g => g.Count()).Take(3)
+                               .Select(g => $"{g.Key}×{g.Count()}");
+            sb.AppendLine($"  S - 基准 - {cand.name} → {string.Join("  ", res)}");
+        }
 
         sb.AppendLine();
         sb.AppendLine("── CNV step unknown 字 × step 类型 ──");

@@ -158,9 +158,31 @@ public static class Probe
     }
 
     /// <summary>QST 本地化槽位探测：1/2/3 个 task 的任务文件，文本带编号，看编辑器把它们摆到哪。</summary>
+    /// <summary>
+    /// QST 本地化槽位探测：串表条数严格按公式 `2 + 2T + O + I + E` 填（不再补空槽），
+    /// 看编辑器是否精确摆放；另出一个"槽位顺序"文件（I=1 且 O=2），用来判定
+    /// incentive / objective / event 的槽位先后。
+    /// </summary>
     public static List<Item> QuestTasks()
     {
         var items = new List<Item>();
+
+        // 槽位顺序判定：T=1, I=1, O=2, E=1 → S = 2+2+2+1+1 = 8
+        {
+            var q = new QstFile { Version = 9, Id = 0, Unknown10 = 0 };
+            var task = new QstTask { Uid = 1, Uid2 = 2 };
+            task.Incentives.Add(new QstEvent { Conditions = List(new[] { Rec(true, 17, 0, "", 0) }) });
+            for (int o = 1; o <= 2; o++)
+                task.Objectives.Add(new QstObjective { Conditions = List(new[] { Rec(true, 17, 0, "", 0) }) });
+            task.Events.Add(new QstEvent { Actions = List(new[] { Rec(false, 8, 0, "", 350) }) });
+            q.Tasks.Add(task);
+            // 全按公式铺满，槽位编号写进文本本身
+            AddLang(q, new[] { "GROUP_A", "NAME_A", "SLOT2_TITLE", "SLOT3_DESC", "SLOT4", "SLOT5", "SLOT6", "SLOT7" });
+            items.Add(new Item("qst_order.qst", q.Write(),
+                "1 task（1 incentive + 2 objectives + 1 event），串表 8 条（=公式值）；" +
+                "看 Objectives 显示 SLOT4/SLOT5 还是 SLOT6/SLOT7 → 即知槽位顺序"));
+        }
+
         foreach (int nt in new[] { 1, 3 })
         {
             var q = new QstFile { Version = 9, Id = 0, Unknown10 = 0 };
@@ -170,7 +192,7 @@ public static class Probe
                 var task = new QstTask { Uid = 1, Uid2 = 2 };
                 texts.Add($"T{t}_TITLE");
                 texts.Add($"T{t}_DESC");
-                int nObj = nt == 1 ? 2 : t switch { 1 => 2, 2 => 1, _ => 0 };   // 目标数递减，便于看槽位偏移
+                int nObj = nt == 1 ? 2 : t switch { 1 => 2, 2 => 1, _ => 0 };
                 for (int o = 1; o <= nObj; o++)
                 {
                     var obj = new QstObjective();
@@ -179,21 +201,22 @@ public static class Probe
                     task.Objectives.Add(obj);
                 }
                 task.Events.Add(new QstEvent { Actions = List(new[] { Rec(false, 8, 0, "", 350) }) });
+                texts.Add("");                                   // 每个 event 预留一条槽（公式里的 E）
                 q.Tasks.Add(task);
             }
-            // 官方编辑器按它自己的公式索引本地化串，串数不足会抛 ArgumentOutOfRange（首次探测即如此）。
-            // 多补一批空槽，让它能顺利加载——加载成功后各段文本落在哪一槽，映射就看得见了。
-            int real = texts.Count;
-            for (int i = 0; i < 18; i++) texts.Add("");
-            var lang = new LanguageBlock { Tag = new GdString("enUS") };
-            foreach (var s in texts) lang.Texts.Add(new GdString(s));
-            q.Languages.Add(lang);
-            byte[] data = q.Write();
-            items.Add(new Item($"qst_{nt}task.qst", data,
-                $"qst_{nt}task  {nt} 个 task（目标数递减），前 {real} 条是实义文本、其后 18 条补空槽；" +
-                "编辑器里看每段文本落在哪个槽（即可反推 task ↔ 串表映射）"));
+            AddLang(q, texts);
+            items.Add(new Item($"qst_{nt}task.qst", q.Write(),
+                $"qst_{nt}task  {nt} 个 task，串表 {texts.Count} 条（=公式 2+2T+O+I+E）；" +
+                "若编辑器摆放全对，即证明公式与槽位顺序都对"));
         }
         return items;
+    }
+
+    private static void AddLang(QstFile q, IEnumerable<string> texts)
+    {
+        var lang = new LanguageBlock { Tag = new GdString("enUS") };
+        foreach (var s in texts) lang.Texts.Add(new GdString(s));
+        q.Languages.Add(lang);
     }
 
     public static List<Item> All(string? cmpType = null, bool split = false)

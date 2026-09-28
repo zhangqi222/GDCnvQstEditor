@@ -58,6 +58,26 @@ public sealed class QstFile
         ?? throw new GdParseException("quest has no language block");
 
     public int ObjectiveCount => Tasks.Sum(t => t.Objectives.Count);
+
+    public int IncentiveCount => Tasks.Sum(t => t.Incentives.Count);
+    public int EventCount => Tasks.Sum(t => t.Events.Count);
+
+    /// <summary>
+    /// 本地化串表条数公式（2026-09-28 由本地 247 个样本零误差反推，并在官方 QuestEditor 中核实）：
+    ///   S = 2 + 2T + O + I + E
+    ///   2  = 组名 + 任务名；2T = 每 task 标题 + 描述；O/I/E = 各 objective / incentive / event 一条。
+    /// 官方编辑器按此式索引串表——串数不足会直接抛 ArgumentOutOfRangeException，所以
+    /// 增删 task/objective/event 后必须按此式重建串表（多任务文件的编辑约束即在此）。
+    /// </summary>
+    public static int LocalizedTextCount(int tasks, int objectives, int incentives, int events) =>
+        2 + 2 * tasks + objectives + incentives + events;
+
+    /// <summary>本文件按公式应有的串表条数。</summary>
+    public int RequiredTextCount => LocalizedTextCount(Tasks.Count, ObjectiveCount, IncentiveCount, EventCount);
+
+    /// <summary>串表条数与公式不符时返回差值（0 = 正确）。</summary>
+    public int TextCountDrift => (Languages.Count > 0 ? Languages[0].Texts.Count : 0) - RequiredTextCount;
+
     public int RecordCount => Tasks.Sum(t =>
         t.Incentives.Sum(e => e.Conditions.Records.Count + e.Actions.Records.Count)
         + t.Objectives.Sum(o => o.Conditions.Records.Count + o.Actions.Records.Count)
