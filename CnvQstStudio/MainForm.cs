@@ -543,6 +543,8 @@ internal sealed class DocView : UserControl
         BackColor = Theme.Surface,
     };
     private readonly Panel _host = new() { Dock = DockStyle.Fill, BackColor = Theme.Surface };
+    private readonly TreeView _tree = new() { Dock = DockStyle.Fill };
+    private readonly SplitContainer _split = new() { Dock = DockStyle.Fill, SplitterWidth = 6 };
 
     public DocView(DocSession doc)
     {
@@ -550,13 +552,49 @@ internal sealed class DocView : UserControl
         BackColor = Theme.Surface;
         Font = Theme.UiFont;
         _host.Controls.AddRange(new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint });
-        Controls.Add(_host);
+
+        // 左：结构树（与官方编辑器一致的层级观感）；右：平铺表格 / 本地化表
+        Theme.StyleTree(_tree);
+        _tree.AfterSelect += TreeAfterSelect;
+        var treeHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10, 8, 2, 8), BackColor = Theme.Surface };
+        treeHost.Controls.Add(_tree);
+        _split.Panel1.Controls.Add(treeHost);
+        _split.Panel2.Controls.Add(_host);
+        _split.SplitterDistance = 300;
+        Controls.Add(_split);
         Controls.Add(_status);
 
         _cnvTable.LocRequested += ShowLoc;
         _qstTable.LocRequested += ShowLoc;
+        BuildTree();
         ShowCurrent();
         UpdateStatus();
+    }
+
+    /// <summary>重建结构树（打开 / 结构改动 / 语言切换后）。</summary>
+    private void BuildTree()
+    {
+        _tree.BeginUpdate();
+        _tree.Nodes.Clear();
+        var root = new TreeNode(Doc.Title);
+        Doc.FillTree(root);
+        _tree.Nodes.Add(root);
+        root.Expand();
+        foreach (TreeNode n in root.Nodes) n.Expand();
+        _tree.EndUpdate();
+    }
+
+    private void TreeAfterSelect(object? sender, TreeViewEventArgs e)
+    {
+        if (e.Node?.Tag is string tag && tag == DocSession.TagLoc) { ShowLoc(); return; }
+        if (_locGrid.Visible) ShowCurrent();               // 从本地化表回到结构表
+        switch (e.Node?.Tag)
+        {
+            case CnvStep step: _cnvTable.SelectStep(step); break;
+            case QstTask t: _qstTable.SelectOwner(t); break;
+            case QstObjective o: _qstTable.SelectOwner(o); break;
+            case QstEvent ev: _qstTable.SelectOwner(ev); break;
+        }
     }
 
     private void ShowCurrent()
@@ -600,6 +638,7 @@ internal sealed class DocView : UserControl
 
     public void RefreshAll()
     {
+        BuildTree();
         if (_cnvTable.Visible) _cnvTable.Bind(Doc, OnEdited);
         else if (_qstTable.Visible) _qstTable.Bind(Doc, OnEdited);
         else if (_locGrid.Visible) _locGrid.Bind(Doc, OnEdited);

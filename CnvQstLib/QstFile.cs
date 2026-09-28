@@ -72,6 +72,15 @@ public sealed class QstFile
     public static int LocalizedTextCount(int tasks, int objectives, int incentives, int events) =>
         2 + 2 * tasks + objectives + incentives + events;
 
+    /// <summary>第 ti 个 task 的标题在串表中的槽号（按 §3.3 的公式与槽位顺序）。</summary>
+    public int TaskTitleSlot(int ti)
+    {
+        int slot = 2;
+        for (int i = 0; i < ti; i++)
+            slot += 2 + Tasks[i].Incentives.Count + Tasks[i].Objectives.Count + Tasks[i].Events.Count;
+        return slot;
+    }
+
     /// <summary>本文件按公式应有的串表条数。</summary>
     public int RequiredTextCount => LocalizedTextCount(Tasks.Count, ObjectiveCount, IncentiveCount, EventCount);
 

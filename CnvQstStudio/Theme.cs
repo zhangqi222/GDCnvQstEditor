@@ -213,6 +213,8 @@ internal static class Theme
         };
         grid.RowTemplate.Height = 24;
         grid.RowHeadersVisible = false;
+        // 禁止一切列排序：表格行序 = 文件内容顺序，排序只重排显示却让人误以为改了文件
+        grid.ColumnAdded += (_, e) => e.Column.SortMode = DataGridViewColumnSortMode.NotSortable;
         grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
         grid.AllowUserToResizeRows = false;
         grid.MultiSelect = false;

@@ -239,6 +239,14 @@ public static class Scriptable
         /*28*/ ["VideoPath", "AllowSkip"],                      // PlayVideo
     };
 
+    /// <summary>新建条件/动作时的默认 body 版本：语料里 HasFaction/HasItem/HasQuestObjective/LuaScript/
+    /// CheckRandomValue 恒为 1，其余 0（版本错会让官方编辑器按另一种布局读，直接错位）。</summary>
+    public static byte DefaultBodyVersion(uint type) => type switch
+    {
+        6 or 9 or 11 or 12 or 21 => 1,
+        _ => 0,
+    };
+
     public static string ConditionBodySpec(uint type) =>
         type < (uint)CondBodies.Length ? CondBodies[type] : "";
 

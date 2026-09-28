@@ -68,9 +68,9 @@ internal sealed class ScriptListEditor : Panel
     private readonly GroupBox _addBox = new() { Dock = DockStyle.Top, Height = 58 };
     private readonly GroupBox _editBox = new() { Dock = DockStyle.Fill };
     private readonly ComboBox _typeCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
-    private readonly NumericUpDown _subType = new() { Minimum = 0, Maximum = 255, Width = 60 };
-    private readonly NumericUpDown _uid = new() { Minimum = 0, Maximum = uint.MaxValue, Width = 100 };
-    private readonly Label _uidLabel = Gui.Label(L.T("比较符（条件）", "Comparator"), 0, 0, 90);  // 官方 Common.ScriptableCondition+Comparison
+    // 比较符（官方 Common.ScriptableCondition+Comparison：Less=0…NotEqual=5），下拉选择，不暴露数字
+    private readonly ComboBox _cmp = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
+    private readonly Label _cmpLabel = Gui.Label(L.T("比较符", "Comparator"), 0, 0, 56);
     private readonly DynamicFieldPanel _fields;
     private bool _building;
 
@@ -110,12 +110,12 @@ internal sealed class ScriptListEditor : Panel
         // ── 编辑选中项区：类型/subType/uid + 字段面板 ──
         var editTop = new Panel { Dock = DockStyle.Top, Height = 40 };
         var eLabel = Gui.Label(L.T("类型", "Type"), 12, 10, 44);
-        var sLabel = Gui.Label(L.T("body 版本", "Body ver"), 306, 10, 64);
-        _uidLabel.Location = new Point(446, 10);
+        _cmpLabel.Location = new Point(452, 10);
+        _cmp.Items.AddRange(new object[] { "<", "<=", "=", ">=", ">", "!=" });
+        _cmp.Location = new Point(512, 8);
         _typeCombo.Location = new Point(60, 8);
-        _subType.Location = new Point(370, 8);
-        _uid.Location = new Point(540, 8);
-        editTop.Controls.AddRange(new Control[] { eLabel, _typeCombo, sLabel, _subType, _uidLabel, _uid });
+        _typeCombo.Width = 380;
+        editTop.Controls.AddRange(new Control[] { eLabel, _typeCombo, _cmpLabel, _cmp });
         _fields.Dock = DockStyle.Fill;
         _editBox.Controls.Add(_fields);
         _editBox.Controls.Add(editTop);
@@ -134,8 +134,11 @@ internal sealed class ScriptListEditor : Panel
         _up.Click += (_, _) => MoveRecord(-1);
         _down.Click += (_, _) => MoveRecord(1);
         _typeCombo.SelectedIndexChanged += (_, _) => ChangeType();
-        _subType.ValueChanged += (_, _) => ChangeSubType();
-        _uid.ValueChanged += (_, _) => { if (_building) return; if (Current() is { } r && r.IsCondition) { r.Uid = (uint)_uid.Value; OnEdit(); } };
+        _cmp.SelectedIndexChanged += (_, _) =>
+        {
+            if (_building) return;
+            if (Current() is { } r && r.IsCondition) { r.Uid = (uint)Math.Max(0, _cmp.SelectedIndex); OnEdit(); }
+        };
 
         FillTypeCombo(_addType);
         FillTypeCombo(_typeCombo);
@@ -189,7 +192,7 @@ internal sealed class ScriptListEditor : Panel
         _building = true;
         var r = Current();
         bool has = r != null;
-        _typeCombo.Enabled = _subType.Enabled = _uid.Enabled = _fields.Enabled = has;
+        _typeCombo.Enabled = _cmp.Enabled = _fields.Enabled = has;
         _del.Enabled = _dup.Enabled = _up.Enabled = _down.Enabled = has;
         if (!has)
         {
@@ -199,9 +202,8 @@ internal sealed class ScriptListEditor : Panel
         }
         for (int i = 0; i < _typeCombo.Items.Count; i++)
             if (_typeCombo.Items[i] is ComboType ct && ct.Id == r!.Type) { _typeCombo.SelectedIndex = i; break; }
-        _subType.Value = r!.SubType;
-        _uid.Value = r.Uid;
-        _uid.Visible = _uidLabel.Visible = _isCondition;
+        _cmp.SelectedIndex = (int)Math.Min(r.Uid, 5);
+        _cmp.Visible = _cmpLabel.Visible = _isCondition;
         _fields.Bind(r);
         _building = false;
     }
@@ -231,12 +233,12 @@ internal sealed class ScriptListEditor : Panel
         {
             IsCondition = _isCondition,
             Type = type,
-            SubType = 0,
-            Uid = NextUid(),
+            SubType = Scriptable.DefaultBodyVersion(type),
+            Uid = 2,
             BodySpec = _isCondition ? SpecCond(type) : SpecAct(type),
             Named = _isCondition ? Names.ConditionClass(type).named : Names.ActionClass(type).named,
         };
-        rec.Fields = FieldFactory.Resync(rec.BodySpec, 0, null, _isCondition);
+        rec.Fields = FieldFactory.Resync(rec.BodySpec, rec.SubType, null, _isCondition);
         int at = _records.SelectedIndex >= 0 ? _records.SelectedIndex + 1 : _list.Records.Count;
         _list.Records.Insert(Math.Min(at, _list.Records.Count), rec);
         if (!_list.Present && _list.Records.Count > 0)
@@ -305,21 +307,11 @@ internal sealed class ScriptListEditor : Panel
         var r = Current();
         if (r == null || _typeCombo.SelectedItem is not ComboType ct) return;
         r.Type = ct.Id;
+        r.SubType = Scriptable.DefaultBodyVersion(ct.Id);
         r.BodySpec = _isCondition ? SpecCond(ct.Id) : SpecAct(ct.Id);
         var named = _isCondition ? Names.ConditionClass(ct.Id) : Names.ActionClass(ct.Id);
         r.ClassName = named.name;
         r.Named = named.named;
-        r.Fields = FieldFactory.Resync(r.BodySpec, r.SubType, r.Fields, _isCondition);
-        Rebuild();
-        _changed();
-    }
-
-    private void ChangeSubType()
-    {
-        if (_building) return;
-        var r = Current();
-        if (r == null) return;
-        r.SubType = (byte)_subType.Value;
         r.Fields = FieldFactory.Resync(r.BodySpec, r.SubType, r.Fields, _isCondition);
         Rebuild();
         _changed();

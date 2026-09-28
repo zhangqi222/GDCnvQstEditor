@@ -192,16 +192,19 @@ public sealed class DocSession
         for (int i = 0; i < q.Tasks.Count; i++)
         {
             var t = q.Tasks[i];
-            var tn = new TreeNode($"Task {i}") { Tag = t };
-            var inc = new TreeNode(L.F("OnAccept（{0}）", t.Incentives.Count));
+            string title = q.Languages.Count > 0 && q.TaskTitleSlot(i) < q.Languages[0].Texts.Count
+                ? q.Languages[0].Texts[q.TaskTitleSlot(i)].Text : "";
+            string label = L.F("任务 {0}", i + 1) + (title.Length > 0 ? $"：{title}" : "");
+            var tn = new TreeNode(label) { Tag = t };
+            var inc = new TreeNode(L.F("接受事件 OnAccept（{0}）", t.Incentives.Count));
             for (int k = 0; k < t.Incentives.Count; k++)
-                inc.Nodes.Add(new TreeNode($"Incentive {k}") { Tag = t.Incentives[k] });
-            var objs = new TreeNode(L.F("Objectives（{0}）", t.Objectives.Count));
+                inc.Nodes.Add(new TreeNode(L.F("接受事件 #{0}", k + 1)) { Tag = t.Incentives[k] });
+            var objs = new TreeNode(L.F("目标 Objectives（{0}）", t.Objectives.Count));
             for (int k = 0; k < t.Objectives.Count; k++)
-                objs.Nodes.Add(new TreeNode($"Objective {k}") { Tag = t.Objectives[k] });
-            var evs = new TreeNode(L.F("OnComplete（{0}）", t.Events.Count));
+                objs.Nodes.Add(new TreeNode(L.F("目标 #{0}", k + 1)) { Tag = t.Objectives[k] });
+            var evs = new TreeNode(L.F("完成事件 OnComplete（{0}）", t.Events.Count));
             for (int k = 0; k < t.Events.Count; k++)
-                evs.Nodes.Add(new TreeNode($"Event {k}") { Tag = t.Events[k] });
+                evs.Nodes.Add(new TreeNode(L.F("完成事件 #{0}", k + 1)) { Tag = t.Events[k] });
             tn.Nodes.AddRange(new[] { inc, objs, evs });
             root.Nodes.Add(tn);
         }
