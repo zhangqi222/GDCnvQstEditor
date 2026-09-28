@@ -566,7 +566,15 @@ internal sealed class QstTableEditor : Panel
         _bar.Items.Add(new ToolStripSeparator());
         _bar.Items.Add(new ToolStripButton(L.T("－删除", "- Delete"), null, (_, _) => DeleteRow()));
         _bar.Items.Add(new ToolStripSeparator());
+        _bar.Items.Add(new ToolStripButton(L.T("任务属性", "Quest Props"), null, (_, _) => EditQuestProps()));
         _bar.Items.Add(new ToolStripButton(L.T("本地化表", "Loc Table"), null, (_, _) => _locRequested?.Invoke()));
+    }
+
+    /// <summary>编辑 quest 头部：uid 与 Primary/Secondary/Repeatable（官方 Common.Quest+Flag）。</summary>
+    private void EditQuestProps()
+    {
+        if (!QuestPropsDialog.Show(_qst, FindForm())) return;
+        _changed(); Bind(_doc, _changed);
     }
 
     public void Bind(DocSession doc, Changed changed)
@@ -721,7 +729,61 @@ internal sealed class QstTableEditor : Panel
     }
 }
 
-/// <summary>QST 字段编辑对话框（task 标量 / objective / event）。</summary>
+/// <summary>
+/// quest 头部属性对话框。flags 的语义取自官方 `Common.Quest+Flag` 与 SetPrimary/SetSecondary/SetRepeatable：
+/// Primary 与 Secondary **互斥**（两个 setter 都是先清 bit0+bit1 再置位），Repeatable（bit2）独立。
+/// </summary>
+internal sealed class QuestPropsDialog : Form
+{
+    private readonly NumericUpDown _uid = new() { Minimum = 0, Maximum = uint.MaxValue, Width = 140, Hexadecimal = true };
+    private readonly CheckBox _primary = new() { Text = L.T("主线任务 Primary（bit0）", "Primary (bit0)"), AutoSize = true };
+    private readonly CheckBox _secondary = new() { Text = L.T("支线任务 Secondary（bit1）", "Secondary (bit1)"), AutoSize = true };
+    private readonly CheckBox _repeatable = new() { Text = L.T("可重复 Repeatable（bit2）", "Repeatable (bit2)"), AutoSize = true };
+
+    private QuestPropsDialog(QstFile q)
+    {
+        Text = L.T("任务属性", "Quest Properties");
+        Width = 380;
+        StartPosition = FormStartPosition.CenterParent;
+        _uid.Value = Math.Min(q.Id, uint.MaxValue);
+        uint f = q.Unknown10;
+        _primary.Checked = (f & 1) != 0;
+        _secondary.Checked = (f & 2) != 0;
+        _repeatable.Checked = (f & 4) != 0;
+        // Primary / Secondary 互斥（照官方 setter 的行为）
+        _primary.CheckedChanged += (_, _) => { if (_primary.Checked) _secondary.Checked = false; };
+        _secondary.CheckedChanged += (_, _) => { if (_secondary.Checked) _primary.Checked = false; };
+
+        Controls.Add(Gui.Label(L.T("uid", "uid"), 16, 19, 60));
+        _uid.Location = new Point(90, 16);
+        Controls.Add(_uid);
+        _primary.Location = new Point(16, 56);
+        _secondary.Location = new Point(16, 84);
+        _repeatable.Location = new Point(16, 112);
+        Controls.Add(_primary); Controls.Add(_secondary); Controls.Add(_repeatable);
+        var ok = new Button { Text = L.T("确定", "OK"), DialogResult = DialogResult.OK, Width = 96, Location = new Point(160, 152) };
+        var cancel = new Button { Text = L.T("取消", "Cancel"), DialogResult = DialogResult.Cancel, Width = 96, Location = new Point(264, 152) };
+        AcceptButton = ok; CancelButton = cancel;
+        Controls.Add(ok); Controls.Add(cancel);
+        Height = 240;
+    }
+
+    public static bool Show(QstFile q, IWin32Window? owner)
+    {
+        using var dlg = new QuestPropsDialog(q);
+        if (dlg.ShowDialog(owner) != DialogResult.OK) return false;
+        q.Id = (uint)dlg._uid.Value;
+        uint f = 0;
+        if (dlg._primary.Checked) f |= 1;
+        if (dlg._secondary.Checked) f |= 2;
+        if (dlg._repeatable.Checked) f |= 4;
+        q.Unknown10 = f;
+        return true;
+    }
+}
+
+/// <summary>QST 字段编辑对话框（task / objective / event 的 uid、flags 与门控位）。
+/// 字段名与位含义来自官方 Common.dll（QuestNode_Task/Objective/Event 的字段表与 Read 的 IL）。</summary>
 internal sealed class QstFieldsDialog : Form
 {
     private readonly List<(string, NumericUpDown)> _nums = new();
@@ -730,30 +792,30 @@ internal sealed class QstFieldsDialog : Form
     private QstFieldsDialog(QstRowOwner row, uint fontSize)
     {
         Text = L.T("字段编辑  " + row.NodeLabel, "Fields  " + row.NodeLabel);
-        Width = 440;
+        Width = 460;
         StartPosition = FormStartPosition.CenterParent;
         var y = 16;
         switch (row)
         {
             case QstTaskRow tr:
-                _nums.Add(("field @0xA8", Num(tr.T.UnknownA8)));
-                _nums.Add(("field @0xAC", Num(tr.T.UnknownAC)));
-                _flags.Add(("flag v8", Check(tr.T.Flag8)));
-                _flags.Add(("flag v9", Check(tr.T.Flag9)));
+                _nums.Add((L.T("uid（引用标识）", "uid (referenced by)"), Num(tr.T.UnknownA8)));
+                _nums.Add((L.T("flags（暂只有 None）", "flags (only None)"), Num(tr.T.UnknownAC)));
+                _flags.Add((L.T("isBlocker（v≥8）", "isBlocker (v>=8)"), Check(tr.T.Flag8)));
+                _flags.Add((L.T("dontPropagate（v≥9）", "dontPropagate (v>=9)"), Check(tr.T.Flag9)));
                 break;
             case QstObjectiveRow or:
-                _nums.Add(("field +0x10", Num(or.O.Unknown0)));
-                _nums.Add(("field +0x34", Num(or.O.Unknown1)));
+                _nums.Add((L.T("uid", "uid"), Num(or.O.Unknown0)));
+                _nums.Add((L.T("flags", "flags"), Num(or.O.Unknown1)));
                 break;
             case QstEventRow er2:
-                _nums.Add(("field +0x2C", Num(er2.E.Unknown)));
+                _nums.Add((L.T("flags", "flags"), Num(er2.E.Unknown)));
                 break;
         }
-        foreach (var (lab, n) in _nums) { Controls.Add(Gui.Label(lab, 16, y + 3, 110)); n.Location = new Point(140, y); Controls.Add(n); y += 32; }
-        foreach (var (lab, cb) in _flags) { cb.Location = new Point(16, y); Controls.Add(cb); y += 26; }
+        foreach (var (lab, n) in _nums) { Controls.Add(Gui.Label(lab, 16, y + 3, 150)); n.Location = new Point(176, y); Controls.Add(n); y += 32; }
+        foreach (var (lab, cb) in _flags) { cb.Text = lab; cb.Location = new Point(16, y); Controls.Add(cb); y += 26; }
         y += 8;
-        var ok = new Button { Text = L.T("确定", "OK"), DialogResult = DialogResult.OK, Width = 96, Location = new Point(220, y) };
-        var cancel = new Button { Text = L.T("取消", "Cancel"), DialogResult = DialogResult.Cancel, Width = 96, Location = new Point(324, y) };
+        var ok = new Button { Text = L.T("确定", "OK"), DialogResult = DialogResult.OK, Width = 96, Location = new Point(240, y) };
+        var cancel = new Button { Text = L.T("取消", "Cancel"), DialogResult = DialogResult.Cancel, Width = 96, Location = new Point(344, y) };
         AcceptButton = ok; CancelButton = cancel;
         Controls.Add(ok);
         Controls.Add(cancel);

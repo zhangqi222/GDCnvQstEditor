@@ -164,6 +164,14 @@ u32 languageCount（上限 64）
 语料里 +0x10 的取值 {0,1,2,4} 与该枚举完全对应；`Quest.Read` 的 IL 也证实这里就是 `flags`
 （顺序：version → (v≥6) 跳过 locOffset → **uid** → **flags** → taskCount）。
 
+**Primary 与 Secondary 互斥**：官方 `Quest.SetPrimary/SetSecondary` 都是
+`flags = (flags & ~3) | (on ? 1 : 0)` / `| (on ? 2 : 0)` —— 两个 setter 都先清掉 bit0+bit1。
+所以"不勾 Main Quest"得到的是 `None`，不是 `Secondary`；Repeatable（bit2）独立于这两者。
+编辑器里对应两个菜单项 `cmiPrimaryQuest`（Main Quest）/ `cmiSecondaryQuest`。
+
+**task 的 isBlocker / dontPropagate 在 task 节点的右键菜单里**（`cmiBlockerTask` / `cmiDontPropagate`），
+根节点菜单上没有——实测用户第一轮没找到就是这个原因。
+
 **uid** 由官方工具随机生成：`QuestEditor.FormMain.miQuestAddTask_Click` 就是
 `quest.AddTask(App.random.UInt())`；新建 quest 同理。本项目 `QstFile.AddTask/AddObjective`
 也按此给随机非 0 uid。
