@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace CnvQst.Cli;
 
@@ -28,6 +29,9 @@ public static class CliApp
             "anchors" => CmdAnchors(args, @out),
             "census" => CmdCensus(args, @out),
             "vocab" => CmdVocab(args, @out),
+            "make" => CmdMake(args, @out),
+            "sample" => CmdSample(args, @out),
+            "probe" => CmdProbe(args, @out),
             "selftest" => CmdSelfTest(args, @out),
             "new" => CmdNew(args, @out),
             _ => Unknown(args[0], err),
@@ -53,6 +57,10 @@ public static class CliApp
           anchors     <file>                          条件/动作类型锚定工作台
           census      <dir>                           全样本类型普查（命名证据表）
           vocab                                       官方编辑器选项 ↔ 类型 ID 对照表
+          make   <spec.json> [-o out]                 由编写用 spec 生成 .cnv/.qst
+          sample cnv|qst [-o spec.json]               输出 spec 模板
+          probe  cond|act|cmp|flags|qst|all [-o 目录] [--type N]
+                                                      批量生成探测文件（交官方编辑器辨认）
           selftest    <dir>                           结构编辑自检（增/删/移后 round-trip 三检）
           new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]
           new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题] [--desc 描述]
@@ -264,6 +272,102 @@ public static class CliApp
     {
         @out.Write(EditorVocab.Report());
         return 0;
+    }
+
+    // ---- spec → 二进制 ----
+    //   make   <spec.json> [-o out.cnv|out.qst]   由编写用 spec 生成文件
+    //   sample cnv|qst [-o spec.json]             输出 spec 模板
+    //   probe  <cond|act|cmp|flags|qst|all> [-o 目录] [--type N]
+    //       批量生成最小文件，交给官方编辑器"自报"类型名/比较符/开关/文本槽位
+
+    static int CmdMake(string[] args, TextWriter @out)
+    {
+        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
+        string specPath = args[1];
+        string? outPath = Arg(args, "-o") ?? Arg(args, "--out");
+        try
+        {
+            byte[] data = Spec.Build(File.ReadAllText(specPath), out string format);
+            outPath ??= Path.ChangeExtension(specPath, format == "qst" ? ".qst" : ".cnv");
+            File.WriteAllBytes(outPath, data);
+
+            // 生成物同样过三检查（与保存/导入同一条守卫）
+            string check = format == "qst" ? CheckQst(data) : CheckCnv(data);
+            @out.WriteLine($"已生成 {outPath}（{data.Length} 字节，format={format}）");
+            @out.WriteLine(check == "OK" ? "三检查通过：铺满 / locOffset / round-trip" : $"校验失败：{check}");
+            return check == "OK" ? 0 : 1;
+        }
+        catch (SpecException e) { @out.WriteLine($"spec 有误：{e.Message}"); return 2; }
+        catch (JsonException e) { @out.WriteLine($"JSON 解析失败：{e.Message}"); return 2; }
+        catch (IOException e) { @out.WriteLine($"IO 失败：{e.Message}"); return 2; }
+    }
+
+    static int CmdSample(string[] args, TextWriter @out)
+    {
+        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
+        string text = args[1].ToLowerInvariant() switch
+        {
+            "cnv" => Spec.SampleCnv(),
+            "qst" => Spec.SampleQst(),
+            _ => null!,
+        };
+        if (text == null) { @out.WriteLine(Usage); return 2; }
+        string? outPath = Arg(args, "-o") ?? Arg(args, "--out");
+        if (outPath != null) { File.WriteAllText(outPath, text); @out.WriteLine($"已写出模板 {outPath}"); }
+        else @out.WriteLine(text);
+        return 0;
+    }
+
+    static int CmdProbe(string[] args, TextWriter @out)
+    {
+        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
+        string what = args[1].ToLowerInvariant();
+        string dir = Arg(args, "-o") ?? Arg(args, "--out") ?? "probe_out";
+        string? typeArg = Arg(args, "--type");
+        try
+        {
+            bool split = args.Any(a => a.Equals("--split", StringComparison.OrdinalIgnoreCase));
+            var items = what switch
+            {
+                "cond" => Probe.CondTypes(split),
+                "act" => Probe.ActTypes(split),
+                "cmp" => Probe.Comparator(typeArg != null ? uint.Parse(typeArg) : 6),
+                "flags" => Probe.StepFlags(),
+                "qst" => Probe.QuestTasks(),
+                "all" => Probe.All(typeArg, split),
+                _ => null!,
+            };
+            if (items == null) { @out.WriteLine(Usage); return 2; }
+            @out.Write(Probe.Emit(items, dir));
+            return 0;
+        }
+        catch (Exception e) { @out.WriteLine($"探测失败：{e.Message}"); return 2; }
+    }
+
+    private static string CheckCnv(byte[] data)
+    {
+        var c = CnvFile.Parse(data);
+        if (!c.Valid) return c.Error ?? "解析失败";
+        if (!c.Tiled) return "记录未铺满文件";
+        if (!c.LocOffsetMatches) return "本地化偏移不符";
+        return c.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
+    }
+
+    private static string CheckQst(byte[] data)
+    {
+        var q = QstFile.Parse(data);
+        if (!q.Valid) return q.Error ?? "解析失败";
+        if (!q.Tiled) return "记录未铺满文件";
+        if (!q.LocOffsetMatches) return "本地化偏移不符";
+        return q.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
+    }
+
+    /// <summary>取 -o / --out / --type 这类"键 + 值"参数。</summary>
+    private static string? Arg(string[] args, string key)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+            if (args[i].Equals(key, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
+        return null;
     }
 
     static int CmdSelfTest(string[] args, TextWriter @out)

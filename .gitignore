@@ -12,3 +12,6 @@ publish/
 *.user
 *.suo
 *.userprefs
+
+# 探测器输出
+probe_out/

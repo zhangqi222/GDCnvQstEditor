@@ -81,9 +81,37 @@ dotnet $T anchors     <file>                        # 条件/动作类型 ID 锚
 dotnet $T legacytxt   <file>                        # GrimDawnCnvQstToTXT v0.9 算法基线（仅比对用）
 dotnet $T txt-diff    <目录>                        # 新 TXT 导出 vs v0.9 基线全量比对
 dotnet $T vocab                                    # 官方编辑器选项 ↔ 类型 ID 对照表（命名证据）
+dotnet $T sample cnv|qst [-o spec.json]            # 输出编写用 spec 模板
+dotnet $T make   <spec.json> [-o out.cnv|out.qst]  # 由 spec 生成文件（生成后同样过三检查）
+dotnet $T probe  cond|act|cmp|flags|qst|all [-o 目录] [--type N] [--split]
+                                                   # 批量生成探测文件，交官方编辑器辨认字段
 dotnet $T new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]  # 新建对话 v6
 dotnet $T new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题] [--desc 描述]  # 新建任务 v9
 ```
+
+### 由 spec 生成（make / sample / probe）
+
+`make` 读一份**手写友好**的 spec（JSON，条件动作可用官方名书写），生成 .cnv/.qst；
+与 `import-json`（全保真模型，供 round-trip）不同，spec 只描述你要写什么：
+
+```json
+{ "format": "cnv", "speaker": "Alex",
+  "rows": [
+    { "level": 1, "kind": "speech", "text": "你终于来了。", "flags": 0,
+      "cond": [ { "HasToken": ["MY_TOKEN", 1] } ],
+      "act":  [ { "GiveMoney": [500] } ] },
+    { "level": 2, "kind": "continue", "text": "继续" }
+  ] }
+```
+
+- `level` = 缩进层级（父是最近一个 level−1 的行）；`kind` = speech/continue/accept/decline/end/link/selector
+- 条件/动作：`{"HasFaction": ["SURVIVORS", 10000]}`、`{"HasFaction": {"FactionName": "SURVIVORS", "Value": 10000}}`、
+  或原始形态 `{"type": 6, "subType": 1, "args": [...]}`（探测未知类型用）
+- `flags` 写 step 的 unknown 原值；`logic` 写 "AND"/"OR"
+
+`probe` 是**用官方编辑器反查字段名**的工具：它批量造出最小文件，让编辑器自己去显示对应的
+选项名（覆盖本地语料里样本为 0 的类型）。默认把一类探测合并成一个文件的多个节点，
+节点文本里写着我们当前的猜测名，打开即可逐条对照；`--split` 可拆成一类一文件以隔离报错项。
 
 ### 翻译管线（与现有工作流衔接）
 

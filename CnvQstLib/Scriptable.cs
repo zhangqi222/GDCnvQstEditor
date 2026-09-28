@@ -222,6 +222,13 @@ public static class Scriptable
     public static string ConditionBodySpec(uint type) =>
         type < (uint)CondBodies.Length ? CondBodies[type] : "";
 
+    /// <summary>body 参数字段名（下标与 body 规格字母一一对应；未命名类型为 null）。</summary>
+    public static string?[]? ConditionParamNames(uint type) =>
+        type < (uint)CondParams.Length ? CondParams[type] : null;
+
+    public static string?[]? ActionParamNames(uint type) =>
+        type < (uint)ActionParams.Length ? ActionParams[type] : null;
+
     public static string ActionBodySpec(uint type) =>
         type < (uint)ActionBodies.Length && ActionBodies[type] is string s ? s : "(unused)";
 
