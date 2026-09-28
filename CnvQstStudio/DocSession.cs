@@ -74,7 +74,8 @@ public sealed class DocSession
             if (Qst != null)
                 return $"{KindVersion} · {Qst.Tasks.Count} task · {Qst.ObjectiveCount} objective · {Qst.RecordCount} 条件/动作 · {Qst.Size} B"
                      + (Qst.Tiled ? " · ✓铺满" : " · ✗未铺满")
-                     + (Qst.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset");
+                     + (Qst.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset")
+                     + (Qst.TextCountDrift == 0 ? " · ✓串表公式" : $" · ✗串表公式({Qst.TextCountDrift:+#;-#;0})");
             return "（空）";
         }
     }
@@ -112,6 +113,9 @@ public sealed class DocSession
             var re = QstFile.Parse(data);
             if (!re.Valid || !re.Tiled || !re.LocOffsetMatches || !re.Write().AsSpan().SequenceEqual(data))
                 err = "保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。";
+            else if (re.TextCountDrift != 0)
+                err = $"保存被拒绝：本地化串表条数偏离公式 2+2T+O+I+E（差 {re.TextCountDrift:+#;-#;0}）——" +
+                      "官方 QuestEditor 按该公式索引串表，条数不符会直接报错。";
         }
         if (err != null) return err;
 

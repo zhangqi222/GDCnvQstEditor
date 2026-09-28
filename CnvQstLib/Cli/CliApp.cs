@@ -393,10 +393,18 @@ public static class CliApp
     {
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
         int pass = 0, fail = 0;
-        foreach (string file in BatchOps.EnumerateFiles(args[1]).Where(f => Path.GetExtension(f).Equals(".cnv", StringComparison.OrdinalIgnoreCase)))
+        foreach (string file in BatchOps.EnumerateFiles(args[1]))
         {
             try
             {
+                if (Path.GetExtension(file).Equals(".qst", StringComparison.OrdinalIgnoreCase))
+                {
+                    var q = QstFile.Parse(File.ReadAllBytes(file));
+                    if (!q.Valid) continue;
+                    var report = RunQstEditSequence(q);
+                    VerifyQst(q, file, Path.GetFileName(file), @out, ref pass, ref fail, report);
+                    continue;
+                }
                 var c = CnvFile.Parse(File.ReadAllBytes(file));
                 if (!c.Valid || c.Steps.Count == 0) continue;
                 RunEditSequence(c);
@@ -453,6 +461,59 @@ public static class CliApp
             {
                 fail++;
                 @out.WriteLine($"FAIL  {name}  round-trip 未过（valid={r2.Valid} tiled={r2.Tiled} loc={r2.LocOffsetMatches} err={r2.Error}）");
+            }
+        }
+        catch (Exception e)
+        {
+            fail++;
+            @out.WriteLine($"FAIL  {name}  序列化异常 {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// QST 结构编辑自检：新增/删除 task、objective、event 后，串表必须仍严格等于公式
+    /// `2 + 2T + O + I + E`，且重解析三检查全过、字节一致。
+    /// 返回这趟编辑的动作描述，便于在输出里看清做了什么。
+    /// </summary>
+    private static string RunQstEditSequence(QstFile q)
+    {
+        var t = q.Tasks.FirstOrDefault() ?? q.AddTask();
+        int t0 = q.Tasks.Count, o0 = q.ObjectiveCount, i0 = q.IncentiveCount, e0 = q.EventCount;
+
+        q.AddObjective(t);
+        q.AddObjective(t);
+        q.AddEvent(t, true);            // OnAccept
+        q.AddEvent(t, false);           // OnComplete
+        var extra = q.AddTask();
+        q.AddObjective(extra);
+        q.AddEvent(extra, false);
+
+        // 删：删掉刚加的 task（及其目标/事件），删掉 t 的最后一个 objective 与最后一个 event
+        q.RemoveTask(extra);
+        if (t.Objectives.Count > 1) q.RemoveObjective(t, t.Objectives[^1]);
+        if (t.Events.Count > 1) q.RemoveEvent(t, t.Events[^1]);
+        if (t.Incentives.Count > 1) q.RemoveEvent(t, t.Incentives[^1]);
+
+        int drift = q.TextCountDrift;
+        if (drift != 0)
+            throw new InvalidDataException($"编辑后串表条数偏离公式 {drift:+#;-#;0}（应为 {q.RequiredTextCount}，实为 {q.Languages[0].Texts.Count}）");
+
+        return $"T {t0}→{q.Tasks.Count}  O {o0}→{q.ObjectiveCount}  I {i0}→{q.IncentiveCount}  E {e0}→{q.EventCount}  串表={q.Languages[0].Texts.Count}";
+    }
+
+    private static void VerifyQst(QstFile q, string fullPath, string name, TextWriter @out, ref int pass, ref int fail, string note)
+    {
+        try
+        {
+            byte[] re = q.Write();
+            var r2 = QstFile.Parse(re);
+            bool ok = r2.Valid && r2.Tiled && r2.LocOffsetMatches && r2.TextCountDrift == 0
+                      && r2.Write().AsSpan().SequenceEqual(re);
+            if (ok) { pass++; @out.WriteLine($"PASS  {name,-32} {note}"); }
+            else
+            {
+                fail++;
+                @out.WriteLine($"FAIL  {name}  round-trip 未过（valid={r2.Valid} tiled={r2.Tiled} loc={r2.LocOffsetMatches} drift={r2.TextCountDrift} err={r2.Error}）");
             }
         }
         catch (Exception e)

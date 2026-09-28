@@ -178,9 +178,12 @@ Objective                    Event
 **uid 不落盘**：`Load` 从 1 起置计数器并按文档顺序穿线分配（每个 task 占 2 个、objective/event 各 1 个）。
 **目标列表只有一份**，运行时克隆成三个难度槽（`+0x08 + 24*(difficulty+1)`）。
 
-**task 行只读不增删**：task 增删会牵连整张本地化块逐槽映射（task 与文本表按槽对应，
-增删 task 后"2 之后对应关系仍未定"），故 QST 表格化编辑器对 task 行抑制增删；
-objective/event 沿用既有增删能力。QST 本地化逐 task 映射未解，故 QST 表不含"文本"列。
+**task / objective / event 均可增删（2026-09-28 起）**：增删的唯一约束就是 §3.3 的串表公式与槽位顺序
+——按它重建串表即可，文本随所属实体移动（`QstFile.AddTask/RemoveTask/AddObjective/RemoveObjective/
+AddEvent/RemoveEvent` 内部先做槽归属快照、再按新结构回填）。GUI 的 QST 表格已解锁 task 行增删，
+且状态栏与保存守卫都加了"✓串表公式"检查（条数不符直接拒绝落盘——官方 QuestEditor 会抛异常）。
+
+历史说明（保留）：早期因"2 之后与 task 的映射未定"，QST 表格曾禁止 task 行增删、且不含"文本"列。
 
 观测补充（本地锚定）：task 的 +0xA8 常等于前一个 task 的 `BeginQuestTask` 的 I 参数；
 该 I 与 CNV `QuestTaskComplete` 的 I 均为"文件引用 hash 左移 8 位"

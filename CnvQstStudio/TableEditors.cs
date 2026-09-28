@@ -559,6 +559,7 @@ internal sealed class QstTableEditor : Panel
 
     private void BuildBar()
     {
+        _bar.Items.Add(new ToolStripButton(L.T("＋Task", "+ Task"), null, (_, _) => AddTask()));
         _bar.Items.Add(new ToolStripButton(L.T("＋Objective", "+ Objective"), null, (_, _) => AddObjective()));
         _bar.Items.Add(new ToolStripButton(L.T("＋Event", "+ Event"), null, (_, _) => AddEvent()));
         _bar.Items.Add(new ToolStripButton(L.T("＋Incentive", "+ Incentive"), null, (_, _) => AddIncentive()));
@@ -640,11 +641,19 @@ internal sealed class QstTableEditor : Panel
 
     private void RefreshRow(int i) { _grid.Rows[i].SetValues(RowValues(_rows[i])); RecalcHeights(); }
 
+    // 结构改动统一走 QstFile 的增删方法：它们会按公式 `2+2T+O+I+E` 重建本地化表，
+    // 文本随所属实体移动（官方编辑器按该公式索引串表，条数不符会直接抛异常）。
+    private void AddTask()
+    {
+        _qst.AddTask();
+        _changed(); Bind(_doc, _changed);
+    }
+
     private void AddObjective()
     {
         var t = ActiveTask();
         if (t == null) return;
-        t.Objectives.Add(new QstObjective());
+        _qst.AddObjective(t);
         _changed(); Bind(_doc, _changed);
     }
 
@@ -652,7 +661,7 @@ internal sealed class QstTableEditor : Panel
     {
         var t = ActiveTask();
         if (t == null) return;
-        t.Events.Add(new QstEvent());
+        _qst.AddEvent(t, incentive: false);
         _changed(); Bind(_doc, _changed);
     }
 
@@ -660,7 +669,7 @@ internal sealed class QstTableEditor : Panel
     {
         var t = ActiveTask();
         if (t == null) return;
-        t.Incentives.Add(new QstEvent());
+        _qst.AddEvent(t, incentive: true);
         _changed(); Bind(_doc, _changed);
     }
 
@@ -670,15 +679,14 @@ internal sealed class QstTableEditor : Panel
         var r = _rows[_grid.SelectedRows[0].Index];
         switch (r)
         {
-            case QstTaskRow: System.Windows.Forms.MessageBox.Show(FindForm(), L.T("task 行不可删除（需先解码本地化槽映射）。", "Task rows cannot be deleted (localization slot mapping not yet decoded)."), L.T("删除", "Delete"), System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information); return;
+            case QstTaskRow tr:
+                if (!_qst.RemoveTask(tr.T)) return;
+                break;
             case QstEventRow er:
-                {
-                    var t = TaskOf(er.E);
-                    if (!t.Incentives.Remove(er.E)) t.Events.Remove(er.E);
-                    break;
-                }
+                if (!_qst.RemoveEvent(TaskOf(er.E), er.E)) return;
+                break;
             case QstObjectiveRow or:
-                TaskOf(or.O).Objectives.Remove(or.O);
+                if (!_qst.RemoveObjective(TaskOf(or.O), or.O)) return;
                 break;
         }
         _changed(); Bind(_doc, _changed);

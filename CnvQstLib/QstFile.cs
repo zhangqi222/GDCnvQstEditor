@@ -78,6 +78,111 @@ public sealed class QstFile
     /// <summary>串表条数与公式不符时返回差值（0 = 正确）。</summary>
     public int TextCountDrift => (Languages.Count > 0 ? Languages[0].Texts.Count : 0) - RequiredTextCount;
 
+    // ------------------------------------------------------------------
+    // 结构编辑（task / objective / event 增删）：按公式与槽位顺序重建本地化表。
+    //
+    // 槽位顺序（官方 QuestEditor 中逐槽核实，见 qst_order.qst 的截图）：
+    //   [组名, 任务名] + 每个 task: [标题, 描述, incentives(OnAccept)…, objectives…, events(OnComplete)…]
+    // 文本按下标**跟随所属实体**移动（快照按实体身份保存），因此增删不会串行。
+    // ------------------------------------------------------------------
+
+    /// <summary>槽位归属键：(所属对象, 同对象内的槽号)。组名/任务名的 owner 是 QstFile 自身。</summary>
+    private static List<(object owner, int tag)> SlotKeys(QstFile q)
+    {
+        var keys = new List<(object, int)> { (q, 0), (q, 1) };
+        foreach (var t in q.Tasks)
+        {
+            keys.Add((t, 0));                                   // 标题
+            keys.Add((t, 1));                                   // 描述
+            for (int i = 0; i < t.Incentives.Count; i++) keys.Add((t, 2 + i));
+            for (int i = 0; i < t.Objectives.Count; i++) keys.Add((t, 2 + t.Incentives.Count + i));
+            for (int i = 0; i < t.Events.Count; i++) keys.Add((t, 2 + t.Incentives.Count + t.Objectives.Count + i));
+        }
+        return keys;
+    }
+
+    /// <summary>取出某语言块的"槽归属 → 文本"快照（结构改动前调用）。</summary>
+    public Dictionary<(object owner, int tag), string> SnapshotTexts(int language = 0)
+    {
+        var map = new Dictionary<(object, int), string>();
+        if (language >= Languages.Count) return map;
+        var keys = SlotKeys(this);
+        var texts = Languages[language].Texts;
+        for (int i = 0; i < keys.Count && i < texts.Count; i++) map[keys[i]] = texts[i].Text;
+        return map;
+    }
+
+    public List<Dictionary<(object, int), string>> SnapshotAll() =>
+        Languages.Select((_, i) => SnapshotTexts(i)).ToList();
+
+    /// <summary>按当前结构重建全部语言块的串表；有快照则按实体身份回填文本，缺失的填空槽。</summary>
+    public void RebuildTexts(List<Dictionary<(object, int), string>>? snapshot = null)
+    {
+        var keys = SlotKeys(this);
+        for (int li = 0; li < Languages.Count; li++)
+        {
+            var old = snapshot != null && li < snapshot.Count ? snapshot[li] : null;
+            var texts = new List<GdString>(keys.Count);
+            foreach (var k in keys)
+                texts.Add(new GdString(old != null && old.TryGetValue(k, out var v) ? v : ""));
+            Languages[li].Texts = texts;
+        }
+    }
+
+    /// <summary>新增 task（本地化表按公式补槽）。</summary>
+    public QstTask AddTask(QstTask? task = null)
+    {
+        var snap = SnapshotAll();
+        task ??= new QstTask();
+        Tasks.Add(task);
+        RebuildTexts(snap);
+        return task;
+    }
+
+    /// <summary>删除 task（含其 objectives/events 的槽位）。</summary>
+    public bool RemoveTask(QstTask task)
+    {
+        var snap = SnapshotAll();
+        bool ok = Tasks.Remove(task);
+        if (ok) RebuildTexts(snap);
+        return ok;
+    }
+
+    public QstObjective AddObjective(QstTask task, QstObjective? objective = null)
+    {
+        var snap = SnapshotAll();
+        objective ??= new QstObjective();
+        task.Objectives.Add(objective);
+        RebuildTexts(snap);
+        return objective;
+    }
+
+    public bool RemoveObjective(QstTask task, QstObjective objective)
+    {
+        var snap = SnapshotAll();
+        bool ok = task.Objectives.Remove(objective);
+        if (ok) RebuildTexts(snap);
+        return ok;
+    }
+
+    /// <summary>incentive=true 加进 Incentives（编辑器 OnAccept），否则加进 Events（OnComplete）。</summary>
+    public QstEvent AddEvent(QstTask task, bool incentive, QstEvent? evt = null)
+    {
+        var snap = SnapshotAll();
+        evt ??= new QstEvent();
+        (incentive ? task.Incentives : task.Events).Add(evt);
+        RebuildTexts(snap);
+        return evt;
+    }
+
+    public bool RemoveEvent(QstTask task, QstEvent evt)
+    {
+        var snap = SnapshotAll();
+        bool ok = task.Incentives.Remove(evt) || task.Events.Remove(evt);
+        if (ok) RebuildTexts(snap);
+        return ok;
+    }
+
     public int RecordCount => Tasks.Sum(t =>
         t.Incentives.Sum(e => e.Conditions.Records.Count + e.Actions.Records.Count)
         + t.Objectives.Sum(o => o.Conditions.Records.Count + o.Actions.Records.Count)
