@@ -80,6 +80,7 @@ dotnet $T verify      <file|目录>                    # 批量：解析 + tilin
 dotnet $T anchors     <file>                        # 条件/动作类型 ID 锚定工作台
 dotnet $T legacytxt   <file>                        # GrimDawnCnvQstToTXT v0.9 算法基线（仅比对用）
 dotnet $T txt-diff    <目录>                        # 新 TXT 导出 vs v0.9 基线全量比对
+dotnet $T vocab                                    # 官方编辑器选项 ↔ 类型 ID 对照表（命名证据）
 dotnet $T new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]  # 新建对话 v6
 dotnet $T new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题] [--desc 描述]  # 新建任务 v9
 ```
@@ -97,8 +98,9 @@ dotnet $T new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题
 
 ```
 CnvQstLib/     解析+序列化库（net8.0，GUI/CLI 共用）：BinaryReaderEx/WriterEx、CnvFile、QstFile、
-               Scriptable（26 条件+27 动作 body 表+参数字段名）、Names（类型命名+本地锚定：
-               已命名（含编辑器锚定/语料推断，推断带"（推断）"后缀）与 TypeN（未命名））、
+               Scriptable（26 条件+27 动作 body 表+参数字段名）、Names（类型命名三层：引擎证实 /
+               金样锚定 / 官方选项推断，推断带"（推断）"后缀）、EditorVocab（官方编辑器选项词表
+               + type 对照，`vocab` 命令输出）、
                Dump、TextExport（官方 TXT + v0.9 基线）、JsonIO（全保真双向）、
                Cli/CliApp（CLI 命令）、Cli/Census（语料普查）、Cli/BatchOps（批量服务）、Creation（新建工厂）
 CnvQstTool/    CLI 薄壳（Main → CliApp.Run），开发/CI/脚本用
@@ -122,6 +124,8 @@ BinAnalyzer/           早期分析工具（留档）
 
 ## 已知未解（不影响解析与写回，均按"保留原字节"处理）
 
-若干字段语义（step+0x50、task+0xA8/0xAC、版本门控 flag 位等）、14 条件 + 10 动作的语义名、
+若干字段语义（step+0x50、task+0xA8/0xAC、版本门控 flag 位等）、
+条件 6 类的语义名（2/5/13/16/23/24，另有 Hasbuff、OperMerchantWindow 未定位）、
 条件集合 logic 字的引擎定义（本地观测 0=AND、1=OR）、比较符编码、
 QST 本地化串 2 之后与 task 的精确映射——详见 CnvQstFormatDecoded.md 第七章。
+（动作 27 个可用槽已全部给出名字，其中 9 个为推断；`vocab` 命令可打印逐项证据与待核对清单。）

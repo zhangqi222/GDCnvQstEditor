@@ -3,12 +3,15 @@ namespace CnvQst;
 /// <summary>
 /// 类型 ID → 语义名。
 ///
-/// 两层来源：
+/// 三层来源（证据由强到弱）：
 ///   ① gd-utility 从 Game.dll 导出表与引擎诊断串证实的类名（"ScriptableCondition_HasFaction" 等），
 ///      证据见 参考资料/gd-utility/docs/QST.md §Bodies/§Naming；
 ///   ② 本地锚定表 <see cref="ConditionEditorNames"/> / <see cref="ActionEditorNames"/>：
 ///      用 cnv示例/qst示例 中带编辑器 UI 手工对照的文件，把编辑器下拉名钉到二进制类型 ID 上
-///      （证据记录在 CnvQstFormatDecoded.md §本地锚定）。命名不能套用编辑器下拉列表的序号。
+///      （证据记录在 CnvQstFormatDecoded.md §本地锚定）；
+///   ③ 官方选项词表 <see cref="EditorVocab"/>（cnv示例/cnv字段选项.txt 抄录）：按 body 形状唯一匹配
+///      补入的名字，语料中样本为 0，标"（推断）"，待官方编辑器真机核对。
+/// 命名不能套用编辑器下拉列表的序号（编辑器按字母排序，与类型 ID 无关）。
 /// </summary>
 public static class Names
 {
@@ -69,7 +72,9 @@ public static class Names
         /* 6*/ "GiveItem",         /* 7*/ "GiveLevel",
         /* 8*/ "GiveExperience",   /* 9*/ null,
         /*10*/ null,               /*11*/ "LuaScript",
-        /*12*/ null,               /*13*/ "SoundPakPreload",
+        // 13：gd-utility 记作 SoundPakPreload（其自身亦未证实）；官方选项表有 PlaySound(SoundRecord)
+        //     且 body=S 吻合，故此处不填，交由推断层给出 PlaySound（见 ActionInferredNames）。
+        /*12*/ null,               /*13*/ null,
         /*14*/ null,               /*15*/ "GiveSkillPoint",
         /*16*/ null,               /*17*/ null,
         /*18*/ "GiveAttribPoint",  /*19*/ null,
@@ -118,10 +123,25 @@ public static class Names
     // 动作 9/10：body S(单一 token 串)，编辑器 GiveToken/RemoveToken 二选一，语料无法区分
     //          → 9=RemoveToken、10=GiveToken（推断，二者可能互换）。
     // 动作 19：body S，串全部 "EV_…" 前缀 → ScriptEvent（推断）。
+    // 以下按官方选项表（cnv示例/cnv字段选项.txt）+ body 形状唯一匹配补入，样本 0、待真机核对：
+    //   条件 15：body SI(物品记录 + 次数) ← 官方 UsedQuestItem（ItemRecord + NumUsed），唯一空余 SI。
+    //   条件 20：body SB(token 串 + 布尔) ← 官方 AnyoneHasToken（TokenName + HasToken），唯一空余 SB。
+    //   条件 22：body I，118 例全在 OR 长列表（最长 22 条），取值成连续簇（0x6BCE2/0x6BCEC/0x6BCF6…），
+    //            门控奖励/忠诚包商人 → 官方 OwnsDLC（DLC_ID + 比较符）。候选哈希条件未排除。
+    //   条件 25：body IB(枚举 + 布尔) ← 官方 HasMastery（MasteryName SkillClass01..30 + HasMastery），
+    //            唯一 IB 槽，形状唯一匹配。
+    //   动作 12：body S ← 官方 DebugPrint（Text）。
+    //   动作 13：body S ← 官方 PlaySound（SoundRecord）；gd-utility 记作 SoundPakPreload（预载 SoundPak）。
+    //   动作 23：body S ← 官方 UnlockFaction（FactionType）。
+    //   动作 24：body SI ← 官方 SetFaction（FactionType + Value）；与动作 5（GiveFaction）同形状，二者可能互换。
     public static readonly Dictionary<uint, string> ConditionInferredNames = new()
     {
         [3] = "IsLevel",
         [8] = "HasMoney",
+        [15] = "UsedQuestItem",
+        [20] = "AnyoneHasToken",
+        [22] = "OwnsDLC",
+        [25] = "HasMastery",
     };
 
     public static readonly Dictionary<uint, string> ActionInferredNames = new()
@@ -130,15 +150,22 @@ public static class Names
         [5] = "GiveFaction",
         [9] = "RemoveToken",
         [10] = "GiveToken",
+        [12] = "DebugPrint",
+        [13] = "PlaySound",
         [19] = "ScriptEvent",
+        [23] = "UnlockFaction",
+        [24] = "SetFaction",
     };
 
     /// <summary>有实例但仍无法命名的类型（样本 0 或编辑器无对应词）的短提示，UI 下拉/列表用。</summary>
     public static readonly Dictionary<uint, string> ConditionHints = new()
     {
-        [22] = "哈希条件",   // 选择步 OR 多选门控，奖励/忠诚包商人；详见格式文档
-        [20] = "候选 AnyoneHasToken（样本0）",
-        [25] = "候选 HasMastery（样本0）",
+        [2] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
+        [5] = "候选 IsHardcore/KnowsPlayer（样本0，二者待定）",
+        [13] = "候选 IsHardcore/KnowsPlayer（样本0，二者待定）",
+        [16] = "HasKilled 变体：候选 HasKilledFaction/HasKilledMonsterClass/HasKilledProxy",
+        [23] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
+        [24] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
     };
 
     /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。</summary>

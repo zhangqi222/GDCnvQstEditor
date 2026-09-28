@@ -173,17 +173,17 @@ public static class Scriptable
         /*12*/ ["Function"],                                    // Lua 条件
         /*13*/ null,
         /*14*/ ["QuestFile", "Task", "OnTask"],                 // OnQuestTask
-        /*15*/ null,
+        /*15*/ ["ItemRecord", "NumUsed"],                       // UsedQuestItem（推断）
         /*16*/ ["MonsterRecords"],                              // HasKilledVariant
         /*17*/ [],                                              // WaitForCompletion
         /*18*/ ["TokenName", "HasToken"],                       // ServerHasToken
         /*19*/ ["QuestFile", "QuestBlocked"],                   // QuestBlocked
-        /*20*/ null,
+        /*20*/ ["TokenName", "HasToken"],                       // AnyoneHasToken（推断）
         /*21*/ ["Name", "RandomValue"],                         // CheckRandomValue
-        /*22*/ null,
+        /*22*/ ["DLC_ID"],                                      // OwnsDLC（推断）
         /*23*/ null,
         /*24*/ null,
-        /*25*/ null,
+        /*25*/ ["MasteryName", "HasMastery"],                   // HasMastery（推断）
     };
 
     private static readonly string?[]?[] ActionParams =
@@ -200,8 +200,8 @@ public static class Scriptable
         /* 9*/ ["TokenName"],                                   // RemoveToken（推断）
         /*10*/ ["TokenName"],                                   // GiveToken（推断）
         /*11*/ ["Function"],                                    // Lua 动作
-        /*12*/ null,
-        /*13*/ ["SoundPak"],                                    // SoundPakPreload
+        /*12*/ ["Text"],                                        // DebugPrint（推断）
+        /*13*/ ["SoundRecord"],                                 // PlaySound（推断；gd-utility 记作 SoundPakPreload）
         /*14*/ ["AnimationType"],                               // PlayAnimation
         /*15*/ ["NumSkillpoints"],                              // GiveSkillPoint
         /*16*/ null,
@@ -211,8 +211,8 @@ public static class Scriptable
         /*20*/ ["ItemRecord", "NumItems"],                      // GiveRandomItem
         /*21*/ ["Name", "Min", "Max"],                          // GenerateRandomValue
         /*22*/ ["SkillRecord"],                                 // CastSkill
-        /*23*/ null,
-        /*24*/ null,
+        /*23*/ ["FactionType"],                                 // UnlockFaction（推断）
+        /*24*/ ["FactionType", "Value"],                        // SetFaction（推断；与 5 GiveFaction 可能互换）
         /*25*/ ["NumDevotionPoints"],                           // GiveDevotion
         /*26*/ ["TributeAmount"],                               // GiveTribute
         /*27*/ ["TutorialPage"],                                // UnlockTutorial

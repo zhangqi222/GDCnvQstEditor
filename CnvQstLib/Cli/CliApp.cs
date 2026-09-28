@@ -27,6 +27,7 @@ public static class CliApp
             "txt-diff" => CmdTxtDiff(args, @out),
             "anchors" => CmdAnchors(args, @out),
             "census" => CmdCensus(args, @out),
+            "vocab" => CmdVocab(args, @out),
             "selftest" => CmdSelfTest(args, @out),
             "new" => CmdNew(args, @out),
             _ => Unknown(args[0], err),
@@ -51,6 +52,7 @@ public static class CliApp
           txt-diff    <dir>                           新 TXT 导出 vs v0.9 基线，全量比对
           anchors     <file>                          条件/动作类型锚定工作台
           census      <dir>                           全样本类型普查（命名证据表）
+          vocab                                       官方编辑器选项 ↔ 类型 ID 对照表
           selftest    <dir>                           结构编辑自检（增/删/移后 round-trip 三检）
           new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]
           new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题] [--desc 描述]
@@ -255,6 +257,12 @@ public static class CliApp
     {
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
         @out.Write(Census.Report(BatchOps.EnumerateFiles(args[1])));
+        return 0;
+    }
+
+    static int CmdVocab(string[] args, TextWriter @out)
+    {
+        @out.Write(EditorVocab.Report());
         return 0;
     }
 

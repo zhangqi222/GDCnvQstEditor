@@ -188,29 +188,29 @@ ConditionCollection(n)            ActionCollection(n)
 |---|---|---|---|
 | 0 | `S B` | OnQuest | |
 | 1 | `S I B` | QuestTaskComplete |（I=任务标识=引用hash<<8，编辑器显示 "?"）|
-| 2 | `I` | 未命名 | 样本 0 |
+| 2 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 23/24 同形状，待真机核对）|
 | 3 | `I` | 未命名 | **IsLevel**（推断；语料值仅 {5,10} 3 例）|
 | 4 | `I` | 未命名 | **IsDifficulty**（0=Normal/1=Epic/2=Legendary，mq_burrwitch task4 三事件同现证实）|
-| 5 | `B` | 未命名 | 候选 IsHardcore/KnowsPlayer（样本 0）|
+| 5 | `B` | 未命名 | 候选组 {IsHardcore, KnowsPlayer}（样本 0；与 13 同形状，二者待定）|
 | 6 | `S I` | HasFaction |（S=阵营名，I=数值；编辑器比较符与 subType 的关系未定）|
 | 7 | `S B` | 未命名 | **HasToken**（refugee_01 `BLACKSMITH_APPRENTICE`）|
 | 8 | `I` | 未命名 | **HasMoney**（推断；值域 100–12000，52 例中 46 例与 HasItem 同列表，疑似购买/交换检查）|
 | 9 | `S I b` | HasItem |（b=CompleteOnly，推断，编辑器签名）|
-| 10, 16 | `P` | HasKilled / HasKilled(变体) |（P 尾字=KillCount，推断，编辑器签名）|
+| 10, 16 | `P` | HasKilled / HasKilled(变体) |（P 尾字=KillCount，推断，编辑器签名）；官方另有 HasKilledFaction / HasKilledMonsterClass / HasKilledProxy 三个同族选项未定位（样本 0）|
 | 11 | `S I i B` | HasQuestObjective | |
 | 12 | `L` | LuaScript（条件）| |
-| 13 | `B` | 未命名 | 候选 IsHardcore/KnowsPlayer（样本 0）|
+| 13 | `B` | 未命名 | 候选组 {IsHardcore, KnowsPlayer}（样本 0；与 5 同形状，二者待定）|
 | 14 | `S I B` | OnQuestTask | |
-| 15 | `S I` | 未命名 | 候选 UsedQuestItem（样本 0）|
+| 15 | `S I` | **UsedQuestItem**（推断） | 官方 ItemRecord+NumUsed；唯一空余 `SI` 槽，样本 0 |
 | 17 | （空）| 未命名 | **WaitForCompletion**（mq_burrwitch task4 目标唯一条件，无参数）|
 | 18 | `S B` | 未命名 | **ServerHasToken**（burrwitch OR 对的右侧）|
 | 19 | `S B` | QuestBlocked | |
-| 20 | `S B` | 未命名 | 候选 AnyoneHasToken（样本 0）|
+| 20 | `S B` | **AnyoneHasToken**（推断） | 官方 TokenName+HasToken；唯一空余 `SB` 槽，样本 0 |
 | 21 | `S I` | CheckRandomValue | |
-| 22 | `I` | 未命名 | **哈希条件**（仅选择步、全部 OR 列、hash 连续簇；奖励/忠诚包商人门控，如 npc_bonusitems_01；编辑器词表无对应条目）|
-| 23 | `I` | 未命名 | 样本 0 |
-| 24 | `I` | 未命名 | 样本 0 |
-| 25 | `I B` | 未命名 | 候选 HasMastery（样本 0）|
+| 22 | `I` | **OwnsDLC**（推断） | 118 例**全部**落在 OR 长列表（最长 22 条），取值成连续簇（0x6BCE2/0x6BCEC/0x6BCF6…），门控奖励/忠诚包商人（npc_bonusitems_01）；官方 OwnsDLC=DLC_ID+比较符，形状吻合。旧注"哈希条件"未排除 |
+| 23 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 2/24 同形状）|
+| 24 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 2/23 同形状）|
+| 25 | `I B` | **HasMastery**（推断） | 官方 MasteryName(SkillClass01..30)+HasMastery；**唯一 `IB` 槽**，形状唯一匹配，样本 0 |
 
 ### 4.3 动作（27 类；工厂对 0 和 16 返回 null，无文件使用）
 
@@ -221,15 +221,15 @@ ConditionCollection(n)            ActionCollection(n)
 | 2 | `S` | 未命名 | **CompleteQuest**（burrwitch task4 OnComplete 第二事件）|
 | 3 | `S I` | 未命名 | **CompleteQuestTask**（推断；body=任务文件+hash，常与 BeginQuestTask 同为大列表）|
 | 4 | `I` | GiveMoney | |
-| 5 | `S I` | 未命名 | **GiveFaction**（推断；S=阵营名、I=数值 50–400，QST 792 例像声望奖励；候选 SetFaction 未排除）|
+| 5 | `S I` | **GiveFaction**（推断） | S=阵营名、I=数值 50–400，QST 792 例像声望奖励；与 24 SetFaction 同形状，**二者可能互换** |
 | 6 | `S I` | GiveItem | |
 | 7 | `I` | GiveLevel | |
 | 8 | `I` | GiveExperience |（350/22000/54000 金额已对上编辑器）|
 | 9 | `S` | 未命名 | **RemoveToken**（推断；与 10 可能互换）|
 | 10 | `S` | 未命名 | **GiveToken**（推断；与 9 可能互换）|
 | 11 | `L` | LuaScript（动作）| |
-| 12 | `S` | 未命名 | 样本 0 |
-| 13 | `S` | （预载 SoundPak）| 疑似 PlaySound，待证据 |
+| 12 | `S` | **DebugPrint**（推断） | 官方 Text 串；样本 0 |
+| 13 | `S` | **PlaySound**（推断） | 官方 SoundRecord(file)；gd-utility 记作 SoundPakPreload（其自身亦未证实），以官方词表为准 |
 | 14 | `I` | 未命名 | **PlayAnimation**（jailor_01 根节点唯一动作，I=9 ↔ 编辑器枚举 "Chat"）|
 | 15 | `I` | GiveSkillPoint | |
 | 17 | `S` | 未命名 | **Notification**（burrwitch `tagNotification_…` 串）|
@@ -238,8 +238,8 @@ ConditionCollection(n)            ActionCollection(n)
 | 20 | `S I` | GiveRandomItem | |
 | 21 | `S I I` | GenerateRandomValue | |
 | 22 | `S` | CastSkill | |
-| 23 | `S` | 未命名 | 样本 0 |
-| 24 | `S I` | 未命名 | 样本 0 |
+| 23 | `S` | **UnlockFaction**（推断） | 官方 FactionType 串；样本 0 |
+| 24 | `S I` | **SetFaction**（推断） | 官方 FactionType+Value；与 5 GiveFaction 同形状，**二者可能互换**，样本 0 |
 | 25 | `I` | GiveDevotion | |
 | 26 | `I` | GiveTribute | |
 | 27 | `I` | UnlockTutorial | |
@@ -283,8 +283,21 @@ CNV 侧 21,290 节点 / 11,326 条件+动作来自 gd 语料（480 文件）。
 ## 七、仍然未知（按"保留原字节"策略贯穿解析与写回）
 
 step 的 +0x50 字、task 的 +0xA8/+0xAC、两个版本门控 flag 位、objective 的两个 u32、event 的一个 u32、
-头部 +0x10、条件集合 logic 字的引擎语义（本地观测 0=AND/1=OR）、条件 {2,23,24} 与动作 {12,23,24}
-的语义名（样本 0）、条件 22 哈希门控所引的字符串、条件 5/13/15/20/25 候选名、动作 13 名称证据、
-推断名的真机核对（条件 3/8，动作 3/5/9/10/19；9/10、3/5 两对可能互换/未排除）、
-比较符（编辑器 `>=` 等）的编码位置、step unknown 位 0x4/0x8/0x10/0x20 与编辑器
-{Once Only/Always Show/Unimportant} 的对应。
+头部 +0x10、条件集合 logic 字的引擎语义（本地观测 0=AND/1=OR）。
+
+**命名遗留**（官方选项表 2026-09-28 补入后仍待真机核对的部分，见 §4.2/§4.3 标注）：
+- 条件 2/23/24：候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge} 四选三（同 body `I`）
+- 条件 5/13：候选组 {IsHardcore, KnowsPlayer} 二选二（同 body `B`）
+- 条件 16：HasKilled 同族三选项 HasKilledFaction / HasKilledMonsterClass / HasKilledProxy 未定位
+- Hasbuff（BuffName+HasBuff）：官方有此选项，但二进制已无空余 `SB` 槽，疑为 HasToken 系的 subType 变体
+- OperMerchantWindow（编辑器点击报错）：疑为动作工厂返回 null 的 type 0/16
+- 推断名真机核对：条件 3/8/15/20/22/25，动作 3/5/9/10/12/13/19/23/24
+  （其中 9/10 RemoveToken/GiveToken、5/24 GiveFaction/SetFaction 两对可能互换，未排除）
+
+**结构性未知**：比较符（编辑器 `>=` 等）在官方编辑器里是独立字段，但二进制 body 中找不到它的位置
+（候选藏于 subType 或 step/task 的 unknown 位）；step unknown 位 0x4/0x8/0x10/0x20 与编辑器
+{Once Only/Always Show/Unimportant} 的对应（CNV 语料：0x8×83、0x10×57、0x20×43、0x4×3，仅出现在
+speech 步，四个位对应三个开关）。
+
+> 官方编辑器的条件下拉 30 项、动作下拉 28 项，而二进制只有 26 个条件槽与 27 个可用动作槽——
+> 差额说明存在 subType 变体或空实现项。逐项对照见 CLI：`CnvQstTool vocab`。
