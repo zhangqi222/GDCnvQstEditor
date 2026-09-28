@@ -170,7 +170,14 @@ u32 languageCount（上限 64）
 编辑器里对应两个菜单项 `cmiPrimaryQuest`（Main Quest）/ `cmiSecondaryQuest`。
 
 **task 的 isBlocker / dontPropagate 在 task 节点的右键菜单里**（`cmiBlockerTask` / `cmiDontPropagate`），
-根节点菜单上没有——实测用户第一轮没找到就是这个原因。
+根节点菜单上没有——实测用户第一轮没找到就是这个原因。UI 上 dontPropagate 那一项的标题写字面看着
+像 "Don't Repeatable"（官方命名如此，容易误解成 Repeatable），但处理器调用的是
+`QuestNode_Task.SetDontPropagate`，与本题材的 v≥9 尾字节一一对应。
+
+**实测闭环（用户标记后回读官方文件）**：在 QuestEditor 里把第 2 个 task 标 block、第 3 个标
+Don't Repeatable 后存盘，本项目 dump 得到
+`Task#2 isBlocker=1 dontPropagate=0`、`Task#3 isBlocker=0 dontPropagate=1` —— 两个尾字节的
+位置与含义就此确认。
 
 **uid** 由官方工具随机生成：`QuestEditor.FormMain.miQuestAddTask_Click` 就是
 `quest.AddTask(App.random.UInt())`；新建 quest 同理。本项目 `QstFile.AddTask/AddObjective`
