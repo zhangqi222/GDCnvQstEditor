@@ -217,11 +217,11 @@ internal sealed class ScriptListEditor : Panel
 
     private void RebuildHeader()
     {
-        string cn = (_isCondition ? "条件" : "动作");
-        string en = _isCondition ? "Conditions" : "Actions";
+        string cn = L.T(_isCondition ? "条件" : "动作");
+        // en 变量已并入语言包（"已有{0}…" 键），不再需要英文名拼接
         string logic = _isCondition ? $"  · {Names.LogicWord(_list.Logic)} ({_list.Logic})" : "";
         string empty = _list.Present ? "" : L.T("  （空列表）", "  (empty)");
-        _existingBox.Text = L.T($"已有{cn}（{_list.Records.Count}）{logic}{empty}", $"Existing {en} ({_list.Records.Count}){logic}{empty}");
+        _existingBox.Text = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
     }
 
     private void AddRecord()
@@ -416,7 +416,7 @@ internal sealed class DynamicFieldPanel : Panel
         Controls.Clear();
         if (_rec == null)
         {
-            Controls.Add(new Label { Text = "（未选择记录）", AutoSize = true, ForeColor = Color.Gray });
+            Controls.Add(new Label { Text = L.T("（未选择记录）"), AutoSize = true, ForeColor = Theme.Muted });
             ResumeLayout();
             _building = false;
             return;
@@ -430,7 +430,7 @@ internal sealed class DynamicFieldPanel : Panel
             {
                 case FieldKind.Str:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : $"串[{i}]", 0, y + 3, 60));
+                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("串[{0}]", i), 0, y + 3, 60));
                     var box = Gui.Box(66, y, Math.Min(Width - 80, 460), f.S.Text);
                     box.TextChanged += (_, _) => { if (_building) return; f.S.SetText(box.Text); _changed(); };
                     Controls.Add(box);
@@ -439,11 +439,11 @@ internal sealed class DynamicFieldPanel : Panel
                 }
                 case FieldKind.U32:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : $"数值[{i}]", 0, y + 3, 60));
+                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("数值[{0}]", i), 0, y + 3, 60));
                     var box = Gui.Box(66, y, 150, Gui.U32Text(f.U));
                     var note = new Label
                     {
-                        Text = f.Param.Length > 0 ? f.Note : "（语义未知；支持 0x 十六进制）",
+                        Text = f.Param.Length > 0 ? f.Note : L.T("（语义未知；支持 0x 十六进制）"),
                         AutoSize = true,
                         ForeColor = Color.Gray,
                         Location = new Point(224, y + 3),
@@ -464,7 +464,7 @@ internal sealed class DynamicFieldPanel : Panel
                 {
                     var cb = new CheckBox
                     {
-                        Text = (f.Param.Length > 0 ? f.Param : $"布尔[{i}]") + "（0=False / 非0=True）",
+                        Text = (f.Param.Length > 0 ? f.Param : L.F("布尔[{0}]", i)) + L.T("（0=False / 非0=True）"),
                         AutoSize = true,
                         Checked = f.B != 0,
                         Location = new Point(0, y),
@@ -476,11 +476,11 @@ internal sealed class DynamicFieldPanel : Panel
                 }
                 case FieldKind.P:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : $"路径×{f.Paths!.Count}", 0, y + 3, 60));
-                    var btn = new Button { Text = "编辑路径列表…", Location = new Point(66, y), Width = 130 };
+                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("路径×{0}", f.Paths!.Count), 0, y + 3, 60));
+                    var btn = new Button { Text = L.T("编辑路径列表…"), Location = new Point(66, y), Width = 130 };
                     btn.Click += (_, _) =>
                     {
-                        using var dlg = new StringListDialog("编辑路径列表", f.Paths!.Select(p => p.Text).ToList());
+                        using var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList());
                         if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
                         {
                             f.Paths = dlg.Items.Select(s => new GdString(s)).ToList();
@@ -489,17 +489,17 @@ internal sealed class DynamicFieldPanel : Panel
                         }
                     };
                     Controls.Add(btn);
-                    Controls.Add(Gui.Label($"尾字={f.Trailing}", 204, y + 3, 200));
+                    Controls.Add(Gui.Label(L.F("尾字={0}", f.Trailing), 204, y + 3, 200));
                     y += 30;
                     break;
                 }
                 case FieldKind.Lua:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : "Lua 调用", 0, y + 3, 60));
+                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.T("Lua 调用"), 0, y + 3, 60));
                     var call = Gui.Box(66, y, 300, f.S.Text);
                     call.TextChanged += (_, _) => { if (_building) return; f.S.SetText(call.Text); _changed(); };
                     Controls.Add(call);
-                    var btn = new Button { Text = $"参数×{f.Params!.Count}…", Location = new Point(374, y), Width = 110 };
+                    var btn = new Button { Text = L.F("参数×{0}…", f.Params!.Count), Location = new Point(374, y), Width = 110 };
                     btn.Click += (_, _) =>
                     {
                         using var dlg = new LuaParamsDialog(f);
@@ -509,7 +509,7 @@ internal sealed class DynamicFieldPanel : Panel
                     y += 30;
                     if (f.Tail != null)
                     {
-                        Controls.Add(Gui.Label("条件尾部", 0, y + 3, 60));
+                        Controls.Add(Gui.Label(L.T("条件尾部"), 0, y + 3, 60));
                         var t = f.Tail!;
                         var t0 = Gui.Box(66, y, 90, Gui.U32Text(t.T0));
                         var t1 = Gui.Box(162, y, 90, Gui.U32Text(t.T1));
@@ -532,7 +532,7 @@ internal sealed class DynamicFieldPanel : Panel
 
         var warn = new Label
         {
-            Text = "⚠ 带“推断”的名称与位标志未经引擎证实；保存仅保证结构合法。",
+            Text = L.T("⚠ 带“推断”的名称与位标志未经引擎证实；保存仅保证结构合法。"),
             AutoSize = true,
             ForeColor = Color.SaddleBrown,
             Location = new Point(0, y + 4),
@@ -569,9 +569,10 @@ internal sealed class LocalizationGrid : Panel
     {
         Controls.Add(_grid);
         var colIdx = new DataGridViewTextBoxColumn { Name = "idx", HeaderText = "#", ReadOnly = true, FillWeight = 8 };
-        var colRole = new DataGridViewTextBoxColumn { Name = "role", HeaderText = "角色 / 对应节点", ReadOnly = true, FillWeight = 30 };
-        var colTxt = new DataGridViewTextBoxColumn { Name = "text", HeaderText = "文本（{^n} 表示换行；行数不可增删）", FillWeight = 62 };
+        var colRole = new DataGridViewTextBoxColumn { Name = "role", HeaderText = L.T("角色 / 对应节点"), ReadOnly = true, FillWeight = 30 };
+        var colTxt = new DataGridViewTextBoxColumn { Name = "text", HeaderText = L.T("文本（{^n} 表示换行；行数不可增删）"), FillWeight = 62 };
         _grid.Columns.AddRange(new DataGridViewColumn[] { colIdx, colRole, colTxt });
+        Theme.StyleGrid(_grid);
         _grid.CellEndEdit += (_, e) =>
         {
             if (_building || e.RowIndex < 0) return;
@@ -610,19 +611,19 @@ internal sealed class LocalizationGrid : Panel
     private string RoleCnv(int i)
     {
         var c = _doc.Cnv!;
-        if (i == 0) return "说话人名（根节点）";
+        if (i == 0) return L.T("说话人名（根节点）");
         if (i < c.Steps.Count)
         {
             var s = c.Steps[i];
             return $"[{i}] {s.Kind}";
         }
-        return "（无对应节点）";
+        return L.T("（无对应节点）");
     }
 
     private static string RoleQst(int i) => i switch
     {
-        0 => "任务组名",
-        1 => "任务名",
-        _ => $"按位置 {i}",
+        0 => L.T("任务组名"),
+        1 => L.T("任务名"),
+        _ => L.F("按位置 {0}", i),
     };
 }

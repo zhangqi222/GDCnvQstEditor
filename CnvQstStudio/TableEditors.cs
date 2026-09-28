@@ -21,7 +21,7 @@ internal static class TableLayout
         var lines = new List<string>();
         foreach (var r in list.Records)
             lines.Add((r.IsCondition ? "⚑ " : "⚡ ") + Gui.Describe(r));
-        if (lines.Count == 0) lines.Add("（空）");
+        if (lines.Count == 0) lines.Add(L.T("（空）"));
         return lines;
     }
 }
@@ -159,6 +159,8 @@ internal sealed class CnvTableEditor : Panel
         Controls.Add(_bar);
         BuildColumns();
         BuildBar();
+        Theme.StyleGrid(_grid);
+        Theme.StyleToolbar(_bar, primary: false);
 
         _grid.CellClick += (_, e) => OnCellClick(e);
         _grid.CellEndEdit += (_, e) => OnTextCommitted(e);
@@ -454,7 +456,7 @@ internal sealed class QstTaskRow : QstRowOwner
             if (T.UnknownAC != 0) p.Add($"@0xAC=0x{T.UnknownAC:X}");
             if (T.Flag8) p.Add("flag8");
             if (T.Flag9) p.Add("flag9");
-            return p.Count == 0 ? "（无字段）" : string.Join("  ", p);
+            return p.Count == 0 ? L.T("（无字段）") : string.Join("  ", p);
         }
     }
     public override bool HasScript => false;
@@ -468,7 +470,7 @@ internal sealed class QstEventRow : QstRowOwner
     public string Kind;
     public QstEventRow(QstEvent e, string kind) { E = e; Kind = kind; }
     public override string NodeLabel => $"{Kind} uid {E.Uid}";
-    public override string FieldLabel => E.Unknown != 0 ? $"+0x2C=0x{E.Unknown:X}" : "（无字段）";
+    public override string FieldLabel => E.Unknown != 0 ? $"+0x2C=0x{E.Unknown:X}" : L.T("（无字段）");
     public override bool HasScript => true;
     public override ScriptList? Conditions => E.Conditions;
     public override ScriptList? Actions => E.Actions;
@@ -486,7 +488,7 @@ internal sealed class QstObjectiveRow : QstRowOwner
             var p = new List<string>();
             if (O.Unknown0 != 0) p.Add($"+0x10=0x{O.Unknown0:X}");
             if (O.Unknown1 != 0) p.Add($"+0x34=0x{O.Unknown1:X}");
-            return p.Count == 0 ? "（无字段）" : string.Join("  ", p);
+            return p.Count == 0 ? L.T("（无字段）") : string.Join("  ", p);
         }
     }
     public override bool HasScript => true;
@@ -529,6 +531,8 @@ internal sealed class QstTableEditor : Panel
         Controls.Add(_bar);
         BuildColumns();
         BuildBar();
+        Theme.StyleGrid(_grid);
+        Theme.StyleToolbar(_bar, primary: false);
         _grid.CellClick += (_, e) => OnCellClick(e);
         _grid.CellPainting += PaintScriptCell;
     }

@@ -24,13 +24,13 @@ public sealed class DocSession
         {
             s.Cnv = CnvFile.Parse(data);
             s.ReadOnly = !s.Cnv.Valid || !s.Cnv.Tiled || !s.Cnv.LocOffsetMatches;
-            if (s.ReadOnly) s.LoadError = s.Cnv.Error ?? "记录未铺满文件或未落在声明的本地化偏移";
+            if (s.ReadOnly) s.LoadError = s.Cnv.Error ?? L.T("记录未铺满文件或未落在声明的本地化偏移");
         }
         else
         {
             s.Qst = QstFile.Parse(data);
             s.ReadOnly = !s.Qst.Valid || !s.Qst.Tiled || !s.Qst.LocOffsetMatches;
-            if (s.ReadOnly) s.LoadError = s.Qst.Error ?? "记录未铺满文件或未落在声明的本地化偏移";
+            if (s.ReadOnly) s.LoadError = s.Qst.Error ?? L.T("记录未铺满文件或未落在声明的本地化偏移");
         }
         return s;
     }
@@ -49,8 +49,8 @@ public sealed class DocSession
         get
         {
             string name = FilePath != null ? Path.GetFileName(FilePath)
-                : Cnv != null ? "未命名对话.cnv" : "未命名任务.qst";
-            return name + (Dirty ? " *" : "") + (ReadOnly ? "（只读）" : "");
+                : Cnv != null ? L.T("未命名对话.cnv") : L.T("未命名任务.qst");
+            return name + (Dirty ? " *" : "") + (ReadOnly ? L.T("（只读）") : "");
         }
     }
 
@@ -67,16 +67,16 @@ public sealed class DocSession
             if (Cnv != null)
             {
                 int recs = Cnv.Steps.Sum(x => x.Conditions.Records.Count + x.Actions.Records.Count);
-                return $"{KindVersion} · {Cnv.Steps.Count} 节点 · {recs} 条件/动作 · {Cnv.Size} B"
-                     + (Cnv.Tiled ? " · ✓铺满" : " · ✗未铺满")
+                return L.F("{0} · {1} 节点 · {2} 条件/动作 · {3} B", KindVersion, Cnv.Steps.Count, recs, Cnv.Size)
+                     + L.T(Cnv.Tiled ? " · ✓铺满" : " · ✗未铺满")
                      + (Cnv.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset");
             }
             if (Qst != null)
-                return $"{KindVersion} · {Qst.Tasks.Count} task · {Qst.ObjectiveCount} objective · {Qst.RecordCount} 条件/动作 · {Qst.Size} B"
-                     + (Qst.Tiled ? " · ✓铺满" : " · ✗未铺满")
+                return L.F("{0} · {1} task · {2} objective · {3} 条件/动作 · {4} B", KindVersion, Qst.Tasks.Count, Qst.ObjectiveCount, Qst.RecordCount, Qst.Size)
+                     + L.T(Qst.Tiled ? " · ✓铺满" : " · ✗未铺满")
                      + (Qst.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset")
-                     + (Qst.TextCountDrift == 0 ? " · ✓串表公式" : $" · ✗串表公式({Qst.TextCountDrift:+#;-#;0})");
-            return "（空）";
+                     + (Qst.TextCountDrift == 0 ? L.T(" · ✓串表公式") : L.F(" · ✗串表公式({0})", Qst.TextCountDrift.ToString("+#;-#;0")));
+            return L.T("（空）");
         }
     }
 
@@ -106,16 +106,16 @@ public sealed class DocSession
         {
             var re = CnvFile.Parse(data);
             if (!re.Valid || !re.Tiled || !re.LocOffsetMatches || !re.Write().AsSpan().SequenceEqual(data))
-                err = "保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。";
+                err = L.T("保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。");
         }
         else
         {
             var re = QstFile.Parse(data);
             if (!re.Valid || !re.Tiled || !re.LocOffsetMatches || !re.Write().AsSpan().SequenceEqual(data))
-                err = "保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。";
+                err = L.T("保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。");
             else if (re.TextCountDrift != 0)
-                err = $"保存被拒绝：本地化串表条数偏离公式 2+2T+O+I+E（差 {re.TextCountDrift:+#;-#;0}）——" +
-                      "官方 QuestEditor 按该公式索引串表，条数不符会直接报错。";
+                err = L.F("保存被拒绝：本地化串表条数偏离公式 2+2T+O+I+E（差 {0}）——", re.TextCountDrift.ToString("+#;-#;0")) +
+                      L.T("官方 QuestEditor 按该公式索引串表，条数不符会直接报错。");
         }
         if (err != null) return err;
 
@@ -128,7 +128,7 @@ public sealed class DocSession
         }
         catch (Exception e)
         {
-            return "写入失败：" + e.Message;
+            return L.T("写入失败：") + e.Message;
         }
         FilePath = path;
         Dirty = false;
@@ -147,7 +147,7 @@ public sealed class DocSession
     {
         if (Cnv != null) FillCnv(root, Cnv);
         else if (Qst != null) FillQst(root, Qst);
-        else root.Text = "（空）";
+        else root.Text = L.T("（空）");
 
         if (!ReadOnly && LoadError == null && (Cnv != null || Qst != null))
         {
@@ -156,7 +156,7 @@ public sealed class DocSession
         }
         if (ReadOnly)
         {
-            root.Text += "（只读" + (LoadError != null ? "：" + LoadError + "）" : "）");
+            root.Text += L.T("（只读）") + (LoadError != null ? "：" + LoadError + "" : "");
         }
     }
 
@@ -187,19 +187,19 @@ public sealed class DocSession
     {
         string group = q.Languages.Count > 0 && q.Languages[0].Texts.Count > 0 ? q.Languages[0].Texts[0].Text : "";
         string name = q.Languages.Count > 0 && q.Languages[0].Texts.Count > 1 ? q.Languages[0].Texts[1].Text : "";
-        root.Text = $"任务：{name}（组：{group}）";
+        root.Text = L.F("任务：{0}（组：{1}）", name, group);
 
         for (int i = 0; i < q.Tasks.Count; i++)
         {
             var t = q.Tasks[i];
             var tn = new TreeNode($"Task {i}") { Tag = t };
-            var inc = new TreeNode($"Incentives ({t.Incentives.Count})");
+            var inc = new TreeNode(L.F("OnAccept（{0}）", t.Incentives.Count));
             for (int k = 0; k < t.Incentives.Count; k++)
                 inc.Nodes.Add(new TreeNode($"Incentive {k}") { Tag = t.Incentives[k] });
-            var objs = new TreeNode($"Objectives ({t.Objectives.Count})");
+            var objs = new TreeNode(L.F("Objectives（{0}）", t.Objectives.Count));
             for (int k = 0; k < t.Objectives.Count; k++)
                 objs.Nodes.Add(new TreeNode($"Objective {k}") { Tag = t.Objectives[k] });
-            var evs = new TreeNode($"Events ({t.Events.Count})");
+            var evs = new TreeNode(L.F("OnComplete（{0}）", t.Events.Count));
             for (int k = 0; k < t.Events.Count; k++)
                 evs.Nodes.Add(new TreeNode($"Event {k}") { Tag = t.Events[k] });
             tn.Nodes.AddRange(new[] { inc, objs, evs });

@@ -88,7 +88,8 @@ public sealed class ScriptRecord
         {
             if (!Named) return $"Type{Type}";
             bool inferred = IsCondition ? Names.InferredCondition(Type) : Names.InferredAction(Type);
-            return inferred ? $"{ClassName}（推断）" : ClassName!;
+            string label = inferred ? $"{ClassName}（推断）" : ClassName!;
+            return Names.DisplayNameResolver?.Invoke(label) ?? label;
         }
     }
 

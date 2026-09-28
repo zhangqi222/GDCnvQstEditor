@@ -191,18 +191,26 @@ public static class Names
     {
     };
 
+    /// <summary>
+    /// 显示名钩子：GUI 注入（官方名 → 本地化别名），CLI 不设置则原样输出官方名。
+    /// 传入的键是"完整标签"（可能带（推断）后缀），语言包 types 段按需提供别名。
+    /// </summary>
+    public static Func<string, string>? DisplayNameResolver;
+
+    private static string Display(string label) => DisplayNameResolver?.Invoke(label) ?? label;
+
     /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。</summary>
     public static string ConditionLabel(uint type)
     {
         if (ConditionClass(type) is (string n, true))
-            return InferredCondition(type) ? $"{n}（推断）" : n;
+            return Display(InferredCondition(type) ? $"{n}（推断）" : n);
         string? hint = ConditionHints.GetValueOrDefault(type);
         return hint == null ? $"Type{type}（未命名）" : $"Type{type}（{hint}）";
     }
 
     public static string ActionLabel(uint type) =>
         ActionClass(type) is (string n, true)
-            ? (InferredAction(type) ? $"{n}（推断）" : n)
+            ? Display(InferredAction(type) ? $"{n}（推断）" : n)
             : $"Type{type}（未命名）";
 
     public static (string? name, bool named) ConditionClass(uint type) =>

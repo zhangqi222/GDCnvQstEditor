@@ -50,7 +50,21 @@ GUI 能力：
 - 批量面板：目录扫描表 / 批量导出 TXT·JSON / 校验所选 / TXT 回填 / CSV 报告
 - 保存三检查（铺满文件 / 本地化偏移 / round-trip）+ `.bak` 自动备份；解析失败或校验不过的文件**只读**打开（可看可导出不可保存）
 
-**UI 语言**：默认简体中文；菜单「工具 → 语言 / Language」可切换到英文，即时生效并被记住（存于 `%APPDATA%\CnvQstStudio\lang.txt`）。
+**界面语言（i18n）**：以中文为基准，语言包是 exe 旁 `lang/*.json`（随构建自动复制）：
+
+```json
+{ "code": "en", "name": "English",
+  "strings": { "打开": "Open", "已保存 {0}（三检查通过，原文件已备份为 .bak）。": "Saved {0} …" },
+  "types":   { "HasFaction": "Faction reputation" } }
+```
+
+- **新增语言 = 复制一份 json 改 code/name/译文**，放回 `lang/` 即在「语言」菜单出现，无需改代码；
+- 缺 key 自动回退中文，语言包可逐步补全；`zh-CN.json` 即全部键的清单模板（230+ 条，含 56 个类型中文名）；
+- `types` 段给条件/动作提供显示别名（中文界面显示"阵营声望"，英文界面显示官方名 HasFaction）；
+- 切换即时生效并记住（`%APPDATA%\CnvQstStudio\lang.txt`）；菜单「语言 → 打开语言包目录」直达。
+
+**界面（v1.1 重做）**：扁平化主题（统一字体/配色/表格与页签样式，`Theme.cs`），主工具栏 + 状态栏 +
+键盘快捷键（Ctrl+O/S/N/E/L/B、F5 校验、Ctrl+W 关页签）。`CnvQstStudio.exe --smoke` 可做无头冒烟回归。
 
 ## 打包（单文件 EXE）
 

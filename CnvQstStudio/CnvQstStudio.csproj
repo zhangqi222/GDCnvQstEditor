@@ -10,11 +10,16 @@
     <AssemblyName>CnvQstStudio</AssemblyName>
     <Product>CnvQstStudio</Product>
     <Description>Grim Dawn .cnv/.qst 图形化查看、编辑、新建、导入导出与批量处理（格式见 CnvQstFormatDecoded.md）</Description>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CnvQstLib\CnvQstLib.csproj" />
+  </ItemGroup>
+
+  <!-- UI 语言包：中文为基准（键清单模板），其它语言放 lang/*.json 即生效（无需改代码） -->
+  <ItemGroup>
+    <None Include="lang\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

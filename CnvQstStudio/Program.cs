@@ -19,10 +19,11 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // 无参数（或显式 gui）→ 图形界面；带参数 → CLI（接管父进程控制台）。
+        // 无参数（或显式 gui）→ 图形界面；--smoke → 建窗即关（CI/回归用）；带参数 → CLI。
         if (args.Length == 0 || (args.Length == 1 && args[0] == "gui"))
         {
             L.Load();
+            CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, e) => ShowFatal(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (_, e) => ShowFatal(e.ExceptionObject as Exception);
@@ -33,12 +34,64 @@ internal static class Program
             return 0;
         }
 
+        if (args.Length == 1 && args[0] == "--smoke")
+            return RunSmoke();
+
         if (args.Length == 1 && args[0] is "--help" or "-h" or "help")
         {
             args = ["help"];
         }
 
         return RunCli(args);
+    }
+
+    /// <summary>
+    /// UI 冒烟测试：建主窗口（含全部控件与主题/语言初始化）、打开一个文件、1.2 秒后自动关闭。
+    /// 不弹异常框、只把异常打到 stdout 并返回 1，便于脚本化回归。
+    /// </summary>
+    private static int RunSmoke()
+    {
+        bool attached = AttachConsole(AttachParentProcess);
+        if (attached)
+        {
+            try { Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), Encoding.UTF8) { AutoFlush = true }); }
+            catch { }
+        }
+        try
+        {
+            L.Load();
+            CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+
+            Exception? failure = null;
+            var form = new MainForm();
+            form.Shown += (_, _) =>
+            {
+                var timer = new System.Windows.Forms.Timer { Interval = 1200 };
+                timer.Tick += (_, _) => { timer.Stop(); form.Close(); };
+                timer.Start();
+            };
+            Application.ThreadException += (_, e) => { failure = e.Exception; form.Close(); };
+            Application.Run(form);
+
+            if (failure != null)
+            {
+                Console.WriteLine("UI 冒烟失败：" + failure);
+                if (attached) FreeConsole();
+                return 1;
+            }
+            Console.WriteLine($"UI 冒烟通过（语言 {L.Code} / {L.DisplayName}，可用语言 {L.Languages.Count} 种）。");
+            if (attached) { Console.Out.WriteLine(); FreeConsole(); }
+            return 0;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("UI 冒烟异常：" + e);
+            if (attached) FreeConsole();
+            return 1;
+        }
     }
 
     /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后续联操作。</summary>
