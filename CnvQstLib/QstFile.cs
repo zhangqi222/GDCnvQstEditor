@@ -78,6 +78,27 @@ public sealed class QstFile
     /// <summary>串表条数与公式不符时返回差值（0 = 正确）。</summary>
     public int TextCountDrift => (Languages.Count > 0 ? Languages[0].Texts.Count : 0) - RequiredTextCount;
 
+    /// <summary>
+    /// 串表槽位的角色说明（供 dump/GUI 显示）。顺序即官方 QuestEditor 的索引顺序：
+    /// group、name，然后每个 task 的 [标题, 描述, OnAccept…, 目标…, OnComplete…]。
+    /// </summary>
+    public string DescribeSlot(int index)
+    {
+        if (index == 0) return "group 任务组名";
+        if (index == 1) return "name 任务名";
+        int i = 2;
+        for (int ti = 0; ti < Tasks.Count; ti++)
+        {
+            var t = Tasks[ti];
+            if (index == i++) return $"T{ti + 1} 标题";
+            if (index == i++) return $"T{ti + 1} 描述";
+            for (int k = 0; k < t.Incentives.Count; k++) if (index == i++) return $"T{ti + 1} OnAccept #{k + 1}";
+            for (int k = 0; k < t.Objectives.Count; k++) if (index == i++) return $"T{ti + 1} 目标 #{k + 1}";
+            for (int k = 0; k < t.Events.Count; k++) if (index == i++) return $"T{ti + 1} OnComplete #{k + 1}";
+        }
+        return $"（越界槽 {index}）";
+    }
+
     // ------------------------------------------------------------------
     // 结构编辑（task / objective / event 增删）：按公式与槽位顺序重建本地化表。
     //
@@ -129,14 +150,35 @@ public sealed class QstFile
         }
     }
 
-    /// <summary>新增 task（本地化表按公式补槽）。</summary>
+    /// <summary>新增 task（本地化表按公式补槽）。uid 为 0 时按官方做法给一个随机 uid
+    /// （QuestEditor 新建 task 走的就是 `App.random.UInt()`；他处引用本 task 用的就是这个值）。</summary>
     public QstTask AddTask(QstTask? task = null)
     {
         var snap = SnapshotAll();
         task ??= new QstTask();
+        if (task.UnknownA8 == 0) task.UnknownA8 = RandomUid();
         Tasks.Add(task);
         RebuildTexts(snap);
         return task;
+    }
+
+    /// <summary>新增 objective（uid 同样按官方随机生成）。</summary>
+    public QstObjective AddObjective(QstTask task, QstObjective? objective = null)
+    {
+        var snap = SnapshotAll();
+        objective ??= new QstObjective();
+        if (objective.Unknown0 == 0) objective.Unknown0 = RandomUid();
+        task.Objectives.Add(objective);
+        RebuildTexts(snap);
+        return objective;
+    }
+
+    /// <summary>与官方同款的随机 uid（非 0，避免与"未设置"混淆）。</summary>
+    public static uint RandomUid()
+    {
+        uint v;
+        do { v = (uint)Random.Shared.NextInt64(0, uint.MaxValue); } while (v == 0);
+        return v;
     }
 
     /// <summary>删除 task（含其 objectives/events 的槽位）。</summary>
@@ -146,15 +188,6 @@ public sealed class QstFile
         bool ok = Tasks.Remove(task);
         if (ok) RebuildTexts(snap);
         return ok;
-    }
-
-    public QstObjective AddObjective(QstTask task, QstObjective? objective = null)
-    {
-        var snap = SnapshotAll();
-        objective ??= new QstObjective();
-        task.Objectives.Add(objective);
-        RebuildTexts(snap);
-        return objective;
     }
 
     public bool RemoveObjective(QstTask task, QstObjective objective)

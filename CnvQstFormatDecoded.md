@@ -146,30 +146,58 @@ u32 languageCount（上限 64）
 +0x00  char[4]  "QST2"
 +0x04  u32      version            拒绝 <7；全部文件为 9
 +0x08  u32      本地化块偏移       写而不读（独立见证）
-+0x0C  u32      任务 id
-+0x10  u32      unknown（0..4）
++0x0C  u32      uid                （旧文档称"任务 id"）
++0x10  u32      flags              见下（旧文档称 unknown 0..4）
 +0x14  u32      taskCount（上限 4096）
 +0x18           首个 task 记录
 ```
 
+**头部 flags = `Common.Quest+Flag` 枚举**（2026-09-28 从官方编辑器内嵌 Common.dll 读出）：
+
+| 值 | 名字 | 含义 |
+|---|---|---|
+| 0 | None | 无 |
+| 1 | Primary | 主线任务 |
+| 2 | Secondary | 支线任务 |
+| 4 | Repeatable | 可重复 |
+
+语料里 +0x10 的取值 {0,1,2,4} 与该枚举完全对应；`Quest.Read` 的 IL 也证实这里就是 `flags`
+（顺序：version → (v≥6) 跳过 locOffset → **uid** → **flags** → taskCount）。
+
+**uid** 由官方工具随机生成：`QuestEditor.FormMain.miQuestAddTask_Click` 就是
+`quest.AddTask(App.random.UInt())`；新建 quest 同理。本项目 `QstFile.AddTask/AddObjective`
+也按此给随机非 0 uid。
+
 ### 3.2 Task / Objective / Event
 
 ```
-Task
-  u32 unknown          → Quest2Task+0xA8
-  u32 unknown          → Quest2Task+0xAC
-  i32 n ; n × Event    "incentives"
+Task（Common.QuestNode_Task.Read 的 IL 逐条对应）
+  if version >= 3:  u32 uid          本 task 的标识（他处引用它，见下）
+  if version >= 3:  u32 flags        QuestNode_Task+Flag（目前只有 None=0）
+  i32 n ; n × Event    "incentives"（编辑器 OnAccept）
   i32 n ; n × Objective
-  i32 n ; n × Event
-  u8  if version >= 8  → +0xC0
-  u8  if version >= 9  → +0xC2
+  i32 n ; n × Event    （编辑器 OnComplete）
+  if version >= 8:  u8 isBlocker
+  if version >= 9:  u8 dontPropagate
 
-Objective                    Event
-  u32 unknown → +0x10          u32 unknown → +0x2C
-  u32 unknown → +0x34          i32 n ; ConditionCollection(n)
-  i32 n ; ConditionCollection  i32 m ; ActionCollection(m)
+Objective（QuestNode_Objective.Read）        Event（QuestNode_Event.Read）
+  if version >= 4: u32 uid                     u32 flags
+  if version >= 4: u32 flags                   i32 n ; ConditionCollection(n)
+  i32 n ; ConditionCollection                  i32 m ; ActionCollection(m)
   i32 m ; ActionCollection
 ```
+
+即：旧文档里的 `task +0xA8/+0xAC` = **uid / flags**，`objective +0x10/+0x34` = **uid / flags**，
+`event +0x2C` = **flags**，两个"版本门控尾字节" = **isBlocker（v≥8）/ dontPropagate（v≥9）**。
+全部为 v≥3/4 门控——**这些字段只在较高版本才落盘**，读旧版本时要按门控跳过。
+
+**"任务引用标识"就是被引用 task 的 uid**（编辑器里显示为 `?` 的那些 I 参数）：
+- 编辑器靠 `Common.QuestUtil.GetTaskUidFromFile(path, taskName)` 打开目标 .qst 取该 task 的 uid
+  来解析显示（`GetTaskObjectiveUidFromFile` 同理）；解析不出来才显示 `?`。
+- 实测：jailor_01 的 `QuestTaskComplete "quests/gdareac/mq_makingadeal.qst", 0x876A2A00`
+  与 `mq_makingadeal.qst` 里那个 task 的 uid **逐位相同**。
+- 因此旧注"该 I = 文件引用 hash 左移 8 位"作废——它是 uid，看起来像 hash<<8 只是因为
+  工具链生成的 uid 多为该形状。
 
 **两个版本门控尾字节是多任务文件的生命线**：漏读即每个 task 静默错位 2 字节
 （首个 task 看起来仍然正确——这正是本项目 2026-08 分析 mq_burrwitch 时

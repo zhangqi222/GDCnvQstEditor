@@ -31,7 +31,7 @@ public static class Creation
     public static QstFile NewQuest(string group, string name, string taskTitle, string taskDesc)
     {
         var q = new QstFile { Version = 9, Id = 0, Unknown10 = 0, Valid = true };
-        q.Tasks.Add(new QstTask { Uid = 1, Uid2 = 2 });
+        q.Tasks.Add(new QstTask { Uid = 1, Uid2 = 2, UnknownA8 = QstFile.RandomUid() });   // uid 官方为随机值
 
         var lang = new LanguageBlock { Tag = new GdString("enUS") };
         lang.Texts.Add(new GdString(group));

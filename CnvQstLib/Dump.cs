@@ -58,15 +58,14 @@ public static class Dump
             return sb.ToString();
         }
 
-        sb.AppendLine($"═══ {fileName} ── QST2 v{q.Version} ── id 0x{q.Id:X8} ── {q.Tasks.Count} task ── {q.ObjectiveCount} objective ── {q.RecordCount} 条件/动作 ── {q.Size} B");
+        sb.AppendLine($"═══ {fileName} ── QST2 v{q.Version} ── uid 0x{q.Id:X8} ── flags {Names.QuestFlagTag(q.Unknown10)} ── {q.Tasks.Count} task ── {q.ObjectiveCount} objective ── {q.RecordCount} 条件/动作 ── {q.Size} B");
         foreach (var lang in q.Languages)
         {
-            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} 条文本  @0x{lang.Offset:X}");
+            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} 条文本  @0x{lang.Offset:X}（公式 2+2T+O+I+E = {q.RequiredTextCount}）");
             for (int i = 0; i < lang.Texts.Count; i++)
             {
                 if (lang.Texts[i].IsEmpty) continue;
-                string role = i == 0 ? "group" : i == 1 ? "name" : "text";
-                sb.AppendLine($"   [{i,2}] {role,-5} \"{lang.Texts[i].Text}\"");
+                sb.AppendLine($"   [{i,2}] {q.DescribeSlot(i),-22} \"{lang.Texts[i].Text}\"");
             }
         }
         sb.AppendLine($"{(q.Tiled ? "✓" : "✗")} 记录恰好铺满文件   {(q.LocOffsetMatches ? "✓" : "✗")} task 记录落在声明的本地化偏移 (0x{q.LocalizationOffset:X})");
@@ -74,12 +73,14 @@ public static class Dump
 
         foreach (var t in q.Tasks)
         {
-            sb.AppendLine($"Task  @0x{t.Offset:X} +{t.Length}   uid {t.Uid},{t.Uid2} (解析计数器分配)   fieldA8={t.UnknownA8} fieldAC={t.UnknownAC}   flag v8:{(t.Flag8 ? 1 : 0)} v9:{(t.Flag9 ? 1 : 0)}");
+            sb.AppendLine($"Task  @0x{t.Offset:X} +{t.Length}   uid={t.UnknownA8} flags={t.UnknownAC}" +
+                          $"   isBlocker={(t.Flag8 ? 1 : 0)} dontPropagate={(t.Flag9 ? 1 : 0)}" +
+                          $"   （运行时 uid {t.Uid},{t.Uid2}）");
             WriteEvents(sb, "Incentives", t.Incentives);
             sb.AppendLine($"   Objectives ({t.Objectives.Count})");
             foreach (var o in t.Objectives)
             {
-                sb.AppendLine($"      Objective  uid {o.Uid}  fields {o.Unknown0}, {o.Unknown1}   @0x{o.Offset:X}");
+                sb.AppendLine($"      Objective  uid={o.Unknown0} flags={o.Unknown1}   @0x{o.Offset:X}");
                 WriteList(sb, "         ", "Conditions", o.Conditions);
                 WriteList(sb, "         ", "Actions", o.Actions);
             }
@@ -94,7 +95,7 @@ public static class Dump
         sb.AppendLine($"   {label} ({events.Count})");
         foreach (var e in events)
         {
-            sb.AppendLine($"      Event  uid {e.Uid}  field {e.Unknown}   @0x{e.Offset:X}");
+            sb.AppendLine($"      Event  flags={e.Unknown}   @0x{e.Offset:X}");
             WriteList(sb, "         ", "Conditions", e.Conditions);
             WriteList(sb, "         ", "Actions", e.Actions);
         }

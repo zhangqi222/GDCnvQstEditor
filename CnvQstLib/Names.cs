@@ -227,7 +227,30 @@ public static class Names
     public static string ActionName(uint type) =>
         ActionClass(type) is (string n, true) ? n : $"Type{type}";
 
-    /// <summary>条件集合 logic 字：0=AND / 1=OR（编辑器金样对照；未经引擎 API 证实）。</summary>
+    /// <summary>
+    /// QST 头部 +0x10 的 flags（官方 `Common.Quest+Flag`）——主任务/支线任务/可重复。
+    /// 语料取值 0/1/2/4 与此枚举完全对应。
+    /// </summary>
+    public static string QuestFlagName(uint flags) => flags switch
+    {
+        0 => "None",
+        1 => "Primary",
+        2 => "Secondary",
+        4 => "Repeatable",
+        _ => $"0x{flags:X}",
+    };
+
+    /// <summary>QST 头部 flags 的短标记（None/Primary/Secondary/Repeatable → -/主/支/可重复）。</summary>
+    public static string QuestFlagTag(uint flags)
+    {
+        var parts = new List<string>();
+        if ((flags & 1) != 0) parts.Add("Primary/主");
+        if ((flags & 2) != 0) parts.Add("Secondary/支");
+        if ((flags & 4) != 0) parts.Add("Repeatable/可重复");
+        return parts.Count == 0 ? "None" : string.Join(" | ", parts);
+    }
+
+    /// <summary>条件集合 logic 字：0=AND / 1=OR（官方 `Common.ScriptableConditionOperator`）。</summary>
     public static string LogicWord(uint logic) => logic switch
     {
         0 => "AND",
