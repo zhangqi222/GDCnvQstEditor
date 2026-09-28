@@ -16,6 +16,7 @@ public static class Census
         public int Count;
         public int Lists;                                   // 类型所在的条件/动作集合数
         public Dictionary<byte, int> SubTypes = new();      // subType 分布
+        public Dictionary<uint, int> Uids = new();          // 条件 uid 字段分布（动作无 uid）
         public SortedDictionary<uint, int> Numbers = new(); // U32 body 字段取值（<0x10000）
         public SortedDictionary<uint, int> BigNums = new();  // U32 ≥0x10000（hash 形态）取值
         public Dictionary<byte, int> Bytes = new();         // U8 body 字段
@@ -58,6 +59,7 @@ public static class Census
                     table[rec.Type] = tc = new TypeCensus { Type = rec.Type };
                 tc.Count++;
                 tc.SubTypes[rec.SubType] = tc.SubTypes.GetValueOrDefault(rec.SubType) + 1;
+                if (rec.IsCondition) tc.Uids[rec.Uid] = tc.Uids.GetValueOrDefault(rec.Uid) + 1;
                 if (list.Present)
                 {
                     tc.Lists++;
@@ -176,6 +178,12 @@ public static class Census
                 sb.AppendLine($"type={tc.Type,2}  n={tc.Count,5}  lists={tc.Lists,4}  {name}  body={spec}{(named ? "" : "  ← 未命名")}");
                 if (tc.SubTypes.Count > 1 || (tc.SubTypes.Count == 1 && tc.SubTypes.First().Key != 0))
                     sb.AppendLine($"    subType: {string.Join(" ", tc.SubTypes.OrderBy(k => k.Key).Select(k => $"sub{k.Key}×{k.Value}"))}");
+                if (isCondition && tc.Uids.Count > 0)
+                {
+                    var topUid = tc.Uids.OrderBy(k => k.Key).ToList();
+                    sb.AppendLine($"    uid: {string.Join(" ", topUid.Take(12).Select(k => (k.Key <= 6 ? $"0x{k.Key:X}" : k.Key.ToString()) + (k.Key <= 6 ? "" : $"") + $"×{k.Value}"))}" +
+                                  (topUid.Count > 12 ? $" …共{topUid.Count}种" : ""));
+                }
                 sb.AppendLine($"    所在列表 logic: {string.Join(" ", tc.ListLogic.OrderBy(k => k.Key).Select(k => $"logic{k.Key}×{k.Value}"))}");
                 if (tc.CoNamed.Count > 0)
                     sb.AppendLine($"    同列表共现: {string.Join(", ", tc.CoNamed.OrderByDescending(k => k.Value).Take(8).Select(k => $"{k.Key}×{k.Value}"))}");

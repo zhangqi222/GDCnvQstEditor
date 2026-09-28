@@ -113,6 +113,19 @@ dotnet $T new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题
 选项名（覆盖本地语料里样本为 0 的类型）。默认把一类探测合并成一个文件的多个节点，
 节点文本里写着我们当前的猜测名，打开即可逐条对照；`--split` 可拆成一类一文件以隔离报错项。
 
+| 子命令 | 用途 |
+|---|---|
+| `probe cond` / `probe act` | 26 个条件 / 27 个动作类型各一节点，读官方名（**已用它辨认完毕**）|
+| `probe uid [--type N] [--sub N]` | 固定条件只改 type/subType 之后的字，读出**比较符编码** |
+| `probe sub [--type N]` / `probe suball` | subType 0..5 扫变体，用于定位剩余 4 项官方选项 |
+| `probe flags` | step.unknown 各位 ↔ 编辑器 {Once Only / Always Show / Unimportant} |
+| `probe qst` | 1/3 个 task 的任务文件，反推 QST 串表槽位映射 |
+
+> 生成物都会先过"铺满 / locOffset / round-trip"三检查，再写进目录，并输出 `索引.txt`。
+> 2026-09-28 首轮探测结果（官方编辑器截图存于 `反馈截图/`）：26 个条件类型与 27 个动作类型
+> **全部辨认完毕**，导出了两个重要修正——条件记录里那个被称作 uid 的字其实是**比较符**；
+> 动作 9/10 是 GiveToken/RemoveToken（与原先推断相反）。详见 CnvQstFormatDecoded.md §4。
+
 ### 翻译管线（与现有工作流衔接）
 
 1. `txt cnv示例 -o text_zh && txt qst示例 -o text_zh` —— 导出待翻译文本（与

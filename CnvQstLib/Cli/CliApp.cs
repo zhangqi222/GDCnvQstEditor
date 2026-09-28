@@ -59,7 +59,7 @@ public static class CliApp
           vocab                                       官方编辑器选项 ↔ 类型 ID 对照表
           make   <spec.json> [-o out]                 由编写用 spec 生成 .cnv/.qst
           sample cnv|qst [-o spec.json]               输出 spec 模板
-          probe  cond|act|cmp|flags|qst|all [-o 目录] [--type N]
+          probe  cond|act|uid|sub|suball|flags|qst|all [-o 目录] [--type N] [--sub N] [--split]
                                                       批量生成探测文件（交官方编辑器辨认）
           selftest    <dir>                           结构编辑自检（增/删/移后 round-trip 三检）
           new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]
@@ -324,6 +324,7 @@ public static class CliApp
         string what = args[1].ToLowerInvariant();
         string dir = Arg(args, "-o") ?? Arg(args, "--out") ?? "probe_out";
         string? typeArg = Arg(args, "--type");
+        string? subArg = Arg(args, "--sub");
         try
         {
             bool split = args.Any(a => a.Equals("--split", StringComparison.OrdinalIgnoreCase));
@@ -331,7 +332,10 @@ public static class CliApp
             {
                 "cond" => Probe.CondTypes(split),
                 "act" => Probe.ActTypes(split),
-                "cmp" => Probe.Comparator(typeArg != null ? uint.Parse(typeArg) : 6),
+                "uid" => Probe.UidVariants(typeArg != null ? uint.Parse(typeArg) : 6,
+                                           subArg != null ? byte.Parse(subArg) : (byte)1),
+                "sub" => Probe.SubVariants(typeArg != null ? uint.Parse(typeArg) : 6, split),
+                "suball" => Probe.SubVariantsAll(split),
                 "flags" => Probe.StepFlags(),
                 "qst" => Probe.QuestTasks(),
                 "all" => Probe.All(typeArg, split),

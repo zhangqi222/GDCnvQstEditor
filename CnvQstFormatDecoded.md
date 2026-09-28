@@ -167,85 +167,116 @@ objective/event 沿用既有增删能力。QST 本地化逐 task 映射未解，
 ```
 ConditionCollection(n)            ActionCollection(n)
   u32 logic（仅 n>0 时读）          × n:  u32 type; u8 subType; <body>
-  × n: u32 type; u8 subType; u32 uid; <body>
+  × n: u32 type; u8 subType; u32 比较符; <body>
 ```
 
-**两个易错的不对称**：动作无 uid、无前导字；条件集合的前导 logic 字在集合自己的 Read 里，
+**两个易错的不对称**：动作无比较符字、无前导字；条件集合的前导 logic 字在集合自己的 Read 里，
 调用方只在 count>0 时才调 Read——**空列表只占计数字本身**。
 
 **logic 字**（语义未经引擎证实，本地观测+金样直接证据）：0=AND（jailor_01 多条条件均为 AND 列表）、
 1=OR（mq_burrwitch 双条件处 `{HasToken, ServerHasToken}` OR 列表；446 样本全量一致）。
 
-### 4.1 body 规格
+### 4.1 条件的第 3 个字 = 比较符（2026-09-28 修正）
+
+条件记录里 `u32 type + u8 subType` 之后那个 u32，gd-utility 称为 **uid**——**实测它不是 uid，是比较符**：
+
+- 造探测文件：同一条件（HasFaction / "SURVIVORS" / 10000）、同一 subType=1，**只改这个字**，
+  官方编辑器显示的比较符随之变化（该字=1 → 显示 `<=`）。
+- 反证：jailor_01 的 `HasFaction "SURVIVORS" >= 10000`（编辑器真机显示 `>=`）该字=3，
+  而探测文件同条件该字=1 显示 `<=`——两者只差这一个字。
+- `census` 分布与该解释吻合：**没有比较符的条件**（OnQuest / HasToken / ServerHasToken / QuestBlocked /
+  QuestTaskComplete / OnQuestTask / LuaScript / HasQuestObjective / CheckRandomValue / OwnsDLC）
+  该字恒为 2；**有比较符的条件**取 0/3/4/5（HasItem 3×191 + 0×51、HasFaction 3×57 + 0×18 + 4×5、
+  HasMoney 3×37 + 0×15、IsDifficulty 2×22 + 5×1）。
+- 动作没有这个字；**QST 的条件也不落盘这个字**（"uid 不落盘"在 QST 侧成立），
+  故 QST 条件无从表达比较符——与语料相符。
+- 0..5 的完整符号对应由 `probe uid` 交官方编辑器读出（待回填，见 §7）。
+
+`ScriptRecord.Uid` 字段名沿用，含义按此更正；GUI 里该输入框已改标"比较符（条件）"。
+
+### 4.2 body 规格
 
 `S`=字符串、`I`=u32、`B`=u8；小写 `i`/`b` = 仅当 subType==1 时存在；
 `P` = `i32 n + n×字符串 + u32 尾字`；
 `L`（Lua 形态）= `串(调用名) + i32 n + n×{u32,u8,u32,串} +（条件另有固定尾部 {u32,u32,u8,u32,串}）`。
 
-### 4.2 条件（26 类，`ScriptableCondition::Create` 跳转表）
+### 4.3 条件（26 类，官方编辑器逐类型辨认完毕）
 
-| type | body | 类名（gd-utility 证实） | 本地锚定 |
+> 2026-09-28：`probe cond`（26 个节点 = 26 个 type）在官方 ConversationEditor 中全部显示出官方名，
+> 下表"编辑器实显"一列即读到的结果，证据见 `反馈截图/probe_cond.cnv.png`。
+
+| type | body | 名字 | 编辑器实显 / 备注 |
 |---|---|---|---|
-| 0 | `S B` | OnQuest | |
-| 1 | `S I B` | QuestTaskComplete |（I=任务标识=引用hash<<8，编辑器显示 "?"）|
-| 2 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 23/24 同形状，待真机核对）|
-| 3 | `I` | 未命名 | **IsLevel**（推断；语料值仅 {5,10} 3 例）|
-| 4 | `I` | 未命名 | **IsDifficulty**（0=Normal/1=Epic/2=Legendary，mq_burrwitch task4 三事件同现证实）|
-| 5 | `B` | 未命名 | 候选组 {IsHardcore, KnowsPlayer}（样本 0；与 13 同形状，二者待定）|
-| 6 | `S I` | HasFaction |（S=阵营名，I=数值；编辑器比较符与 subType 的关系未定）|
-| 7 | `S B` | 未命名 | **HasToken**（refugee_01 `BLACKSMITH_APPRENTICE`）|
-| 8 | `I` | 未命名 | **HasMoney**（推断；值域 100–12000，52 例中 46 例与 HasItem 同列表，疑似购买/交换检查）|
-| 9 | `S I b` | HasItem |（b=CompleteOnly，推断，编辑器签名）|
-| 10, 16 | `P` | HasKilled / HasKilled(变体) |（P 尾字=KillCount，推断，编辑器签名）；官方另有 HasKilledFaction / HasKilledMonsterClass / HasKilledProxy 三个同族选项未定位（样本 0）|
-| 11 | `S I i B` | HasQuestObjective | |
-| 12 | `L` | LuaScript（条件）| |
-| 13 | `B` | 未命名 | 候选组 {IsHardcore, KnowsPlayer}（样本 0；与 5 同形状，二者待定）|
-| 14 | `S I B` | OnQuestTask | |
-| 15 | `S I` | **UsedQuestItem**（推断） | 官方 ItemRecord+NumUsed；唯一空余 `SI` 槽，样本 0 |
-| 17 | （空）| 未命名 | **WaitForCompletion**（mq_burrwitch task4 目标唯一条件，无参数）|
-| 18 | `S B` | 未命名 | **ServerHasToken**（burrwitch OR 对的右侧）|
-| 19 | `S B` | QuestBlocked | |
-| 20 | `S B` | **AnyoneHasToken**（推断） | 官方 TokenName+HasToken；唯一空余 `SB` 槽，样本 0 |
-| 21 | `S I` | CheckRandomValue | |
-| 22 | `I` | **OwnsDLC**（推断） | 118 例**全部**落在 OR 长列表（最长 22 条），取值成连续簇（0x6BCE2/0x6BCEC/0x6BCF6…），门控奖励/忠诚包商人（npc_bonusitems_01）；官方 OwnsDLC=DLC_ID+比较符，形状吻合。旧注"哈希条件"未排除 |
-| 23 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 2/24 同形状）|
-| 24 | `I` | 未命名 | 候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge}（样本 0；与 2/23 同形状）|
-| 25 | `I B` | **HasMastery**（推断） | 官方 MasteryName(SkillClass01..30)+HasMastery；**唯一 `IB` 槽**，形状唯一匹配，样本 0 |
+| 0 | `S B` | OnQuest | `OnQuest T0, True` |
+| 1 | `S I B` | QuestTaskComplete | `QuestTaskComplete T1, ?, True`（任务标识显示 "?"）|
+| 2 | `I` | **HasExperience** | `HasExperience <= 10000` |
+| 3 | `I` | **IsLevel** | `IsLevel <= 10000`（语料值仅 {5,10}）|
+| 4 | `I` | IsDifficulty | `IsDifficulty <= 10000`（I 值 0/1/2 = Normal/Epic/Legendary）|
+| 5 | `B` | **IsHardcore** | `IsHardcore True` |
+| 6 | `S I` | HasFaction | `HasFaction T6, <= 10000` |
+| 7 | `S B` | HasToken | `HasToken T7, True` |
+| 8 | `I` | **HasMoney** | `HasMoney <= 10000`（值域 100–12000，常与 HasItem 同列表）|
+| 9 | `S I b` | HasItem | `HasItem T9, <= 10000, True`（b=CompleteOnly）|
+| 10 | `P` | HasKilled | `HasKilled T10, <= 1`（尾字=KillCount）|
+| 11 | `S I i B` | HasQuestObjective | `HasQuestObjective T11, ?, [ALL], True` |
+| 12 | `L` | LuaScript | `LuaScript gd.probe.test() <> FALSE`（Evaluate 段）|
+| 13 | `B` | **KnowsPlayer** | `KnowsPlayer True` |
+| 14 | `S I B` | OnQuestTask | `OnQuestTask T14, ?, True` |
+| 15 | `S I` | **UsedQuestItem** | `UsedQuestItem T15, <= 10000` |
+| 16 | `P` | **HasKilledProxy** | `HasKilledProxy T16, <= 1`（不是"HasKilled 变体"）|
+| 17 | （空）| WaitForCompletion | `WaitForCompletion` |
+| 18 | `S B` | ServerHasToken | `ServerHasToken T18, True` |
+| 19 | `S B` | QuestBlocked | `QuestBlocked T19, True` |
+| 20 | `S B` | **AnyoneHasToken** | `AnyoneHasToken T20, True` |
+| 21 | `S I` | CheckRandomValue | `CheckRandomValue T21 <= 10000` |
+| 22 | `I` | **OwnsDLC** | `OwnsDLC <= 10000`（118 例全在 OR 长列表，门控奖励/忠诚包商人；旧称"哈希条件"作废）|
+| 23 | `I` | **HasTribute** | `HasTribute <= 10000` |
+| 24 | `I` | **EarnedDevotion** | `EarnedDevotion <= 10000` |
+| 25 | `I B` | **HasMastery** | `HasMastery 10000 True`（MasteryName = SkillClass 枚举）|
 
-### 4.3 动作（27 类；工厂对 0 和 16 返回 null，无文件使用）
+官方条件下拉共 30 项，二进制 26 槽已全部落位，**尚余 4 项未定位**：
+IsChallenge（I+比较符）、Hasbuff（S+B）、HasKilledFaction / HasKilledMonsterClass（两个数组+KillCount）。
+槽位已排满 → 它们只能是某个 type 的 **subType 变体**，用 `probe sub` / `probe suball` 扫（§7）。
 
-| type | body | 类名（gd-utility 证实） | 本地锚定 |
+### 4.4 动作（27 个可用槽，官方编辑器逐类型辨认完毕）
+
+> 证据见 `反馈截图/probe_act.cnv.png`。（动作 0/16：工厂返回 null，无文件使用。）
+
+| type | body | 名字 | 编辑器实显 |
 |---|---|---|---|
-| 0, 16 | — | 未实现 | 无文件使用 |
-| 1 | `S I` | BeginQuestTask | |
-| 2 | `S` | 未命名 | **CompleteQuest**（burrwitch task4 OnComplete 第二事件）|
-| 3 | `S I` | 未命名 | **CompleteQuestTask**（推断；body=任务文件+hash，常与 BeginQuestTask 同为大列表）|
-| 4 | `I` | GiveMoney | |
-| 5 | `S I` | **GiveFaction**（推断） | S=阵营名、I=数值 50–400，QST 792 例像声望奖励；与 24 SetFaction 同形状，**二者可能互换** |
-| 6 | `S I` | GiveItem | |
-| 7 | `I` | GiveLevel | |
-| 8 | `I` | GiveExperience |（350/22000/54000 金额已对上编辑器）|
-| 9 | `S` | 未命名 | **RemoveToken**（推断；与 10 可能互换）|
-| 10 | `S` | 未命名 | **GiveToken**（推断；与 9 可能互换）|
-| 11 | `L` | LuaScript（动作）| |
-| 12 | `S` | **DebugPrint**（推断） | 官方 Text 串；样本 0 |
-| 13 | `S` | **PlaySound**（推断） | 官方 SoundRecord(file)；gd-utility 记作 SoundPakPreload（其自身亦未证实），以官方词表为准 |
-| 14 | `I` | 未命名 | **PlayAnimation**（jailor_01 根节点唯一动作，I=9 ↔ 编辑器枚举 "Chat"）|
-| 15 | `I` | GiveSkillPoint | |
-| 17 | `S` | 未命名 | **Notification**（burrwitch `tagNotification_…` 串）|
-| 18 | `I` | GiveAttribPoint | |
-| 19 | `S` | 未命名 | **ScriptEvent**（推断；串全部 `EV_…` 前缀）|
-| 20 | `S I` | GiveRandomItem | |
-| 21 | `S I I` | GenerateRandomValue | |
-| 22 | `S` | CastSkill | |
-| 23 | `S` | **UnlockFaction**（推断） | 官方 FactionType 串；样本 0 |
-| 24 | `S I` | **SetFaction**（推断） | 官方 FactionType+Value；与 5 GiveFaction 同形状，**二者可能互换**，样本 0 |
-| 25 | `I` | GiveDevotion | |
-| 26 | `I` | GiveTribute | |
-| 27 | `I` | UnlockTutorial | |
-| 28 | `S B` | PlayVideo | |
+| 1 | `S I` | BeginQuestTask | `BeginQuestTask T1, ?` |
+| 2 | `S` | CompleteQuest | `CompleteQuest T2` |
+| 3 | `S I` | CompleteQuestTask | `CompleteQuestTask T3, ?` |
+| 4 | `I` | GiveMoney | `GiveMoney 10000` |
+| 5 | `S I` | GiveFaction | `GiveFaction T5, 10000` |
+| 6 | `S I` | GiveItem | `GiveItem T6, 10000` |
+| 7 | `I` | GiveLevel | `GiveLevel 10000` |
+| 8 | `I` | GiveExperience | `GiveExperience 10000` |
+| 9 | `S` | **GiveToken** | `GiveToken T9`（与 10 相对原先推断**互换**，已改正）|
+| 10 | `S` | **RemoveToken** | `RemoveToken T10` |
+| 11 | `L` | LuaScript | `LuaScript gd.probe.test(!)` |
+| 12 | `S` | **DebugPrint** | `DebugPrint T12` |
+| 13 | `S` | **PlaySound** | `PlaySound T13`（gd-utility 记作 SoundPakPreload，作废）|
+| 14 | `I` | PlayAnimation | `PlayAnimation`（AnimationType，语料恒为 9）|
+| 15 | `I` | GiveSkillPoint | `GiveSkillPoint 10000` |
+| 17 | `S` | Notification | `Notification T17` |
+| 18 | `I` | GiveAttribPoint | `GiveAttribPoint 10000` |
+| 19 | `S` | ScriptEvent（推断）| 截图该行被弹窗遮住，未亲眼确认 |
+| 20 | `S I` | GiveRandomItem | `GiveRandomItem …, 10000` |
+| 21 | `S I I` | GenerateRandomValue | `GenerateRandomValue` |
+| 22 | `S` | CastSkill | `CastSkill` |
+| 23 | `S` | **UnlockFaction** | `UnlockFaction` |
+| 24 | `S I` | **SetFaction** | `SetFaction`（与 5 GiveFaction 的区分已按编辑器确认）|
+| 25 | `I` | GiveDevotion | `GiveDevotion` |
+| 26 | `I` | GiveTribute | `GiveTribute` |
+| 27 | `I` | UnlockTutorial | `UnlockTutorial` |
+| 28 | `S B` | PlayVideo | `PlayVideo` |
 
-### 4.4 语料类型分布（本地 446 文件，条件+动作混合计数）
+**枚举型字段要给合法值**：编辑器拿它当下标查表，越界会弹 ArgumentOutOfRange 对话框
+（首次探测时 PlayAnimation 的 I=10000 即如此）。
+
+
+### 4.5 语料类型分布（本地 446 文件，条件+动作混合计数）
 
 type4×2084、1×907、9×853、8×835、5×792、11×532、14×509、7×484、10×415、3×381、6×343、
 21×297、17×266、2×258、19×146、22×130、20×115、18×108、0×24、12×23、15×2、25×1。
@@ -282,22 +313,37 @@ CNV 侧 21,290 节点 / 11,326 条件+动作来自 gd 语料（480 文件）。
 
 ## 七、仍然未知（按"保留原字节"策略贯穿解析与写回）
 
-step 的 +0x50 字、task 的 +0xA8/+0xAC、两个版本门控 flag 位、objective 的两个 u32、event 的一个 u32、
-头部 +0x10、条件集合 logic 字的引擎语义（本地观测 0=AND/1=OR）。
+**字段语义类**
+- step 的 +0x50 字：仅 speech 步非零，语料 0x8×83、0x10×57、0x20×43、0x4×3（四个位、三个开关）
+  ——对应编辑器的 {Once Only / Always Show / Unimportant}，位的分配待 `probe flags` 结果回填
+- task 的 +0xA8/+0xAC、objective 的两个 u32、event 的一个 u32、头部 +0x10
+- 两个版本门控 flag 位（v≥8 / v≥9 尾字节）的语义
 
-**命名遗留**（官方选项表 2026-09-28 补入后仍待真机核对的部分，见 §4.2/§4.3 标注）：
-- 条件 2/23/24：候选组 {EarnedDevotion, HasExperience, HasTribute, IsChallenge} 四选三（同 body `I`）
-- 条件 5/13：候选组 {IsHardcore, KnowsPlayer} 二选二（同 body `B`）
-- 条件 16：HasKilled 同族三选项 HasKilledFaction / HasKilledMonsterClass / HasKilledProxy 未定位
-- Hasbuff（BuffName+HasBuff）：官方有此选项，但二进制已无空余 `SB` 槽，疑为 HasToken 系的 subType 变体
-- OperMerchantWindow（编辑器点击报错）：疑为动作工厂返回 null 的 type 0/16
-- 推断名真机核对：条件 3/8/15/20/22/25，动作 3/5/9/10/12/13/19/23/24
-  （其中 9/10 RemoveToken/GiveToken、5/24 GiveFaction/SetFaction 两对可能互换，未排除）
+**比较符编码**：位置已定（条件记录里 type/subType 之后的 u32，见 §4.1），
+但 0..5 各对应哪个符号（= / > / < / >= / <= / !=）尚未读出——`probe uid` 回填。
+反向推理的约束：无比较符的条件该字恒为 2（那么 2 很可能是"＝"），有比较符的取 0/3/4/5，
+而我们实测 1 → `<=`、3 → `>=`。
 
-**结构性未知**：比较符（编辑器 `>=` 等）在官方编辑器里是独立字段，但二进制 body 中找不到它的位置
-（候选藏于 subType 或 step/task 的 unknown 位）；step unknown 位 0x4/0x8/0x10/0x20 与编辑器
-{Once Only/Always Show/Unimportant} 的对应（CNV 语料：0x8×83、0x10×57、0x20×43、0x4×3，仅出现在
-speech 步，四个位对应三个开关）。
+**4 项官方选项未定位**（26 个条件槽已排满 → 只能是某 type 的 subType 变体）：
+- IsChallenge（body 为 I+比较符）：候选 2/3/4/8/22/23/24 的某个 subType
+- Hasbuff（S+B：BuffName + HasBuff）：候选 7 HasToken / 18 ServerHasToken / 20 AnyoneHasToken
+- HasKilledFaction、HasKilledMonsterClass（两个数组 + KillCount）：候选 10 HasKilled / 16 HasKilledProxy
+  ——编辑器里 HasKilledFaction/MonsterClass 各有两个"Faction"数组，而二进制的 `P` 形态只有一组数组，
+  差额很可能正是 subType 区分的两种布局
+- OperMerchantWindow（动作，编辑器点击即报错）：疑为工厂返回 null 的 type 0/16
+- 待回填手段：`probe sub` / `probe suball`（一类型一文件，subType 0..5）
 
-> 官方编辑器的条件下拉 30 项、动作下拉 28 项，而二进制只有 26 个条件槽与 27 个可用动作槽——
-> 差额说明存在 subType 变体或空实现项。逐项对照见 CLI：`CnvQstTool vocab`。
+**动作 19 = ScriptEvent**：仍是推断（编辑器截图该行被弹窗遮住）。
+**动作 0/16**：工厂返回 null，无文件使用。
+
+**QST 本地化槽位 ↔ task 映射（仍未解）**
+- 官方 QuestEditor 打开我们生成的 `qst_1task.qst` / `qst_3task.qst` 时抛
+  `ArgumentOutOfRangeException`（`LocalizationInfo(Quest, version)` → `List.get_Item`），
+  即**编辑器按自己的公式索引串表，串数不足就越界**；已给探测文件补 18 条空槽再测。
+- 反向配平（`census` / `dump` + `txt` 实测）：`mq_burrwitch` T=4 O=4 E=10 串=23、
+  `sq_harts_amulet` T=2 O=4 串=27、`mq_wakingtomisery` T=4 O=4 串=25、
+  `sq_medicalpractice` T=1 O=2 串=18——`2 + 2T + O` 远小于实际串数，**空槽数量既不等于 T 也不等于 E**，
+  说明每个 task/objective/event 各自还有固定预留槽。待 `qst_3task.qst` 在编辑器里的显示结果反推。
+
+> 官方条件 30 项 / 动作 28 项；二进制 26 条件槽（已全部落位）+ 27 可用动作槽（已全部落位）。
+> 逐项对照与证据等级：CLI `CnvQstTool vocab`；探测文件由 `CnvQstTool probe …` 生成。

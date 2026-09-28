@@ -66,7 +66,15 @@ public sealed class ScriptRecord
     public bool IsCondition;
     public uint Type;
     public byte SubType;
-    public uint Uid;                    // 仅条件；动作不带
+    /// <summary>
+    /// 条件记录里 type/subType 之后的那 4 字节。
+    ///
+    /// 2026-09-28 由探测文件 + 官方编辑器比照发现：**它就是比较符**（不是 gd-utility 所说的 uid）——
+    /// 同一条件（HasFaction / SURVIVORS / 10000）只改这一个字，编辑器显示的比较符跟着变：
+    /// 1 → "&lt;="、3 → "&gt;="（jailor_01 真机显示 &gt;=）。动作没有这个字；QST 条件也不落盘此字
+    /// （所以 QST 侧条件无从表达比较符——与语料相符）。完整编码由 `probe uid` 探测。
+    /// </summary>
+    public uint Uid;
     public int Offset;
     public int Length;
     public string BodySpec = "";
@@ -160,30 +168,30 @@ public static class Scriptable
     {
         /* 0*/ ["QuestFile", "OnQuest"],
         /* 1*/ ["QuestFile", "Task", "TaskComplete"],
-        /* 2*/ null,
-        /* 3*/ ["Level"],                                       // IsLevel（推断）
-        /* 4*/ ["Difficulty"],                                  // IsDifficulty
-        /* 5*/ null,
+        /* 2*/ ["Experience"],                                  // HasExperience
+        /* 3*/ ["IsLevel"],                                     // IsLevel
+        /* 4*/ ["IsDifficulty"],                                // IsDifficulty
+        /* 5*/ ["IsHardcore"],                                  // IsHardcore
         /* 6*/ ["FactionName", "Value"],                        // HasFaction
         /* 7*/ ["TokenName", "HasToken"],                       // HasToken
-        /* 8*/ ["MoneyAmount"],                                 // HasMoney（推断）
+        /* 8*/ ["MoneyAmount"],                                 // HasMoney
         /* 9*/ ["ItemRecord", "ItemCount", "CompleteOnly"],     // HasItem
-        /*10*/ ["MonsterRecords"],                              // HasKilled
+        /*10*/ ["MonsterRecords"],                              // HasKilled（P 尾字 = KillCount）
         /*11*/ ["QuestFile", "Task", "Objective", "Satisfied"], // HasQuestObjective
         /*12*/ ["Function"],                                    // Lua 条件
-        /*13*/ null,
+        /*13*/ ["KnowsPlayer"],                                 // KnowsPlayer
         /*14*/ ["QuestFile", "Task", "OnTask"],                 // OnQuestTask
-        /*15*/ ["ItemRecord", "NumUsed"],                       // UsedQuestItem（推断）
-        /*16*/ ["MonsterRecords"],                              // HasKilledVariant
+        /*15*/ ["ItemRecord", "NumUsed"],                       // UsedQuestItem
+        /*16*/ ["ProxyRecords"],                                // HasKilledProxy（P 尾字 = KillCount）
         /*17*/ [],                                              // WaitForCompletion
         /*18*/ ["TokenName", "HasToken"],                       // ServerHasToken
         /*19*/ ["QuestFile", "QuestBlocked"],                   // QuestBlocked
-        /*20*/ ["TokenName", "HasToken"],                       // AnyoneHasToken（推断）
+        /*20*/ ["TokenName", "HasToken"],                       // AnyoneHasToken
         /*21*/ ["Name", "RandomValue"],                         // CheckRandomValue
-        /*22*/ ["DLC_ID"],                                      // OwnsDLC（推断）
-        /*23*/ null,
-        /*24*/ null,
-        /*25*/ ["MasteryName", "HasMastery"],                   // HasMastery（推断）
+        /*22*/ ["DLC_ID"],                                      // OwnsDLC
+        /*23*/ ["TributeAmount"],                               // HasTribute
+        /*24*/ ["DevotionAmount"],                              // EarnedDevotion
+        /*25*/ ["MasteryName", "HasMastery"],                   // HasMastery
     };
 
     private static readonly string?[]?[] ActionParams =

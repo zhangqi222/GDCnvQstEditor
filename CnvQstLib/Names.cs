@@ -102,6 +102,19 @@ public static class Names
         [7] = "HasToken",
         [17] = "WaitForCompletion",
         [18] = "ServerHasToken",
+        // ---- 2026-09-28 官方编辑器直接辨认（probe_out 探测文件逐类型显示，见反馈截图）----
+        [2] = "HasExperience",
+        [3] = "IsLevel",
+        [5] = "IsHardcore",
+        [8] = "HasMoney",
+        [13] = "KnowsPlayer",
+        [15] = "UsedQuestItem",
+        [16] = "HasKilledProxy",
+        [20] = "AnyoneHasToken",
+        [22] = "OwnsDLC",
+        [23] = "HasTribute",
+        [24] = "EarnedDevotion",
+        [25] = "HasMastery",
     };
 
     public static readonly Dictionary<uint, string> ActionEditorNames = new()
@@ -109,63 +122,39 @@ public static class Names
         [2] = "CompleteQuest",
         [14] = "PlayAnimation",
         [17] = "Notification",
+        // ---- 2026-09-28 官方编辑器直接辨认 ----
+        [3] = "CompleteQuestTask",
+        [5] = "GiveFaction",
+        [9] = "GiveToken",
+        [10] = "RemoveToken",
+        [12] = "DebugPrint",
+        [13] = "PlaySound",
+        [23] = "UnlockFaction",
+        [24] = "SetFaction",
     };
 
-    // ---- 推断层：无 gd-utility 类名也无编辑器金样直接证据，仅凭 446 样本语料 + 编辑器
-    //      字段签名（cnv示例/cnv字段选项.txt）判定的名字。UI 显示时附加"（推断）"，
-    //      待用户在官方编辑器真机核对（记录见 CnvQstFormatDecoded.md §本地锚定）。
-    // 条件 3：body I，语料值 {5, 10} 仅 3 例，值域像等级 → IsLevel（推断）。
-    // 条件 8：body I，值域 100–12000，52 例中 46 例与 HasItem 同列表（交换/购买检查）→ HasMoney（推断；
-    //         候选 HasExperience/HasTribute 无法排除）。
-    // 动作 3：body SI(任务文件+任务 hash)，常与 BeginQuestTask 同列表的大列表 → CompleteQuestTask（推断）。
-    // 动作 5：body SI(阵营名+数值)，QST 792 例、值域 50–400 像声望奖励 → GiveFaction（推断；
-    //         候选 SetFaction 无法排除）。
-    // 动作 9/10：body S(单一 token 串)，编辑器 GiveToken/RemoveToken 二选一，语料无法区分
-    //          → 9=RemoveToken、10=GiveToken（推断，二者可能互换）。
-    // 动作 19：body S，串全部 "EV_…" 前缀 → ScriptEvent（推断）。
-    // 以下按官方选项表（cnv示例/cnv字段选项.txt）+ body 形状唯一匹配补入，样本 0、待真机核对：
-    //   条件 15：body SI(物品记录 + 次数) ← 官方 UsedQuestItem（ItemRecord + NumUsed），唯一空余 SI。
-    //   条件 20：body SB(token 串 + 布尔) ← 官方 AnyoneHasToken（TokenName + HasToken），唯一空余 SB。
-    //   条件 22：body I，118 例全在 OR 长列表（最长 22 条），取值成连续簇（0x6BCE2/0x6BCEC/0x6BCF6…），
-    //            门控奖励/忠诚包商人 → 官方 OwnsDLC（DLC_ID + 比较符）。候选哈希条件未排除。
-    //   条件 25：body IB(枚举 + 布尔) ← 官方 HasMastery（MasteryName SkillClass01..30 + HasMastery），
-    //            唯一 IB 槽，形状唯一匹配。
-    //   动作 12：body S ← 官方 DebugPrint（Text）。
-    //   动作 13：body S ← 官方 PlaySound（SoundRecord）；gd-utility 记作 SoundPakPreload（预载 SoundPak）。
-    //   动作 23：body S ← 官方 UnlockFaction（FactionType）。
-    //   动作 24：body SI ← 官方 SetFaction（FactionType + Value）；与动作 5（GiveFaction）同形状，二者可能互换。
+    // ---- 推断层（现仅剩一项）----
+    // 动作 19：body S，串全部 "EV_…" 前缀 → ScriptEvent（推断；编辑器截图该行被弹窗遮住未确认）。
+    //
+    // 2026-09-28：原先靠"body 形状唯一匹配"推断的 12 项，已全部由官方编辑器用探测文件
+    // （`probe cond` / `probe act`，见 反馈截图/）直接显示确认，上移到 ConditionEditorNames /
+    // ActionEditorNames。两处修正：
+    //   · 条件 22 确为 OwnsDLC（"哈希条件"的旧称作废）；
+    //   · 动作 9/10 确为 GiveToken / RemoveToken——与原先推断**相反**，已改正。
+    // 官方条件下拉仍有 4 项未定位：IsChallenge、Hasbuff、HasKilledFaction、HasKilledMonsterClass
+    // （二进制槽位已排满，只能是某个 type 的 subType 变体，见 `probe sub`）。
     public static readonly Dictionary<uint, string> ConditionInferredNames = new()
     {
-        [3] = "IsLevel",
-        [8] = "HasMoney",
-        [15] = "UsedQuestItem",
-        [20] = "AnyoneHasToken",
-        [22] = "OwnsDLC",
-        [25] = "HasMastery",
     };
 
     public static readonly Dictionary<uint, string> ActionInferredNames = new()
     {
-        [3] = "CompleteQuestTask",
-        [5] = "GiveFaction",
-        [9] = "RemoveToken",
-        [10] = "GiveToken",
-        [12] = "DebugPrint",
-        [13] = "PlaySound",
-        [19] = "ScriptEvent",
-        [23] = "UnlockFaction",
-        [24] = "SetFaction",
+        [19] = "ScriptEvent",   // 编辑器截图里该行被弹窗遮住，未亲眼确认
     };
 
     /// <summary>有实例但仍无法命名的类型（样本 0 或编辑器无对应词）的短提示，UI 下拉/列表用。</summary>
     public static readonly Dictionary<uint, string> ConditionHints = new()
     {
-        [2] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
-        [5] = "候选 IsHardcore/KnowsPlayer（样本0，二者待定）",
-        [13] = "候选 IsHardcore/KnowsPlayer（样本0，二者待定）",
-        [16] = "HasKilled 变体：候选 HasKilledFaction/HasKilledMonsterClass/HasKilledProxy",
-        [23] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
-        [24] = "候选 EarnedDevotion/HasExperience/HasTribute/IsChallenge",
     };
 
     /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。</summary>

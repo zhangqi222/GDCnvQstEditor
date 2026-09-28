@@ -70,7 +70,7 @@ internal sealed class ScriptListEditor : Panel
     private readonly ComboBox _typeCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
     private readonly NumericUpDown _subType = new() { Minimum = 0, Maximum = 255, Width = 60 };
     private readonly NumericUpDown _uid = new() { Minimum = 0, Maximum = uint.MaxValue, Width = 100 };
-    private readonly Label _uidLabel = Gui.Label("uid（条件）", 0, 0, 90);
+    private readonly Label _uidLabel = Gui.Label(L.T("比较符（条件）", "Comparator"), 0, 0, 90);
     private readonly DynamicFieldPanel _fields;
     private bool _building;
 

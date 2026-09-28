@@ -75,23 +75,74 @@ public static class Probe
     }
 
     /// <summary>
-    /// 比较符探测：同一条件类型、subType 0..5 各一个文件。
-    /// 官方编辑器里比较符（=/>/</>=/<=/!=）是独立字段，而二进制 body 里找不到它的位置——
-    /// 若 subType 就是比较符，这 6 个文件在编辑器里会显示 6 种不同的比较符。
+    /// 比较符探测：条件与参数全固定，只改 type/subType 之后那 4 字节（gd-utility 称作 uid 的字），
+    /// 看官方编辑器显示哪个比较符。已知两点：该字=1 显示 "&lt;="（本探测器早先的探测文件），
+    /// jailor_01 该字=3 编辑器显示 "&gt;="。
     /// </summary>
-    public static List<Item> Comparator(uint type)
+    public static List<Item> UidVariants(uint type, byte sub)
     {
         var nodes = new List<Node>();
+        for (uint u = 0; u <= 5; u++)
+        {
+            var rec = Rec(true, type, sub, "SURVIVORS", 10000);
+            rec.Uid = u;
+            nodes.Add(new Node($"uid={u}（看它显示成哪个比较符）", 0, List(new[] { rec }), Empty()));
+        }
         string name = Names.ConditionName(type);
+        byte[] data = BuildCnv($"probe uid type={type}（6 个节点 = 该字取值 0..5）", nodes);
+        return new List<Item> { new Item($"probe_uid_{type:00}_{Safe(name)}.cnv", data,
+            $"type={type}（{Names.ConditionLabel(type)}）subType={sub} 固定，该字取 0..5；" +
+            "编辑器显示的比较符序列即该字的编码。") };
+    }
+
+    /// <summary>比较符探测（两个代表类型：HasFaction 带字符串+数值，IsDifficulty 只有数值）。</summary>
+    public static List<Item> UidDefaults()
+    {
+        var items = new List<Item>();
+        items.AddRange(UidVariants(6, 1));
+        items.AddRange(UidVariants(4, 0));
+        return items;
+    }
+
+    /// <summary>
+    /// subType 变体探测：固定 type，subType 0..5 各一节点。
+    /// 官方条件下拉还剩 4 项没落点（IsChallenge / Hasbuff / HasKilledFaction / HasKilledMonsterClass），
+    /// 槽位已排满 → 它们只能是某个 type 的 subType 变体，这一探测就是去找它们。
+    /// 注意：subType 值不当时编辑器可能读错布局而报错，故错开成独立文件（split）。
+    /// </summary>
+    public static List<Item> SubVariants(uint type, bool split)
+    {
+        string name = Names.ConditionName(type);
+        var items = new List<Item>();
+        var nodes = new List<Node>();
         for (byte sub = 0; sub <= 5; sub++)
         {
             var rec = Rec(true, type, sub, "SURVIVORS", 10000);
-            nodes.Add(new Node($"cmp type={type} subType={sub}（看比较符是什么）", 0, List(new[] { rec }), Empty()));
+            rec.Uid = 2;                                        // 语料里的常值，避免干扰
+            string text = $"subType={sub} · 我们叫：{Names.ConditionLabel(type)}";
+            if (split)
+            {
+                byte[] one = BuildCnv($"sub {type}/{sub}", new[] { new Node(text, 0, List(new[] { rec }), Empty()) });
+                items.Add(new Item($"sub_{type:00}_s{sub}_{Safe(name)}.cnv", one,
+                    $"type={type} subType={sub}（独立文件，隔离报错）"));
+            }
+            else nodes.Add(new Node(text, 0, List(new[] { rec }), Empty()));
         }
-        byte[] data = BuildCnv($"probe cmp type={type}（6 个节点 = subType 0..5）", nodes);
-        return new List<Item> { new Item($"probe_cmp_{type:00}_{Safe(name)}.cnv", data,
-            $"type={type}（{Names.ConditionLabel(type)}）的 subType 0..5 各一个节点；" +
-            "若官方编辑器显示 6 种不同比较符，即证明 subType 就是比较符编码。") };
+        if (!split)
+        {
+            byte[] data = BuildCnv($"probe sub type={type}（6 个节点 = subType 0..5）", nodes);
+            items.Add(new Item($"probe_sub_{type:00}_{Safe(name)}.cnv", data,
+                $"type={type}（{Names.ConditionLabel(type)}）的 subType 0..5；看哪个值让编辑器显示成别的选项名。"));
+        }
+        return items;
+    }
+
+    /// <summary>把 26 个条件类型的 subType 0..5 全扫一遍（一类型一文件）。</summary>
+    public static List<Item> SubVariantsAll(bool split)
+    {
+        var items = new List<Item>();
+        for (uint t = 0; t < 26; t++) items.AddRange(SubVariants(t, split));
+        return items;
     }
 
     /// <summary>step unknown 位探测：0 / 0x4 / 0x8 / 0x10 / 0x20（对应编辑器 Once Only 等开关）。</summary>
@@ -130,13 +181,17 @@ public static class Probe
                 task.Events.Add(new QstEvent { Actions = List(new[] { Rec(false, 8, 0, "", 350) }) });
                 q.Tasks.Add(task);
             }
+            // 官方编辑器按它自己的公式索引本地化串，串数不足会抛 ArgumentOutOfRange（首次探测即如此）。
+            // 多补一批空槽，让它能顺利加载——加载成功后各段文本落在哪一槽，映射就看得见了。
+            int real = texts.Count;
+            for (int i = 0; i < 18; i++) texts.Add("");
             var lang = new LanguageBlock { Tag = new GdString("enUS") };
             foreach (var s in texts) lang.Texts.Add(new GdString(s));
             q.Languages.Add(lang);
             byte[] data = q.Write();
             items.Add(new Item($"qst_{nt}task.qst", data,
-                $"qst_{nt}task  {nt} 个 task，本地化表 = [{string.Join(", ", texts)}]" +
-                "  编辑器里看每段文本落在哪个槽（即可反推 task ↔ 串表映射）"));
+                $"qst_{nt}task  {nt} 个 task（目标数递减），前 {real} 条是实义文本、其后 18 条补空槽；" +
+                "编辑器里看每段文本落在哪个槽（即可反推 task ↔ 串表映射）"));
         }
         return items;
     }
@@ -146,7 +201,8 @@ public static class Probe
         var items = new List<Item>();
         items.AddRange(CondTypes(split));
         items.AddRange(ActTypes(split));
-        items.AddRange(Comparator(cmpType == null ? 6 : uint.Parse(cmpType)));
+        items.AddRange(UidDefaults());                     // 比较符编码（该字 0..5）
+        items.AddRange(SubVariants(cmpType == null ? 6 : uint.Parse(cmpType), split));  // subType 变体
         items.AddRange(StepFlags());
         items.AddRange(QuestTasks());
         return items;
@@ -254,7 +310,7 @@ public static class Probe
             switch (k)
             {
                 case 'S': rec.Fields.Add(new ScriptField { Kind = FieldKind.Str, S = new GdString(mark) }); break;
-                case 'I': rec.Fields.Add(new ScriptField { Kind = FieldKind.U32, U = num }); break;
+                case 'I': rec.Fields.Add(new ScriptField { Kind = FieldKind.U32, U = EnumSafe(isCondition, type, num) }); break;
                 case 'B': rec.Fields.Add(new ScriptField { Kind = FieldKind.U8, B = 1 }); break;
                 case 'i': if (sub == 1) rec.Fields.Add(new ScriptField { Kind = FieldKind.U32, U = num }); break;
                 case 'b': if (sub == 1) rec.Fields.Add(new ScriptField { Kind = FieldKind.U8, B = 1 }); break;
@@ -273,6 +329,17 @@ public static class Probe
         rec.Length = 0;
         return rec;
     }
+
+    /// <summary>
+    /// 枚举型字段要给合法值：官方编辑器拿它当下标查表，越界会弹 ArgumentOutOfRange 对话框
+    /// （首次探测时 PlayAnimation 的 I=10000 就是这么把编辑器弹窗的）。
+    /// </summary>
+    private static uint EnumSafe(bool isCondition, uint type, uint num) => (isCondition, type) switch
+    {
+        (false, 14) => 9,      // PlayAnimation 的 AnimationType，语料恒为 9（编辑器枚举 "Chat"）
+        (false, 27) => 0,      // UnlockTutorial 的 TutorialPage
+        _ => num,
+    };
 
     /// <summary>默认 subType：语料里带比较符的类型普遍是 1（HasFaction/HasItem/HasQuestObjective…），其余取 0。</summary>
     private static byte DefaultSub(uint type) => type switch
