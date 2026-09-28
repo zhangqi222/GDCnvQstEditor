@@ -1,0 +1,14 @@
+# 构建产物（AGENTS.MD：打包用 dotnet build 默认输出目录）
+[Bb]in/
+[Oo]bj/
+dist/
+
+# 单文件发布/日志
+*.log
+publish/
+
+# IDE / 用户文件
+.vs/
+*.user
+*.suo
+*.userprefs
