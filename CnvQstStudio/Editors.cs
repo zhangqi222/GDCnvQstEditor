@@ -1,52 +1,60 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
 using CnvQst;
 
 namespace CnvQstStudio;
 
-/// <summary>GUI 小工具。</summary>
-internal static class Gui
-{
-    public static Label Label(string text, int x, int y, int w = 120) =>
-        new() { Text = text, Location = new Point(x, y), Size = new Size(w, 22), TextAlign = ContentAlignment.MiddleLeft };
-
-    public static TextBox Box(int x, int y, int w, string text = "", bool multiline = false, int h = 0)
-    {
-        var b = new TextBox
-        {
-            Location = new Point(x, y),
-            Width = w,
-            Text = text,
-            Multiline = multiline,
-        };
-        if (multiline) b.Height = h;
-        return b;
-    }
-
-    /// <summary>u32 显示：大数值按 hex（多为 hash/任务标识），小数值按十进制。</summary>
-    public static string U32Text(uint v) => v >= 0x10000 ? "0x" + v.ToString("X") : v.ToString();
-
-    public static uint ParseU32(string s)
-    {
-        s = s.Trim();
-        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            return Convert.ToUInt32(s[2..], 16);
-        return string.IsNullOrEmpty(s) ? 0 : uint.Parse(s);
-    }
-
-    public static string Describe(ScriptRecord r) => Dump.Describe(r);
-}
-
-/// <summary>编辑变化回调载体：刷新脏标记/状态栏/树节点。</summary>
-internal delegate void Changed();
-
 /// <summary>
 /// 条件/动作列表编辑器：三个明确分区的区域 —— 已有项列表（删除/复制/排序）、添加新项、编辑选中项详细字段。
 /// </summary>
-internal sealed class ScriptListEditor : Panel
+internal sealed class ScriptListEditor : UserControl
 {
     private DocSession _doc;
     private ScriptList _list;
     private readonly bool _isCondition;
     private Changed _changed;
+
+    private readonly ListBox _records = new() { MinHeight = 110 };
+    private readonly ComboBox _addType = new() { MinWidth = 240 };
+    private readonly ComboBox _typeCombo = new() { MinWidth = 360 };
+    // 比较符（官方 Common.ScriptableCondition+Comparison：Less=0…NotEqual=5），下拉选择，不暴露数字
+    private readonly ComboBox _cmp = new() { MinWidth = 90 };
+    private readonly TextBlock _cmpLabel = new() { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 8, 0) };
+    private readonly FieldsPanel _fields;
+    private readonly GroupBox _existingBox = new();
+    private readonly Button _add, _del, _dup, _up, _down;
+    private bool _building;
+
+    public ScriptListEditor(DocSession doc, ScriptList list, bool isCondition, Changed changed)
+    {
+        _doc = doc;
+        _list = list;
+        _isCondition = isCondition;
+        _changed = changed;
+        _fields = new FieldsPanel(OnEdit);
+        _add = MkBtn(L.T("＋ 添加", "+ Add"), AddRecord);
+        _del = MkBtn(L.T("删除", "Delete"), DelRecord);
+        _dup = MkBtn(L.T("复制", "Copy"), DupRecord);
+        _up = MkBtn(L.T("上移", "Up"), () => MoveRecord(-1));
+        _down = MkBtn(L.T("下移", "Down"), () => MoveRecord(1));
+
+        Content = BuildLayout();
+        FillTypeCombo(_addType);
+        FillTypeCombo(_typeCombo);
+        _cmp.ItemsSource = new[] { "<", "<=", "=", ">=", ">", "!=" };
+
+        _records.SelectionChanged += (_, _) => RebuildDetail();
+        _typeCombo.SelectionChanged += (_, _) => ChangeType();
+        _cmp.SelectionChanged += (_, _) =>
+        {
+            if (_building) return;
+            if (Current() is { } r && r.IsCondition) { r.Uid = (uint)Math.Max(0, _cmp.SelectedIndex); OnEdit(); }
+        };
+
+        Rebind(doc, list, changed);
+    }
 
     /// <summary>换选节点/条目时重绑定到新的列表。</summary>
     public void Rebind(DocSession doc, ScriptList list, Changed changed)
@@ -57,97 +65,79 @@ internal sealed class ScriptListEditor : Panel
         Rebuild();
     }
 
-    private readonly GroupBox _existingBox = new() { Dock = DockStyle.Top, Height = 214 };
-    private readonly ListBox _records = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true, IntegralHeight = false };
-    private readonly ComboBox _addType = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
-    private readonly Button _add = new() { Text = L.T("＋ 添加", "+ Add"), Width = 76 };
-    private readonly Button _del = new() { Text = L.T("删除", "Delete"), Width = 64 };
-    private readonly Button _dup = new() { Text = L.T("复制", "Copy"), Width = 64 };
-    private readonly Button _up = new() { Text = L.T("上移", "Up"), Width = 56 };
-    private readonly Button _down = new() { Text = L.T("下移", "Down"), Width = 56 };
-    private readonly GroupBox _addBox = new() { Dock = DockStyle.Top, Height = 58 };
-    private readonly GroupBox _editBox = new() { Dock = DockStyle.Fill };
-    private readonly ComboBox _typeCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
-    // 比较符（官方 Common.ScriptableCondition+Comparison：Less=0…NotEqual=5），下拉选择，不暴露数字
-    private readonly ComboBox _cmp = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 90 };
-    private readonly Label _cmpLabel = Gui.Label(L.T("比较符", "Comparator"), 0, 0, 56);
-    private readonly DynamicFieldPanel _fields;
-    private bool _building;
-
-    public ScriptListEditor(DocSession doc, ScriptList list, bool isCondition, Changed changed, int width)
+    private UIElement BuildLayout()
     {
-        _doc = doc;
-        _list = list;
-        _isCondition = isCondition;
-        _changed = changed;
-        _fields = new DynamicFieldPanel(() => { OnEdit(); }, width);
-        Width = width;
-
-        _existingBox.Text = L.T("已有条件", "Existing Conditions");
-        _addBox.Text = L.T("添加新条件", "Add Condition");
-        _editBox.Text = L.T("编辑选中项", "Edit Selected");
-        if (!isCondition)
-        {
-            _existingBox.Text = L.T("已有动作", "Existing Actions");
-            _addBox.Text = L.T("添加新动作", "Add Action");
-        }
-
-        // ── 已有项区：列表 + 管理按钮 ──
-        var existingBtns = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34, Padding = new Padding(6, 2, 0, 0), WrapContents = false };
-        existingBtns.Controls.AddRange(new Control[] { _del, _dup, _up, _down });
-        _existingBox.Controls.Add(_records);
-        _existingBox.Controls.Add(existingBtns);
-        _records.BringToFront();
+        // ── 已有项区：标题 + 列表 + 管理按钮 ──
+        _existingBox.Header = _isCondition ? L.T("已有条件", "Existing Conditions") : L.T("已有动作", "Existing Actions");
+        var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 4, 0, 4) };
+        foreach (var b in new[] { _del, _dup, _up, _down }) btns.Children.Add(b);
+        var existingStack = new StackPanel();
+        existingStack.Children.Add(_records);
+        existingStack.Children.Add(btns);
+        _existingBox.Content = existingStack;
 
         // ── 添加区：类型下拉 + 添加按钮 ──
-        var addLabel = Gui.Label(L.T("类型", "Type"), 64, 24, 60);
-        _addBox.Controls.Add(addLabel);
-        _addType.Location = new Point(64, 20);
-        _addBox.Controls.Add(_addType);
-        _add.Location = new Point(312, 18);
-        _addBox.Controls.Add(_add);
-
-        // ── 编辑选中项区：类型/subType/uid + 字段面板 ──
-        var editTop = new Panel { Dock = DockStyle.Top, Height = 40 };
-        var eLabel = Gui.Label(L.T("类型", "Type"), 12, 10, 44);
-        _cmpLabel.Location = new Point(452, 10);
-        _cmp.Items.AddRange(new object[] { "<", "<=", "=", ">=", ">", "!=" });
-        _cmp.Location = new Point(512, 8);
-        _typeCombo.Location = new Point(60, 8);
-        _typeCombo.Width = 380;
-        editTop.Controls.AddRange(new Control[] { eLabel, _typeCombo, _cmpLabel, _cmp });
-        _fields.Dock = DockStyle.Fill;
-        _editBox.Controls.Add(_fields);
-        _editBox.Controls.Add(editTop);
-        _fields.BringToFront();
-
-        // 三区堆叠：已有(顶)、添加(中)、编辑(剩余)
-        Controls.Add(_addBox);
-        Controls.Add(_existingBox);
-        Controls.Add(_editBox);
-        _editBox.BringToFront();
-
-        _records.SelectedIndexChanged += (_, _) => RebuildDetail();
-        _add.Click += (_, _) => AddRecord();
-        _del.Click += (_, _) => DelRecord();
-        _dup.Click += (_, _) => DupRecord();
-        _up.Click += (_, _) => MoveRecord(-1);
-        _down.Click += (_, _) => MoveRecord(1);
-        _typeCombo.SelectedIndexChanged += (_, _) => ChangeType();
-        _cmp.SelectedIndexChanged += (_, _) =>
+        var addBox = new GroupBox
         {
-            if (_building) return;
-            if (Current() is { } r && r.IsCondition) { r.Uid = (uint)Math.Max(0, _cmp.SelectedIndex); OnEdit(); }
+            Header = _isCondition ? L.T("添加新条件", "Add Condition") : L.T("添加新动作", "Add Action"),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Children =
+                {
+                    new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) },
+                    _addType,
+                    _add,
+                },
+            },
         };
 
-        FillTypeCombo(_addType);
-        FillTypeCombo(_typeCombo);
-        Rebuild();
+        // ── 编辑选中项区：类型/比较符 + 字段面板 ──
+        var editTop = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 2, 0, 6),
+            Children =
+            {
+                new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) },
+                _typeCombo,
+                                _cmpLabel,
+                _cmp,
+            },
+        };
+        var editBox = new GroupBox
+        {
+            Header = L.T("编辑选中项", "Edit Selected"),
+            Content = new DockPanel(),
+        };
+        var editDock = (DockPanel)editBox.Content;
+        editDock.Children.Add(editTop);
+        DockPanel.SetDock(editTop, Dock.Top);
+        editDock.Children.Add(_fields);
+
+        var root = new Grid();
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(230) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_existingBox, 0);
+        Grid.SetRow(addBox, 1);
+        Grid.SetRow(editBox, 2);
+        root.Children.Add(_existingBox);
+        root.Children.Add(addBox);
+        root.Children.Add(editBox);
+        return root;
+    }
+
+    private static Button MkBtn(string text, Action onClick)
+    {
+        var b = new Button { Content = text, MinWidth = 64, Margin = new Thickness(0, 0, 6, 0) };
+        b.Click += (_, _) => onClick();
+        return b;
     }
 
     private void FillTypeCombo(ComboBox combo)
     {
-        var items = new List<object>();
+        var items = new List<ComboType>();
         for (uint t = 0; ; t++)
         {
             string? name = _isCondition ? NameOfCond(t) : NameOfAct(t);
@@ -155,14 +145,12 @@ internal sealed class ScriptListEditor : Panel
             if (!_isCondition && (t == 0 || t == 16)) continue;   // 动作工厂对 0/16 返回 null
             items.Add(new ComboType(t, name));
         }
-        combo.Items.AddRange(items.ToArray());
-        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+        combo.ItemsSource = items;
+        combo.DisplayMemberPath = nameof(ComboType.Text);
+        if (items.Count > 0) combo.SelectedIndex = 0;
     }
 
-    private sealed record ComboType(uint Id, string Text)
-    {
-        public override string ToString() => Text;
-    }
+    private sealed record ComboType(uint Id, string Text);
 
     private static string? NameOfCond(uint t) => t < 30 ? Names.ConditionLabel(t) : null;
     private static string? NameOfAct(uint t) => t < 29 ? Names.ActionLabel(t) : null;
@@ -176,13 +164,11 @@ internal sealed class ScriptListEditor : Panel
         _building = true;
         RebuildHeader();
         int sel = _records.SelectedIndex;
-        _records.BeginUpdate();
-        _records.Items.Clear();
+        var items = new List<string>();
         foreach (var r in _list.Records)
-            _records.Items.Add((_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(r));
-        if (sel >= 0 && sel < _records.Items.Count) _records.SelectedIndex = sel;
-        else if (_records.Items.Count > 0) _records.SelectedIndex = 0;
-        _records.EndUpdate();
+            items.Add((_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(r));
+        _records.ItemsSource = items;
+        _records.SelectedIndex = sel >= 0 && sel < items.Count ? sel : items.Count > 0 ? 0 : -1;
         RebuildDetail();
         _building = false;
     }
@@ -192,18 +178,21 @@ internal sealed class ScriptListEditor : Panel
         _building = true;
         var r = Current();
         bool has = r != null;
-        _typeCombo.Enabled = _cmp.Enabled = _fields.Enabled = has;
-        _del.Enabled = _dup.Enabled = _up.Enabled = _down.Enabled = has;
+        _typeCombo.IsEnabled = _cmp.IsEnabled = _fields.IsEnabled = has;
+        _del.IsEnabled = _dup.IsEnabled = _up.IsEnabled = _down.IsEnabled = has;
         if (!has)
         {
             _fields.Bind(null);
             _building = false;
             return;
         }
-        for (int i = 0; i < _typeCombo.Items.Count; i++)
-            if (_typeCombo.Items[i] is ComboType ct && ct.Id == r!.Type) { _typeCombo.SelectedIndex = i; break; }
+        var items = (List<ComboType>)_typeCombo.ItemsSource;
+        for (int i = 0; i < items.Count; i++)
+            if (items[i].Id == r!.Type) { _typeCombo.SelectedIndex = i; break; }
         _cmp.SelectedIndex = (int)Math.Min(r.Uid, 5);
-        _cmp.Visible = _cmpLabel.Visible = _isCondition;
+        Visibility cmpVis = _isCondition ? Visibility.Visible : Visibility.Collapsed;
+        _cmp.Visibility = cmpVis;
+        _cmpLabel.Visibility = cmpVis;
         _fields.Bind(r);
         _building = false;
     }
@@ -212,7 +201,14 @@ internal sealed class ScriptListEditor : Panel
     {
         if (_building) return;
         int sel = _records.SelectedIndex;
-        if (sel >= 0) _records.Items[sel] = (_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(_list.Records[sel]);
+        if (sel >= 0)
+        {
+            var items = (List<string>)_records.ItemsSource;
+            items[sel] = (_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(_list.Records[sel]);
+            _records.ItemsSource = null;
+            _records.ItemsSource = items;
+            _records.SelectedIndex = sel;
+        }
         RebuildHeader();
         _changed();
     }
@@ -220,10 +216,9 @@ internal sealed class ScriptListEditor : Panel
     private void RebuildHeader()
     {
         string cn = L.T(_isCondition ? "条件" : "动作");
-        // en 变量已并入语言包（"已有{0}…" 键），不再需要英文名拼接
         string logic = _isCondition ? $"  · {Names.LogicWord(_list.Logic)} ({_list.Logic})" : "";
         string empty = _list.Present ? "" : L.T("  （空列表）", "  (empty)");
-        _existingBox.Text = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
+        _existingBox.Header = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
     }
 
     private void AddRecord()
@@ -250,9 +245,6 @@ internal sealed class ScriptListEditor : Panel
         _records.SelectedIndex = Math.Min(at, _list.Records.Count - 1);
         _changed();
     }
-
-    private static uint _uidSeed = 1;
-    private static uint NextUid() => _uidSeed++;
 
     private void DelRecord()
     {
@@ -317,7 +309,7 @@ internal sealed class ScriptListEditor : Panel
         _changed();
     }
 
-    // body 规格表统一取自库（原先是本文件里手抄的一份，容易与 Scriptable 脱节）
+    // body 规格表统一取自库
     private static string SpecCond(uint t) => t < 30 ? Scriptable.ConditionBodySpec(t) : "";
     private static string SpecAct(uint t) => t < 29 ? Scriptable.ActionBodySpec(t) : "";
 }
@@ -381,18 +373,16 @@ internal static class FieldFactory
 }
 
 /// <summary>按字段种类生成编辑行（S/I/B 内联；P/Lua 用对话框）。</summary>
-internal sealed class DynamicFieldPanel : Panel
+internal sealed class FieldsPanel : ScrollViewer
 {
     private readonly Changed _changed;
     private ScriptRecord? _rec;
     private bool _building;
 
-    public DynamicFieldPanel(Changed changed, int width)
+    public FieldsPanel(Changed changed)
     {
         _changed = changed;
-        Width = width;
-        AutoScroll = true;
-        Height = 180;
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
     }
 
     public void Bind(ScriptRecord? rec)
@@ -404,17 +394,16 @@ internal sealed class DynamicFieldPanel : Panel
     private void Rebuild()
     {
         _building = true;
-        SuspendLayout();
-        Controls.Clear();
+        var panel = new StackPanel { Margin = new Thickness(0, 2, 8, 4) };
+        Content = panel;
+
         if (_rec == null)
         {
-            Controls.Add(new Label { Text = L.T("（未选择记录）"), AutoSize = true, ForeColor = Theme.Muted });
-            ResumeLayout();
+            panel.Children.Add(new TextBlock { Text = L.T("（未选择记录）"), Foreground = WpfTheme.MutedBrush });
             _building = false;
             return;
         }
 
-        int y = 0;
         int i = 0;
         foreach (var f in _rec.Fields)
         {
@@ -422,99 +411,86 @@ internal sealed class DynamicFieldPanel : Panel
             {
                 case FieldKind.Str:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("串[{0}]", i), 0, y + 3, 60));
-                    var box = Gui.Box(66, y, Math.Min(Width - 80, 460), f.S.Text);
+                    var box = new TextBox { Text = f.S.Text, MinWidth = 300, MaxWidth = 460 };
                     box.TextChanged += (_, _) => { if (_building) return; f.S.SetText(box.Text); _changed(); };
-                    Controls.Add(box);
-                    y += 28;
+                    panel.Children.Add(Row(f.Param.Length > 0 ? f.Param : L.F("串[{0}]", i), box));
                     break;
                 }
                 case FieldKind.U32:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("数值[{0}]", i), 0, y + 3, 60));
-                    var box = Gui.Box(66, y, 150, Gui.U32Text(f.U));
-                    var note = new Label
+                    var box = new TextBox { Text = Gui.U32Text(f.U), MinWidth = 150 };
+                    var note = new TextBlock
                     {
                         Text = f.Param.Length > 0 ? f.Note : L.T("（语义未知；支持 0x 十六进制）"),
-                        AutoSize = true,
-                        ForeColor = Color.Gray,
-                        Location = new Point(224, y + 3),
+                        Foreground = WpfTheme.MutedBrush,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 0, 0),
                     };
                     box.TextChanged += (_, _) =>
                     {
                         if (_building) return;
-                        try { f.U = Gui.ParseU32(box.Text); box.ForeColor = Color.Black; }
-                        catch { box.ForeColor = Color.Red; return; }
+                        try { f.U = Gui.ParseU32(box.Text); box.Foreground = WpfTheme.TextBrush; }
+                        catch { box.Foreground = Brushes.Red; return; }
                         _changed();
                     };
-                    Controls.Add(box);
-                    Controls.Add(note);
-                    y += 28;
+                    panel.Children.Add(Row(f.Param.Length > 0 ? f.Param : L.F("数值[{0}]", i), box, note));
                     break;
                 }
                 case FieldKind.U8:
                 {
                     var cb = new CheckBox
                     {
-                        Text = (f.Param.Length > 0 ? f.Param : L.F("布尔[{0}]", i)) + L.T("（0=False / 非0=True）"),
-                        AutoSize = true,
-                        Checked = f.B != 0,
-                        Location = new Point(0, y),
+                        Content = (f.Param.Length > 0 ? f.Param : L.F("布尔[{0}]", i)) + L.T("（0=False / 非0=True）"),
+                        IsChecked = f.B != 0,
                     };
-                    cb.CheckedChanged += (_, _) => { if (_building) return; f.B = cb.Checked ? (byte)1 : (byte)0; _changed(); };
-                    Controls.Add(cb);
-                    y += 26;
+                    cb.Checked += (_, _) => { if (!_building) { f.B = 1; _changed(); } };
+                    cb.Unchecked += (_, _) => { if (!_building) { f.B = 0; _changed(); } };
+                    panel.Children.Add(cb);
                     break;
                 }
                 case FieldKind.P:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.F("路径×{0}", f.Paths!.Count), 0, y + 3, 60));
-                    var btn = new Button { Text = L.T("编辑路径列表…"), Location = new Point(66, y), Width = 130 };
+                    var btn = new Button { Content = L.T("编辑路径列表…"), MinWidth = 130 };
                     btn.Click += (_, _) =>
                     {
-                        using var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList());
-                        if (dlg.ShowDialog(FindForm()) == DialogResult.OK)
+                        var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList()) { Owner = Window.GetWindow(this) };
+                        if (dlg.ShowDialog() == true)
                         {
                             f.Paths = dlg.Items.Select(s => new GdString(s)).ToList();
                             f.Count = f.Paths.Count;
                             _changed();
                         }
                     };
-                    Controls.Add(btn);
-                    Controls.Add(Gui.Label(L.F("尾字={0}", f.Trailing), 204, y + 3, 200));
-                    y += 30;
+                    panel.Children.Add(Row(f.Param.Length > 0 ? f.Param : L.F("路径×{0}", f.Paths!.Count), btn,
+                        new TextBlock { Text = L.F("尾字={0}", f.Trailing), Foreground = WpfTheme.MutedBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }));
                     break;
                 }
                 case FieldKind.Lua:
                 {
-                    Controls.Add(Gui.Label(f.Param.Length > 0 ? f.Param : L.T("Lua 调用"), 0, y + 3, 60));
-                    var call = Gui.Box(66, y, 300, f.S.Text);
+                    var call = new TextBox { Text = f.S.Text, MinWidth = 280, MaxWidth = 300 };
                     call.TextChanged += (_, _) => { if (_building) return; f.S.SetText(call.Text); _changed(); };
-                    Controls.Add(call);
-                    var btn = new Button { Text = L.F("参数×{0}…", f.Params!.Count), Location = new Point(374, y), Width = 110 };
+                    var btn = new Button { Content = L.F("参数×{0}…", f.Params!.Count), MinWidth = 110, Margin = new Thickness(8, 0, 0, 0) };
                     btn.Click += (_, _) =>
                     {
-                        using var dlg = new LuaParamsDialog(f);
-                        if (dlg.ShowDialog(FindForm()) == DialogResult.OK) _changed();
+                        var dlg = new LuaParamsDialog(f) { Owner = Window.GetWindow(this) };
+                        if (dlg.ShowDialog() == true) _changed();
                     };
-                    Controls.Add(btn);
-                    y += 30;
+                    var row = Row(f.Param.Length > 0 ? f.Param : L.T("Lua 调用"), call, btn);
+                    panel.Children.Add(row);
                     if (f.Tail != null)
                     {
-                        Controls.Add(Gui.Label(L.T("条件尾部"), 0, y + 3, 60));
                         var t = f.Tail!;
-                        var t0 = Gui.Box(66, y, 90, Gui.U32Text(t.T0));
-                        var t1 = Gui.Box(162, y, 90, Gui.U32Text(t.T1));
-                        var t2 = Gui.Box(258, y, 40, t.T2.ToString());
-                        var t3 = Gui.Box(304, y, 90, Gui.U32Text(t.T3));
-                        var ts = Gui.Box(400, y, 200, t.S.Text);
+                        var t0 = new TextBox { Text = Gui.U32Text(t.T0), MinWidth = 90 };
+                        var t1 = new TextBox { Text = Gui.U32Text(t.T1), MinWidth = 90 };
+                        var t2 = new TextBox { Text = t.T2.ToString(), MinWidth = 40 };
+                        var t3 = new TextBox { Text = Gui.U32Text(t.T3), MinWidth = 90 };
+                        var ts = new TextBox { Text = t.S.Text, MinWidth = 200 };
                         t0.TextChanged += (_, _) => { if (!_building) Try(t0, v => t.T0 = v); };
                         t1.TextChanged += (_, _) => { if (!_building) Try(t1, v => t.T1 = v); };
                         t2.TextChanged += (_, _) => { if (!_building) { if (byte.TryParse(t2.Text, out byte b)) { t.T2 = b; _changed(); } } };
                         t3.TextChanged += (_, _) => { if (!_building) Try(t3, v => t.T3 = v); };
                         ts.TextChanged += (_, _) => { if (!_building) { t.S.SetText(ts.Text); _changed(); } };
-                        Controls.AddRange(new Control[] { t0, t1, t2, t3, ts });
-                        y += 30;
+                        panel.Children.Add(Row(L.T("条件尾部"), t0, t1, t2, t3, ts));
                     }
                     break;
                 }
@@ -522,60 +498,93 @@ internal sealed class DynamicFieldPanel : Panel
             i++;
         }
 
-        var warn = new Label
+        panel.Children.Add(new TextBlock
         {
             Text = L.T("⚠ 带“推断”的名称与位标志未经引擎证实；保存仅保证结构合法。"),
-            AutoSize = true,
-            ForeColor = Color.SaddleBrown,
-            Location = new Point(0, y + 4),
-        };
-        Controls.Add(warn);
-        ResumeLayout();
+            Foreground = WpfTheme.WarnBrush,
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+        });
         _building = false;
     }
 
     private void Try(TextBox box, Action<uint> set)
     {
-        try { set(Gui.ParseU32(box.Text)); box.ForeColor = Color.Black; _changed(); }
-        catch { box.ForeColor = Color.Red; }
+        try { set(Gui.ParseU32(box.Text)); box.Foreground = WpfTheme.TextBrush; _changed(); }
+        catch { box.Foreground = Brushes.Red; }
+    }
+
+    /// <summary>一行：左标签 + 若干控件横排。</summary>
+    private static FrameworkElement Row(string label, params FrameworkElement[] controls)
+    {
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
+        sp.Children.Add(new TextBlock
+        {
+            Text = label,
+            Width = 120,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        foreach (var c in controls) sp.Children.Add(c);
+        return sp;
     }
 }
 
 /// <summary>本地化字符串表编辑（行数固定；空槽位可留空但不可增删行）。</summary>
-internal sealed class LocalizationGrid : Panel
+internal sealed class LocalizationGrid : UserControl
 {
     private DocSession _doc = null!;
     private Changed _changed = null!;
-    private readonly DataGridView _grid = new()
+    private readonly DataGrid _grid = new()
     {
-        Dock = DockStyle.Fill,
-        AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false,
-        AllowUserToResizeRows = false,
-        RowHeadersVisible = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+        AutoGenerateColumns = false,
+        CanUserAddRows = false,
+        CanUserDeleteRows = false,
+        IsReadOnly = false,
+        HeadersVisibility = DataGridHeadersVisibility.Column,
     };
     private bool _building;
 
     public LocalizationGrid()
     {
-        Controls.Add(_grid);
-        var colIdx = new DataGridViewTextBoxColumn { Name = "idx", HeaderText = "#", ReadOnly = true, FillWeight = 8 };
-        var colRole = new DataGridViewTextBoxColumn { Name = "role", HeaderText = L.T("角色 / 对应节点"), ReadOnly = true, FillWeight = 30 };
-        var colTxt = new DataGridViewTextBoxColumn { Name = "text", HeaderText = L.T("文本（{^n} 表示换行；行数不可增删）"), FillWeight = 62 };
-        _grid.Columns.AddRange(new DataGridViewColumn[] { colIdx, colRole, colTxt });
-        Theme.StyleGrid(_grid);
-        _grid.CellEndEdit += (_, e) =>
+        var colIdx = MkCol("#", 40, isReadOnly: true, binding: new Binding(nameof(LocRow.Idx)));
+        var colRole = MkCol(L.T("角色 / 对应节点"), 260, isReadOnly: true, binding: new Binding(nameof(LocRow.Role)));
+        var colTxt = MkCol(L.T("文本（{^n} 表示换行；行数不可增删）"), 600, isReadOnly: false,
+            binding: new Binding(nameof(LocRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus });
+        colTxt.ElementStyle = MkWrapStyle(maxHeight: double.PositiveInfinity);
+        colTxt.EditingElementStyle = MkEditStyle();
+        _grid.Columns.Add(colIdx);
+        _grid.Columns.Add(colRole);
+        _grid.Columns.Add(colTxt);
+        Content = _grid;
+    }
+
+    private static DataGridTextColumn MkCol(string header, double width, bool isReadOnly, Binding binding)
+    {
+        return new DataGridTextColumn
         {
-            if (_building || e.RowIndex < 0) return;
-            var texts = _doc.PrimaryLanguage.Texts;
-            if (e.RowIndex < texts.Count)
-            {
-                string v = _grid.Rows[e.RowIndex].Cells["text"].Value?.ToString() ?? "";
-                texts[e.RowIndex].SetText(v);
-                _changed();
-            }
+            Header = header,
+            Binding = binding,
+            IsReadOnly = isReadOnly,
+            Width = new DataGridLength(width, DataGridLengthUnitType.Star),
         };
+    }
+
+    private static Style MkWrapStyle(double maxHeight)
+    {
+        var s = new Style(typeof(TextBlock));
+        s.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        s.Setters.Add(new Setter(TextBlock.MaxHeightProperty, maxHeight));
+        s.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
+        return s;
+    }
+
+    private static Style MkEditStyle()
+    {
+        var s = new Style(typeof(TextBox));
+        s.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
+        s.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
+        return s;
     }
 
     public void Bind(DocSession doc, Changed changed)
@@ -588,15 +597,14 @@ internal sealed class LocalizationGrid : Panel
     public void Rebuild()
     {
         _building = true;
-        _grid.Rows.Clear();
         var texts = _doc.PrimaryLanguage.Texts;
+        var rows = new List<LocRow>();
         for (int i = 0; i < texts.Count; i++)
         {
             string role = _doc.Cnv != null ? RoleCnv(i) : RoleQst(i);
-            _grid.Rows.Add(i.ToString(), role, texts[i].Text);
-            if (texts[i].IsEmpty)
-                _grid.Rows[i].Cells["text"].Style.ForeColor = Color.Gray;
+            rows.Add(new LocRow(i, role, texts[i], () => { _doc.Dirty = true; _changed(); }));
         }
+        _grid.ItemsSource = rows;
         _building = false;
     }
 
@@ -618,4 +626,26 @@ internal sealed class LocalizationGrid : Panel
         1 => L.T("任务名"),
         _ => L.F("按位置 {0}", i),
     };
+
+    private sealed class LocRow
+    {
+        private readonly GdString _text;
+        private readonly Changed _edited;
+        public string Idx { get; }
+        public string Role { get; }
+
+        public LocRow(int idx, string role, GdString text, Changed edited)
+        {
+            Idx = idx.ToString();
+            Role = role;
+            _text = text;
+            _edited = edited;
+        }
+
+        public string Text
+        {
+            get => _text.Text;
+            set { _text.SetText(value); _edited(); }
+        }
+    }
 }

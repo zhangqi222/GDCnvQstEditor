@@ -143,7 +143,7 @@ public sealed class DocSession
 
     public const string TagLoc = "loc";
 
-    public void FillTree(TreeNode root)
+    public void FillTree(TreeNodeInfo root)
     {
         if (Cnv != null) FillCnv(root, Cnv);
         else if (Qst != null) FillQst(root, Qst);
@@ -151,8 +151,7 @@ public sealed class DocSession
 
         if (!ReadOnly && LoadError == null && (Cnv != null || Qst != null))
         {
-            var loc = new TreeNode(L.LocStringTable) { Tag = TagLoc };
-            root.Nodes.Add(loc);
+            root.Add(L.LocStringTable, TagLoc);
         }
         if (ReadOnly)
         {
@@ -160,13 +159,13 @@ public sealed class DocSession
         }
     }
 
-    private static void FillCnv(TreeNode root, CnvFile c)
+    private static void FillCnv(TreeNodeInfo root, CnvFile c)
     {
         if (c.Steps.Count == 0) return;
         AddStep(root, c, c.Steps[0]);
     }
 
-    private static void AddStep(TreeNode parent, CnvFile c, CnvStep s)
+    private static void AddStep(TreeNodeInfo parent, CnvFile c, CnvStep s)
     {
         string text = c.TextFor(s);
         string label = $"[{s.Index}] {s.Kind}";
@@ -178,12 +177,11 @@ public sealed class DocSession
         }
         if (s.HasLink) label += $" →[{s.LinkId}]";
         if (!s.VoPath.IsEmpty) label += " [VO]";
-        var node = new TreeNode(label) { Tag = s };
-        parent.Nodes.Add(node);
+        var node = parent.Add(label, s);
         foreach (var child in s.Children) AddStep(node, c, child);
     }
 
-    private static void FillQst(TreeNode root, QstFile q)
+    private static void FillQst(TreeNodeInfo root, QstFile q)
     {
         string group = q.Languages.Count > 0 && q.Languages[0].Texts.Count > 0 ? q.Languages[0].Texts[0].Text : "";
         string name = q.Languages.Count > 0 && q.Languages[0].Texts.Count > 1 ? q.Languages[0].Texts[1].Text : "";
@@ -195,18 +193,31 @@ public sealed class DocSession
             string title = q.Languages.Count > 0 && q.TaskTitleSlot(i) < q.Languages[0].Texts.Count
                 ? q.Languages[0].Texts[q.TaskTitleSlot(i)].Text : "";
             string label = L.F("任务 {0}", i + 1) + (title.Length > 0 ? $"：{title}" : "");
-            var tn = new TreeNode(label) { Tag = t };
-            var inc = new TreeNode(L.F("接受事件 OnAccept（{0}）", t.Incentives.Count));
+            var tn = root.Add(label, t);
+            var inc = tn.Add(L.F("接受事件 OnAccept（{0}）", t.Incentives.Count));
             for (int k = 0; k < t.Incentives.Count; k++)
-                inc.Nodes.Add(new TreeNode(L.F("接受事件 #{0}", k + 1)) { Tag = t.Incentives[k] });
-            var objs = new TreeNode(L.F("目标 Objectives（{0}）", t.Objectives.Count));
+                inc.Add(L.F("接受事件 #{0}", k + 1), t.Incentives[k]);
+            var objs = tn.Add(L.F("目标 Objectives（{0}）", t.Objectives.Count));
             for (int k = 0; k < t.Objectives.Count; k++)
-                objs.Nodes.Add(new TreeNode(L.F("目标 #{0}", k + 1)) { Tag = t.Objectives[k] });
-            var evs = new TreeNode(L.F("完成事件 OnComplete（{0}）", t.Events.Count));
+                objs.Add(L.F("目标 #{0}", k + 1), t.Objectives[k]);
+            var evs = tn.Add(L.F("完成事件 OnComplete（{0}）", t.Events.Count));
             for (int k = 0; k < t.Events.Count; k++)
-                evs.Nodes.Add(new TreeNode(L.F("完成事件 #{0}", k + 1)) { Tag = t.Events[k] });
-            tn.Nodes.AddRange(new[] { inc, objs, evs });
-            root.Nodes.Add(tn);
+                evs.Add(L.F("完成事件 #{0}", k + 1), t.Events[k]);
         }
+    }
+}
+
+/// <summary>结构树节点（框架无关：由 UI 层渲染成 TreeViewItem）。</summary>
+public sealed class TreeNodeInfo
+{
+    public string Text { get; set; } = "";
+    public object? Tag;
+    public List<TreeNodeInfo> Children { get; } = new();
+
+    public TreeNodeInfo Add(string text, object? tag = null)
+    {
+        var n = new TreeNodeInfo { Text = text, Tag = tag };
+        Children.Add(n);
+        return n;
     }
 }

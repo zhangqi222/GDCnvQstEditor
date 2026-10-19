@@ -3,14 +3,14 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AssemblyName>CnvQstStudio</AssemblyName>
     <Product>CnvQstStudio</Product>
     <Description>Grim Dawn .cnv/.qst 图形化查看、编辑、新建、导入导出与批量处理（格式见 CnvQstFormatDecoded.md）</Description>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +20,14 @@
   <!-- UI 语言包：中文为基准（键清单模板），其它语言放 lang/*.json 即生效（无需改代码） -->
   <ItemGroup>
     <None Include="lang\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <!-- WPF SDK 的隐式 using 不含 System.IO，补回 -->
+  <ItemGroup>
+    <Using Include="System.IO" />
   </ItemGroup>
 
 </Project>

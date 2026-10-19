@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Threading;
 using CnvQst;
 using CnvQst.Cli;
 
@@ -24,13 +25,18 @@ internal static class Program
         {
             L.Load();
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            Application.ThreadException += (_, e) => ShowFatal(e.Exception);
+
+            var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            WpfTheme.Init(app);
+            app.DispatcherUnhandledException += (_, e) =>
+            {
+                ShowFatal(e.Exception);
+                e.Handled = true;
+            };
             AppDomain.CurrentDomain.UnhandledException += (_, e) => ShowFatal(e.ExceptionObject as Exception);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-            Application.Run(new MainForm());
+
+            var win = new MainWindow();
+            app.Run(win);
             return 0;
         }
 
@@ -46,7 +52,7 @@ internal static class Program
     }
 
     /// <summary>
-    /// UI 冒烟测试：建主窗口（含全部控件与主题/语言初始化）、打开一个文件、1.2 秒后自动关闭。
+    /// UI 冒烟测试：建主窗口（含全部控件与主题/语言初始化）、1.2 秒后自动关闭。
     /// 不弹异常框、只把异常打到 stdout 并返回 1，便于脚本化回归。
     /// </summary>
     private static int RunSmoke()
@@ -61,24 +67,26 @@ internal static class Program
         {
             L.Load();
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 
+            var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            WpfTheme.Init(app);
             Exception? failure = null;
-            var form = new MainForm();
-            form.Shown += (_, _) =>
+            app.DispatcherUnhandledException += (_, e) =>
             {
-                var timer = new System.Windows.Forms.Timer { Interval = 1200 };
-                timer.Tick += (_, _) => { timer.Stop(); form.Close(); };
-                timer.Start();
+                failure = e.Exception;
+                Console.WriteLine("UI 冒烟失败：" + e.Exception);
+                e.Handled = true;
             };
-            Application.ThreadException += (_, e) => { failure = e.Exception; form.Close(); };
-            Application.Run(form);
+
+            var win = new MainWindow();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+            timer.Tick += (_, _) => { timer.Stop(); win.Close(); };
+            win.Activated += (_, _) => timer.Start();
+
+            app.Run(win);
 
             if (failure != null)
             {
-                Console.WriteLine("UI 冒烟失败：" + failure);
                 if (attached) FreeConsole();
                 return 1;
             }
@@ -94,7 +102,7 @@ internal static class Program
         }
     }
 
-    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后续联操作。</summary>
+    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>
     private static void ShowFatal(Exception? ex)
     {
         if (ex == null) return;
@@ -106,8 +114,8 @@ internal static class Program
             MessageBox.Show(
                 "程序遇到未预期的错误：\n\n" + (msg.Length > 1200 ? msg[..1200] + "…（详见 " + log + "）" : msg) + "\n\n" + log,
                 "CnvQstStudio 错误",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
         catch
         {
