@@ -26,7 +26,8 @@ internal static class Program
             L.Load();
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
 
-            var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            // 两层 UI：先启动界面（编辑器 / 批量转换），选择后进入对应窗口。
+            var app = new Application { ShutdownMode = ShutdownMode.OnLastWindowClose };
             WpfTheme.Init(app);
             app.DispatcherUnhandledException += (_, e) =>
             {
@@ -35,8 +36,8 @@ internal static class Program
             };
             AppDomain.CurrentDomain.UnhandledException += (_, e) => ShowFatal(e.ExceptionObject as Exception);
 
-            var win = new MainWindow();
-            app.Run(win);
+            var launcher = new LauncherWindow();
+            app.Run(launcher);
             return 0;
         }
 
@@ -68,7 +69,7 @@ internal static class Program
             L.Load();
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
 
-            var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            var app = new Application { ShutdownMode = ShutdownMode.OnLastWindowClose };
             WpfTheme.Init(app);
             Exception? failure = null;
             app.DispatcherUnhandledException += (_, e) =>
@@ -78,12 +79,27 @@ internal static class Program
                 e.Handled = true;
             };
 
-            var win = new MainWindow();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
-            timer.Tick += (_, _) => { timer.Stop(); win.Close(); };
-            win.Activated += (_, _) => timer.Start();
+            // 冒烟：启动界面显示后，自动打开编辑器主窗（覆盖两窗口构建），1.2 秒后全部关闭。
+            var launcher = new LauncherWindow();
+            launcher.Activated += (_, _) =>
+            {
+                try
+                {
+                    var editor = new MainWindow();
+                    editor.Show();
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+                    timer.Tick += (_, _) => { timer.Stop(); editor.Close(); launcher.Close(); };
+                    timer.Start();
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                    Console.WriteLine("UI 冒烟失败：" + ex);
+                    launcher.Close();
+                }
+            };
 
-            app.Run(win);
+            app.Run(launcher);
 
             if (failure != null)
             {

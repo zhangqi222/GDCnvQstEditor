@@ -16,8 +16,10 @@ namespace CnvQstStudio;
 internal sealed class BatchWindow : Window
 {
     private readonly TextBox _path = new();
+    private readonly TextBox _outPath = new();
     private readonly CheckBox _subDirs = new() { Content = L.T("含子目录"), IsChecked = true };
-    private readonly CheckBox _flat = new() { Content = L.T("输出平铺（不镜像目录结构）") };
+    private readonly RadioButton _keepStructure = new() { Content = L.T("保持原目录结构"), IsChecked = true, Margin = new Thickness(0, 0, 16, 0) };
+    private readonly RadioButton _flatten = new() { Content = L.T("全部放在同一目录") };
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
@@ -52,10 +54,25 @@ internal sealed class BatchWindow : Window
         pathRow.Children.Add(browse);
         pathRow.Children.Add(scan);
 
+        var outRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+        outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var lblOut = DialogChrome.Label(L.T("生成目录"));
+        lblOut.SetValue(Grid.ColumnProperty, 0);
+        _outPath.SetValue(Grid.ColumnProperty, 1);
+        var outBrowse = MkBtn(L.T("浏览"), BrowseOut);
+        outBrowse.SetValue(Grid.ColumnProperty, 2);
+        outBrowse.Margin = new Thickness(6, 0, 0, 0);
+        outRow.Children.Add(lblOut);
+        outRow.Children.Add(_outPath);
+        outRow.Children.Add(outBrowse);
+
         var optRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         _subDirs.Margin = new Thickness(0, 0, 16, 0);
         optRow.Children.Add(_subDirs);
-        optRow.Children.Add(_flat);
+        optRow.Children.Add(_keepStructure);
+        optRow.Children.Add(_flatten);
 
         var actRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         actRow.Children.Add(MkBtn(L.T("导出 TXT"), () => Export(ExportKind.Txt)));
@@ -68,6 +85,7 @@ internal sealed class BatchWindow : Window
 
         var head = new StackPanel { Margin = new Thickness(14, 12, 14, 4) };
         head.Children.Add(pathRow);
+        head.Children.Add(outRow);
         head.Children.Add(optRow);
         head.Children.Add(actRow);
 
@@ -158,6 +176,13 @@ internal sealed class BatchWindow : Window
         if (dlg.ShowDialog(this) == true) _path.Text = dlg.FolderName;
     }
 
+    private void BrowseOut()
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择输出目录") };
+        if (Directory.Exists(_outPath.Text)) dlg.InitialDirectory = _outPath.Text;
+        if (dlg.ShowDialog(this) == true) _outPath.Text = dlg.FolderName;
+    }
+
     private void Scan()
     {
         string path = _path.Text.Trim();
@@ -188,8 +213,12 @@ internal sealed class BatchWindow : Window
     private void Export(ExportKind kind)
     {
         if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("请先扫描并勾选文件。"), Title); return; }
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择输出目录") };
-        if (dlg.ShowDialog(this) != true) return;
+        string outDir = _outPath.Text.Trim();
+        if (string.IsNullOrEmpty(outDir) || !Directory.Exists(outDir))
+        {
+            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录。"), Title);
+            return;
+        }
 
         int ok = 0, fail = 0;
         foreach (string file in SelectedFiles())
@@ -198,7 +227,7 @@ internal sealed class BatchWindow : Window
             {
                 byte[] data = File.ReadAllBytes(file);
                 var model = BatchOps.Load(file, data);
-                string target = BatchOps.TargetPath(file, _path.Text.Trim(), dlg.FolderName, _flat.IsChecked == true,
+                string target = BatchOps.TargetPath(file, _path.Text.Trim(), outDir, _flatten.IsChecked == true,
                     kind == ExportKind.Txt ? ".txt" : ".json");
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 if (kind == ExportKind.Txt)
@@ -226,7 +255,7 @@ internal sealed class BatchWindow : Window
             }
             catch { fail++; }
         }
-        SetStatus(L.F("导出完成：成功 {0}，失败 {1}。输出目录 {2}", ok, fail, dlg.FolderName));
+        SetStatus(L.F("导出完成：成功 {0}，失败 {1}。输出目录 {2}", ok, fail, outDir));
     }
 
     private void VerifySelected()
@@ -254,14 +283,18 @@ internal sealed class BatchWindow : Window
             Gui.Warn(this, L.T("请先选择二进制源目录。"), Title);
             return;
         }
+        string outDir = _outPath.Text.Trim();
+        if (string.IsNullOrEmpty(outDir) || !Directory.Exists(outDir))
+        {
+            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录（不覆盖源文件）。"), Title);
+            return;
+        }
         var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择译文 txt 所在目录（按同名配对）") };
         if (dlg.ShowDialog(this) != true) return;
-        var outDlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择输出目录（不覆盖源文件）") };
-        if (outDlg.ShowDialog(this) != true) return;
 
-        var results = BatchOps.ImportTxtDir(binPath, dlg.FolderName, outDlg.FolderName);
+        var results = BatchOps.ImportTxtDir(binPath, dlg.FolderName, outDir);
         int ok = results.Count(r => r.Error == null), fail = results.Count - ok;
-        SetStatus(L.F("TXT 回填完成：成功 {0}，跳过/失败 {1}。输出目录 {2}", ok, fail, outDlg.FolderName));
+        SetStatus(L.F("TXT 回填完成：成功 {0}，跳过/失败 {1}。输出目录 {2}", ok, fail, outDir));
         var problems = results.Where(r => r.Error != null).Select(r => $"{Path.GetFileName(r.Bin)}：{r.Error}").ToList();
         if (problems.Count > 0)
             Gui.Warn(this, string.Join("\n", problems.Take(20)) + (problems.Count > 20 ? L.F("\n…共 {0} 条", problems.Count) : ""),

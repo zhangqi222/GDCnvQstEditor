@@ -5,7 +5,10 @@ using CnvQst;
 
 namespace CnvQstStudio;
 
-/// <summary>单个文档视图：左结构树 + 右平铺表格编辑器（CNV/QST）/ 本地化表切换 + 页内状态行。</summary>
+/// <summary>
+/// 单个文档视图：100% 宽度的树形表格（结构与数据结合展示）+ 页内状态行。
+/// 结构表（CNV/QST）与本地化字符串表通过 <see cref="ToggleView"/> 切换。
+/// </summary>
 internal sealed class DocView : UserControl
 {
     public DocSession Doc { get; }
@@ -28,7 +31,6 @@ internal sealed class DocView : UserControl
         VerticalAlignment = VerticalAlignment.Top,
     };
     private readonly Grid _host = new();
-    private readonly TreeView _tree = new();
 
     public DocView(DocSession doc)
     {
@@ -36,73 +38,20 @@ internal sealed class DocView : UserControl
 
         foreach (var c in new UIElement[] { _cnvTable, _qstTable, _locGrid, _emptyHint }) _host.Children.Add(c);
 
-        // 左：结构树（与官方编辑器一致的层级观感）；右：平铺表格 / 本地化表
-        var treeHost = new Border { Padding = new Thickness(10, 8, 2, 8), Child = _tree };
-        var split = new Grid();
-        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
-        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-        split.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(treeHost, 0);
-        Grid.SetColumn(split, 2);
-        var splitter = new GridSplitter { Width = 6, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brushes.Transparent };
-        Grid.SetColumn(splitter, 1);
-        split.Children.Add(treeHost);
-        split.Children.Add(splitter);
-        split.Children.Add(_host);
-
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        Grid.SetRow(split, 0);
+        Grid.SetRow(_host, 0);
         Grid.SetRow(_status, 1);
-        root.Children.Add(split);
+        root.Children.Add(_host);
         root.Children.Add(_status);
         Content = root;
 
-        _cnvTable.LocRequested += ShowLoc;
-        _qstTable.LocRequested += ShowLoc;
-        _tree.SelectedItemChanged += TreeAfterSelect;
+        _cnvTable.LocRequested += ToggleView;
+        _qstTable.LocRequested += ToggleView;
 
-        BuildTree();
         ShowCurrent();
         UpdateStatus();
-    }
-
-    /// <summary>重建结构树（打开 / 结构改动 / 语言切换后）。</summary>
-    private void BuildTree()
-    {
-        var rootInfo = new TreeNodeInfo();
-        Doc.FillTree(rootInfo);
-        _tree.Items.Clear();
-        foreach (var child in rootInfo.Children) _tree.Items.Add(MakeNode(child));
-        // 根级与次级默认展开（与 WinForms 版一致）
-        foreach (TreeViewItem rootItem in _tree.Items)
-        {
-            rootItem.IsExpanded = true;
-            foreach (TreeViewItem sub in rootItem.Items) sub.IsExpanded = true;
-        }
-    }
-
-    private static TreeViewItem MakeNode(TreeNodeInfo n)
-    {
-        var item = new TreeViewItem { Header = n.Text, Tag = n };
-        foreach (var c in n.Children) item.Items.Add(MakeNode(c));
-        return item;
-    }
-
-    private void TreeAfterSelect(object sender, RoutedPropertyChangedEventArgs<object> e)
-    {
-        if (e.NewValue is not TreeViewItem item) return;
-        var info = (TreeNodeInfo)item.Tag;
-        if (info.Tag is string tag && tag == DocSession.TagLoc) { ShowLoc(); return; }
-        if (_locGrid.Visibility == Visibility.Visible) ShowCurrent();   // 从本地化表回到结构表
-        switch (info.Tag)
-        {
-            case CnvStep step: _cnvTable.SelectStep(step); break;
-            case QstTask t: _qstTable.SelectOwner(t); break;
-            case QstObjective o: _qstTable.SelectOwner(o); break;
-            case QstEvent ev: _qstTable.SelectOwner(ev); break;
-        }
     }
 
     private void ShowCurrent()
@@ -129,11 +78,19 @@ internal sealed class DocView : UserControl
             c.Visibility = c == target ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    /// <summary>切换到本地化字符串表页。</summary>
-    public void ShowLoc()
+    /// <summary>在 结构表 / 本地化字符串表 之间切换（右键菜单与 Ctrl+L 共用）。</summary>
+    public void ToggleView()
     {
-        ShowOnly(_locGrid);
-        _locGrid.Bind(Doc, OnEdited);
+        if (_locGrid.Visibility == Visibility.Visible)
+        {
+            ShowCurrent();          // 从本地化表回到结构表
+        }
+        else
+        {
+            ShowOnly(_locGrid);
+            _locGrid.Bind(Doc, OnEdited);
+        }
+        UpdateStatus();
     }
 
     private void OnEdited()
@@ -145,7 +102,6 @@ internal sealed class DocView : UserControl
 
     public void RefreshAll()
     {
-        BuildTree();
         if (_cnvTable.Visibility == Visibility.Visible) _cnvTable.Bind(Doc, OnEdited);
         else if (_qstTable.Visibility == Visibility.Visible) _qstTable.Bind(Doc, OnEdited);
         else if (_locGrid.Visibility == Visibility.Visible) _locGrid.Bind(Doc, OnEdited);

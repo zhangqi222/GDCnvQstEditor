@@ -7,7 +7,9 @@ using CnvQst;
 namespace CnvQstStudio;
 
 /// <summary>
-/// 条件/动作列表编辑器：三个明确分区的区域 —— 已有项列表（删除/复制/排序）、添加新项、编辑选中项详细字段。
+/// 条件/动作列表编辑器（列表 + 小弹窗模式）：
+/// 默认只显示 已有项列表 与操作按钮；"添加"与"编辑"共用 <see cref="ScriptRecordDialog"/> 弹窗，
+/// 从视觉上区分 已有列表 与 编辑/新增 的内容。
 /// </summary>
 internal sealed class ScriptListEditor : UserControl
 {
@@ -16,15 +18,11 @@ internal sealed class ScriptListEditor : UserControl
     private readonly bool _isCondition;
     private Changed _changed;
 
-    private readonly ListBox _records = new() { MinHeight = 110 };
-    private readonly ComboBox _addType = new() { MinWidth = 240 };
-    private readonly ComboBox _typeCombo = new() { MinWidth = 360 };
-    // 比较符（官方 Common.ScriptableCondition+Comparison：Less=0…NotEqual=5），下拉选择，不暴露数字
-    private readonly ComboBox _cmp = new() { MinWidth = 90 };
-    private readonly TextBlock _cmpLabel = new() { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 8, 0) };
-    private readonly FieldsPanel _fields;
+    private readonly ListBox _records = new() { MinHeight = 150, MinWidth = 560 };
     private readonly GroupBox _existingBox = new();
-    private readonly Button _add, _del, _dup, _up, _down;
+    private readonly ComboBox _logic = new() { MinWidth = 170 };
+    private readonly TextBlock _logicLabel = new() { Text = L.T("关系逻辑", "Logic") + "：", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+    private readonly System.Windows.Controls.Button _add, _edit, _del, _dup, _up, _down;
     private bool _building;
 
     public ScriptListEditor(DocSession doc, ScriptList list, bool isCondition, Changed changed)
@@ -33,27 +31,26 @@ internal sealed class ScriptListEditor : UserControl
         _list = list;
         _isCondition = isCondition;
         _changed = changed;
-        _fields = new FieldsPanel(OnEdit);
-        _add = MkBtn(L.T("＋ 添加", "+ Add"), AddRecord);
+
+        _add = MkBtn(_isCondition ? L.T("＋ 添加条件", "+ Add") : L.T("＋ 添加动作", "+ Add"), AddRecord, primary: true);
+        _edit = MkBtn(L.T("编辑", "Edit"), EditRecord);
         _del = MkBtn(L.T("删除", "Delete"), DelRecord);
         _dup = MkBtn(L.T("复制", "Copy"), DupRecord);
         _up = MkBtn(L.T("上移", "Up"), () => MoveRecord(-1));
         _down = MkBtn(L.T("下移", "Down"), () => MoveRecord(1));
 
-        Content = BuildLayout();
-        FillTypeCombo(_addType);
-        FillTypeCombo(_typeCombo);
-        _cmp.ItemsSource = new[] { "<", "<=", "=", ">=", ">", "!=" };
-
-        _records.SelectionChanged += (_, _) => RebuildDetail();
-        _typeCombo.SelectionChanged += (_, _) => ChangeType();
-        _cmp.SelectionChanged += (_, _) =>
+        _logic.ItemsSource = new[] { L.T("满足全部（AND）"), L.T("满足任一（OR）") };
+        _logic.SelectedIndex = _list.Logic == 1 ? 1 : 0;
+        _logic.SelectionChanged += (_, _) =>
         {
-            if (_building) return;
-            if (Current() is { } r && r.IsCondition) { r.Uid = (uint)Math.Max(0, _cmp.SelectedIndex); OnEdit(); }
+            if (!_building) _list.Logic = _logic.SelectedIndex == 1 ? 1u : 0u;
         };
+        _logicLabel.Visibility = _logic.Visibility = _isCondition ? Visibility.Visible : Visibility.Collapsed;
 
-        Rebind(doc, list, changed);
+        _records.SelectionChanged += (_, _) => UpdateButtons();
+
+        Content = BuildLayout();
+        Rebuild();
     }
 
     /// <summary>换选节点/条目时重绑定到新的列表。</summary>
@@ -62,98 +59,44 @@ internal sealed class ScriptListEditor : UserControl
         _doc = doc;
         _list = list;
         _changed = changed;
+        _building = true;
+        _logic.SelectedIndex = _list.Logic == 1 ? 1 : 0;
+        _building = false;
         Rebuild();
     }
 
     private UIElement BuildLayout()
     {
-        // ── 已有项区：标题 + 列表 + 管理按钮 ──
-        _existingBox.Header = _isCondition ? L.T("已有条件", "Existing Conditions") : L.T("已有动作", "Existing Actions");
-        var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(6, 4, 0, 4) };
-        foreach (var b in new[] { _del, _dup, _up, _down }) btns.Children.Add(b);
-        var existingStack = new StackPanel();
-        existingStack.Children.Add(_records);
-        existingStack.Children.Add(btns);
-        _existingBox.Content = existingStack;
+        // 标题行：关系逻辑（仅条件）
+        var logicRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        logicRow.Children.Add(_logicLabel);
+        logicRow.Children.Add(_logic);
 
-        // ── 添加区：类型下拉 + 添加按钮 ──
-        var addBox = new GroupBox
-        {
-            Header = _isCondition ? L.T("添加新条件", "Add Condition") : L.T("添加新动作", "Add Action"),
-            Content = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Children =
-                {
-                    new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) },
-                    _addType,
-                    _add,
-                },
-            },
-        };
+        // 操作按钮行
+        var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        foreach (var b in new[] { _add, _edit, _del, _dup, _up, _down }) btns.Children.Add(b);
 
-        // ── 编辑选中项区：类型/比较符 + 字段面板 ──
-        var editTop = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 2, 0, 6),
-            Children =
-            {
-                new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) },
-                _typeCombo,
-                                _cmpLabel,
-                _cmp,
-            },
-        };
-        var editBox = new GroupBox
-        {
-            Header = L.T("编辑选中项", "Edit Selected"),
-            Content = new DockPanel(),
-        };
-        var editDock = (DockPanel)editBox.Content;
-        editDock.Children.Add(editTop);
-        DockPanel.SetDock(editTop, Dock.Top);
-        editDock.Children.Add(_fields);
+        var inner = new StackPanel();
+        inner.Children.Add(logicRow);
+        inner.Children.Add(_records);
+        inner.Children.Add(btns);
+        _existingBox.Content = inner;
 
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(230) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_existingBox, 0);
-        Grid.SetRow(addBox, 1);
-        Grid.SetRow(editBox, 2);
+        var root = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(_existingBox, Dock.Top);
         root.Children.Add(_existingBox);
-        root.Children.Add(addBox);
-        root.Children.Add(editBox);
         return root;
     }
 
-    private static Button MkBtn(string text, Action onClick)
+    private static System.Windows.Controls.Button MkBtn(string text, Action onClick, bool primary = false)
     {
-        var b = new Button { Content = text, MinWidth = 64, Margin = new Thickness(0, 0, 6, 0) };
+        System.Windows.Controls.Button b = primary
+            ? new Wpf.Ui.Controls.Button { Content = text, Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, MinWidth = 96, MinHeight = 28 }
+            : new System.Windows.Controls.Button { Content = text, MinWidth = 72, MinHeight = 28 };
+        b.Margin = new Thickness(0, 0, 8, 0);
         b.Click += (_, _) => onClick();
         return b;
     }
-
-    private void FillTypeCombo(ComboBox combo)
-    {
-        var items = new List<ComboType>();
-        for (uint t = 0; ; t++)
-        {
-            string? name = _isCondition ? NameOfCond(t) : NameOfAct(t);
-            if (name == null) break;
-            if (!_isCondition && (t == 0 || t == 16)) continue;   // 动作工厂对 0/16 返回 null
-            items.Add(new ComboType(t, name));
-        }
-        combo.ItemsSource = items;
-        combo.DisplayMemberPath = nameof(ComboType.Text);
-        if (items.Count > 0) combo.SelectedIndex = 0;
-    }
-
-    private sealed record ComboType(uint Id, string Text);
-
-    private static string? NameOfCond(uint t) => t < 30 ? Names.ConditionLabel(t) : null;
-    private static string? NameOfAct(uint t) => t < 29 ? Names.ActionLabel(t) : null;
 
     private ScriptRecord? Current() =>
         _records.SelectedIndex >= 0 && _records.SelectedIndex < _list.Records.Count
@@ -169,48 +112,15 @@ internal sealed class ScriptListEditor : UserControl
             items.Add((_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(r));
         _records.ItemsSource = items;
         _records.SelectedIndex = sel >= 0 && sel < items.Count ? sel : items.Count > 0 ? 0 : -1;
-        RebuildDetail();
+        UpdateButtons();
         _building = false;
     }
 
-    private void RebuildDetail()
+    private void UpdateButtons()
     {
-        _building = true;
-        var r = Current();
-        bool has = r != null;
-        _typeCombo.IsEnabled = _cmp.IsEnabled = _fields.IsEnabled = has;
-        _del.IsEnabled = _dup.IsEnabled = _up.IsEnabled = _down.IsEnabled = has;
-        if (!has)
-        {
-            _fields.Bind(null);
-            _building = false;
-            return;
-        }
-        var items = (List<ComboType>)_typeCombo.ItemsSource;
-        for (int i = 0; i < items.Count; i++)
-            if (items[i].Id == r!.Type) { _typeCombo.SelectedIndex = i; break; }
-        _cmp.SelectedIndex = (int)Math.Min(r.Uid, 5);
-        Visibility cmpVis = _isCondition ? Visibility.Visible : Visibility.Collapsed;
-        _cmp.Visibility = cmpVis;
-        _cmpLabel.Visibility = cmpVis;
-        _fields.Bind(r);
-        _building = false;
-    }
-
-    private void OnEdit()
-    {
-        if (_building) return;
-        int sel = _records.SelectedIndex;
-        if (sel >= 0)
-        {
-            var items = (List<string>)_records.ItemsSource;
-            items[sel] = (_isCondition ? "⚑ " : "⚡ ") + Gui.Describe(_list.Records[sel]);
-            _records.ItemsSource = null;
-            _records.ItemsSource = items;
-            _records.SelectedIndex = sel;
-        }
+        bool has = Current() != null;
+        _edit.IsEnabled = _del.IsEnabled = _dup.IsEnabled = _up.IsEnabled = _down.IsEnabled = has;
         RebuildHeader();
-        _changed();
     }
 
     private void RebuildHeader()
@@ -223,17 +133,21 @@ internal sealed class ScriptListEditor : UserControl
 
     private void AddRecord()
     {
-        uint type = _addType.SelectedItem is ComboType ct ? ct.Id : 0;
+        uint defType = _isCondition ? 0u : 1u;   // 动作类型 0 无效，从 1 开始
         var rec = new ScriptRecord
         {
             IsCondition = _isCondition,
-            Type = type,
-            SubType = Scriptable.DefaultBodyVersion(type),
+            Type = defType,
+            SubType = Scriptable.DefaultBodyVersion(defType),
             Uid = 2,
-            BodySpec = _isCondition ? SpecCond(type) : SpecAct(type),
-            Named = _isCondition ? Names.ConditionClass(type).named : Names.ActionClass(type).named,
+            BodySpec = _isCondition ? SpecCond(defType) : SpecAct(defType),
+            Named = _isCondition ? Names.ConditionClass(defType).named : Names.ActionClass(defType).named,
         };
         rec.Fields = FieldFactory.Resync(rec.BodySpec, rec.SubType, null, _isCondition);
+        string cn = L.T(_isCondition ? "条件" : "动作");
+        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn) { Owner = Window.GetWindow(this) };
+        if (dlg.ShowDialog() != true) return;
+
         int at = _records.SelectedIndex >= 0 ? _records.SelectedIndex + 1 : _list.Records.Count;
         _list.Records.Insert(Math.Min(at, _list.Records.Count), rec);
         if (!_list.Present && _list.Records.Count > 0)
@@ -243,6 +157,20 @@ internal sealed class ScriptListEditor : UserControl
         }
         Rebuild();
         _records.SelectedIndex = Math.Min(at, _list.Records.Count - 1);
+        _changed();
+    }
+
+    private void EditRecord()
+    {
+        int sel = _records.SelectedIndex;
+        if (sel < 0 || sel >= _list.Records.Count) return;
+        var copy = ScriptRecordCloner.Clone(_list.Records[sel]);
+        string cn = L.T(_isCondition ? "条件" : "动作");
+        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn) { Owner = Window.GetWindow(this) };
+        if (dlg.ShowDialog() != true) return;
+        _list.Records[sel] = copy;
+        Rebuild();
+        _records.SelectedIndex = sel;
         _changed();
     }
 
@@ -261,7 +189,7 @@ internal sealed class ScriptListEditor : UserControl
     {
         var src = Current();
         if (src == null) return;
-        var copy = CloneRecord(src);
+        var copy = ScriptRecordCloner.Clone(src);
         int at = _records.SelectedIndex + 1;
         _list.Records.Insert(at, copy);
         _list.Count = _list.Records.Count;
@@ -269,18 +197,6 @@ internal sealed class ScriptListEditor : UserControl
         _records.SelectedIndex = at;
         _changed();
     }
-
-    internal static ScriptRecord CloneRecord(ScriptRecord src) => new()
-    {
-        IsCondition = src.IsCondition,
-        Type = src.Type,
-        SubType = src.SubType,
-        Uid = src.Uid,
-        BodySpec = src.BodySpec,
-        Named = src.Named,
-        ClassName = src.ClassName,
-        Fields = src.Fields.Select(FieldFactory.CloneField).ToList(),
-    };
 
     private void MoveRecord(int delta)
     {
@@ -293,25 +209,123 @@ internal sealed class ScriptListEditor : UserControl
         _changed();
     }
 
-    private void ChangeType()
-    {
-        if (_building) return;
-        var r = Current();
-        if (r == null || _typeCombo.SelectedItem is not ComboType ct) return;
-        r.Type = ct.Id;
-        r.SubType = Scriptable.DefaultBodyVersion(ct.Id);
-        r.BodySpec = _isCondition ? SpecCond(ct.Id) : SpecAct(ct.Id);
-        var named = _isCondition ? Names.ConditionClass(ct.Id) : Names.ActionClass(ct.Id);
-        r.ClassName = named.name;
-        r.Named = named.named;
-        r.Fields = FieldFactory.Resync(r.BodySpec, r.SubType, r.Fields, _isCondition);
-        Rebuild();
-        _changed();
-    }
-
     // body 规格表统一取自库
     private static string SpecCond(uint t) => t < 30 ? Scriptable.ConditionBodySpec(t) : "";
     private static string SpecAct(uint t) => t < 29 ? Scriptable.ActionBodySpec(t) : "";
+}
+
+/// <summary>ScriptRecord 深拷贝（编辑弹窗用：确定才回填原列表）。</summary>
+internal static class ScriptRecordCloner
+{
+    public static ScriptRecord Clone(ScriptRecord src) => new()
+    {
+        IsCondition = src.IsCondition,
+        Type = src.Type,
+        SubType = src.SubType,
+        Uid = src.Uid,
+        BodySpec = src.BodySpec,
+        Named = src.Named,
+        ClassName = src.ClassName,
+        Fields = src.Fields.Select(FieldFactory.CloneField).ToList(),
+    };
+}
+
+/// <summary>
+/// 单条条件/动作的编辑弹窗：类型 / 比较符（仅条件）/ 逐字段编辑。
+/// 新增与编辑共用；直接编辑传入的记录对象（调用方用克隆保证"确定才生效"）。
+/// </summary>
+internal sealed class ScriptRecordDialog : Window
+{
+    private readonly ScriptRecord _rec;
+    private readonly bool _isCondition;
+    private readonly ComboBox _type = new() { MinWidth = 340 };
+    private readonly ComboBox _cmp = new() { MinWidth = 90 };
+    private readonly FieldsPanel _fields;
+    private bool _building;
+
+    private sealed record ComboType(uint Id, string Text);
+
+    public ScriptRecordDialog(ScriptRecord rec, bool isCondition, string title)
+    {
+        _rec = rec;
+        _isCondition = isCondition;
+        DialogChrome.Init(this, title, 580, 0, SizeToContent.Height);
+
+        _type.ItemsSource = TypeList(isCondition);
+        _type.DisplayMemberPath = nameof(ComboType.Text);
+        SyncTypeCombo();
+        _type.SelectionChanged += (_, _) => ChangeType();
+
+        _cmp.ItemsSource = new[] { "<", "<=", "=", ">=", ">", "!=" };
+        _cmp.SelectedIndex = (int)Math.Min(rec.Uid, 5);
+        _cmp.SelectionChanged += (_, _) =>
+        {
+            if (_building) return;
+            if (_isCondition) _rec.Uid = (uint)Math.Max(0, _cmp.SelectedIndex);
+        };
+        Visibility cmpVis = isCondition ? Visibility.Visible : Visibility.Collapsed;
+        _cmp.Visibility = cmpVis;
+
+        _fields = new FieldsPanel(() => { });
+        _fields.Bind(rec);
+
+        var ok = DialogChrome.Button(L.Confirm, primary: true);
+        ok.IsDefault = true;
+        var cancel = DialogChrome.Button(L.Cancel);
+        cancel.IsCancel = true;
+        ok.Click += (_, _) => DialogResult = true;
+
+        var stack = new StackPanel { Margin = new Thickness(16) };
+        var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        top.Children.Add(new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        top.Children.Add(_type);
+        top.Children.Add(new TextBlock { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 8, 0), Visibility = cmpVis });
+        top.Children.Add(_cmp);
+        stack.Children.Add(top);
+        stack.Children.Add(_fields);
+        stack.Children.Add(DialogChrome.Footer(cancel, ok));
+        Content = stack;
+
+        _building = false;
+    }
+
+    private static List<ComboType> TypeList(bool isCondition)
+    {
+        var items = new List<ComboType>();
+        for (uint t = 0; ; t++)
+        {
+            string? name = isCondition
+                ? (t < 30 ? Names.ConditionLabel(t) : null)
+                : (t < 29 ? Names.ActionLabel(t) : null);
+            if (name == null) break;
+            if (!isCondition && (t == 0 || t == 16)) continue;   // 动作工厂对 0/16 返回 null
+            items.Add(new ComboType(t, name));
+        }
+        return items;
+    }
+
+    private void SyncTypeCombo()
+    {
+        var items = (List<ComboType>)_type.ItemsSource;
+        for (int i = 0; i < items.Count; i++)
+            if (items[i].Id == _rec.Type) { _type.SelectedIndex = i; return; }
+        if (items.Count > 0) _type.SelectedIndex = 0;
+    }
+
+    private void ChangeType()
+    {
+        if (_building || _type.SelectedItem is not ComboType ct) return;
+        _rec.Type = ct.Id;
+        _rec.SubType = Scriptable.DefaultBodyVersion(ct.Id);
+        _rec.BodySpec = _isCondition
+            ? (ct.Id < 30 ? Scriptable.ConditionBodySpec(ct.Id) : "")
+            : (ct.Id < 29 ? Scriptable.ActionBodySpec(ct.Id) : "");
+        var named = _isCondition ? Names.ConditionClass(ct.Id) : Names.ActionClass(ct.Id);
+        _rec.ClassName = named.name;
+        _rec.Named = named.named;
+        _rec.Fields = FieldFactory.Resync(_rec.BodySpec, _rec.SubType, _rec.Fields, _isCondition);
+        _fields.Bind(_rec);
+    }
 }
 
 /// <summary>body 字段工厂：按规格同步字段列表（换类型/改 subType 时保位带值）。</summary>
@@ -383,6 +397,7 @@ internal sealed class FieldsPanel : ScrollViewer
     {
         _changed = changed;
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        MaxHeight = 380;
     }
 
     public void Bind(ScriptRecord? rec)
@@ -543,48 +558,42 @@ internal sealed class LocalizationGrid : UserControl
         IsReadOnly = false,
         HeadersVisibility = DataGridHeadersVisibility.Column,
     };
-    private bool _building;
 
     public LocalizationGrid()
     {
-        var colIdx = MkCol("#", 40, isReadOnly: true, binding: new Binding(nameof(LocRow.Idx)));
-        var colRole = MkCol(L.T("角色 / 对应节点"), 260, isReadOnly: true, binding: new Binding(nameof(LocRow.Role)));
-        var colTxt = MkCol(L.T("文本（{^n} 表示换行；行数不可增删）"), 600, isReadOnly: false,
-            binding: new Binding(nameof(LocRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus });
-        colTxt.ElementStyle = MkWrapStyle(maxHeight: double.PositiveInfinity);
-        colTxt.EditingElementStyle = MkEditStyle();
+        var colIdx = new DataGridTextColumn
+        {
+            Header = "#",
+            Binding = new Binding(nameof(LocRow.Idx)),
+            IsReadOnly = true,
+            Width = new DataGridLength(40),
+        };
+        var colRole = new DataGridTextColumn
+        {
+            Header = L.T("角色 / 对应节点"),
+            Binding = new Binding(nameof(LocRow.Role)),
+            IsReadOnly = true,
+            Width = new DataGridLength(260),
+        };
+        var colTxt = new DataGridTextColumn
+        {
+            Header = L.T("文本（{^n} 表示换行；行数不可增删）"),
+            Binding = new Binding(nameof(LocRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+        };
+        var wrap = new Style(typeof(TextBlock));
+        wrap.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        wrap.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
+        colTxt.ElementStyle = wrap;
+        var edit = new Style(typeof(TextBox));
+        edit.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
+        edit.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
+        colTxt.EditingElementStyle = edit;
+
         _grid.Columns.Add(colIdx);
         _grid.Columns.Add(colRole);
         _grid.Columns.Add(colTxt);
         Content = _grid;
-    }
-
-    private static DataGridTextColumn MkCol(string header, double width, bool isReadOnly, Binding binding)
-    {
-        return new DataGridTextColumn
-        {
-            Header = header,
-            Binding = binding,
-            IsReadOnly = isReadOnly,
-            Width = new DataGridLength(width, DataGridLengthUnitType.Star),
-        };
-    }
-
-    private static Style MkWrapStyle(double maxHeight)
-    {
-        var s = new Style(typeof(TextBlock));
-        s.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
-        s.Setters.Add(new Setter(TextBlock.MaxHeightProperty, maxHeight));
-        s.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
-        return s;
-    }
-
-    private static Style MkEditStyle()
-    {
-        var s = new Style(typeof(TextBox));
-        s.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
-        s.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
-        return s;
     }
 
     public void Bind(DocSession doc, Changed changed)
@@ -596,7 +605,6 @@ internal sealed class LocalizationGrid : UserControl
 
     public void Rebuild()
     {
-        _building = true;
         var texts = _doc.PrimaryLanguage.Texts;
         var rows = new List<LocRow>();
         for (int i = 0; i < texts.Count; i++)
@@ -605,7 +613,6 @@ internal sealed class LocalizationGrid : UserControl
             rows.Add(new LocRow(i, role, texts[i], () => { _doc.Dirty = true; _changed(); }));
         }
         _grid.ItemsSource = rows;
-        _building = false;
     }
 
     private string RoleCnv(int i)

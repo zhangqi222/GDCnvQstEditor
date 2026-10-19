@@ -9,8 +9,9 @@ using CnvQst.Cli;
 namespace CnvQstStudio;
 
 /// <summary>
-/// 主窗口（WPF-UI FluentWindow）。现代 Fluent 布局：
-///   标题栏 → 菜单栏 → 主工具栏 → 文档页签（每个页签一个 DocView）→ 状态栏
+/// 编辑器主窗口（WPF-UI FluentWindow）。布局：
+///   标题栏 → 全量菜单栏 → 文档页签（突出显示、带独立关闭按钮）→ 状态栏
+/// 不设常驻工具栏：文档级操作走菜单，表格级操作走右键菜单（层次感）。
 /// 所有可见文案走 <see cref="L"/>（中文为基准、语言包可扩展）。
 /// </summary>
 internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
@@ -21,7 +22,6 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly StatusBarItem _statusVer = new();
     private readonly Grid _root = new();
     private Menu? _menu;
-    private StackPanel? _toolbar;
     private Wpf.Ui.Controls.TitleBar? _titleBar;
 
     public MainWindow()
@@ -38,6 +38,7 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         _titleBar = new Wpf.Ui.Controls.TitleBar { Title = L.WindowTitle };
 
         _tabs.SelectionChanged += (_, _) => UpdateStatus();
+        _tabs.ItemContainerStyle = MkTabItemStyle();
 
         var status = new StatusBar();
         _statusDoc.HorizontalContentAlignment = HorizontalAlignment.Left;
@@ -46,11 +47,11 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         status.Items.Add(_statusLang);
         status.Items.Add(_statusVer);
 
-        for (int i = 0; i < 5; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 3 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
-        Grid.SetRow(_titleBar!, 0);
-        Grid.SetRow(_tabs, 3);
-        Grid.SetRow(status, 4);
-        _root.Children.Add(_titleBar!);
+        for (int i = 0; i < 4; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        Grid.SetRow(_titleBar, 0);
+        Grid.SetRow(_tabs, 2);
+        Grid.SetRow(status, 3);
+        _root.Children.Add(_titleBar);
         _root.Children.Add(_tabs);
         _root.Children.Add(status);
 
@@ -81,7 +82,67 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private DocView? Active => _tabs.SelectedItem is TabItem page ? page.Content as DocView : null;
 
     // ------------------------------------------------------------------
-    // 菜单与工具栏
+    // 页签样式：选中态突出（白底 + 强调色下边框），Header 含独立关闭按钮
+    // ------------------------------------------------------------------
+
+    private static Style MkTabItemStyle()
+    {
+        var template = new ControlTemplate(typeof(TabItem));
+        var bd = new FrameworkElementFactory(typeof(Border));
+        bd.Name = "Bd";
+        bd.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xF3, 0xF4, 0xF6)));
+        bd.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0xE4, 0xE7, 0xEC)));
+        bd.SetValue(Border.BorderThicknessProperty, new Thickness(1, 1, 1, 0));
+        bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6, 6, 0, 0));
+        bd.SetValue(Border.MarginProperty, new Thickness(4, 4, 0, 0));
+        bd.SetValue(Border.PaddingProperty, new Thickness(4, 4, 2, 4));
+        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
+        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
+        cp.SetValue(FrameworkElement.MarginProperty, new Thickness(0));
+        bd.AppendChild(cp);
+        template.VisualTree = bd;
+
+        var selBg = new Trigger { Property = TabItem.IsSelectedProperty, Value = true };
+        selBg.Setters.Add(new Setter(Border.BackgroundProperty, Brushes.White, "Bd"));
+        selBg.Setters.Add(new Setter(Border.BorderBrushProperty, WpfTheme.AccentBrush, "Bd"));
+        template.Triggers.Add(selBg);
+
+        var style = new Style(typeof(TabItem));
+        style.Setters.Add(new Setter(TabItem.TemplateProperty, template));
+        style.Setters.Add(new Setter(TabItem.ForegroundProperty, WpfTheme.TextBrush));
+        return style;
+    }
+
+    /// <summary>页签 Header：文件名 + 独立关闭按钮。</summary>
+    private FrameworkElement MakeTabHeader(TabItem page, string title)
+    {
+        var dock = new DockPanel { LastChildFill = true };
+        var close = new System.Windows.Controls.Button
+        {
+            Content = "✕",
+            Width = 20,
+            Height = 20,
+            Padding = new Thickness(0),
+            FontSize = 11,
+            Foreground = WpfTheme.MutedBrush,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = L.CloseTab,
+        };
+        DockPanel.SetDock(close, Dock.Right);
+        close.Click += (_, _) => CloseTab(page);
+        var text = new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 8, 0) };
+        dock.Children.Add(close);
+        dock.Children.Add(text);
+        dock.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) CloseTab(page); };
+        return dock;
+    }
+
+    private void SetTabHeader(TabItem page, DocView view) => page.Header = MakeTabHeader(page, view.Doc.Title);
+
+    // ------------------------------------------------------------------
+    // 菜单
     // ------------------------------------------------------------------
 
     private void BindKey(Key key, ModifierKeys mods, Action exec) =>
@@ -90,13 +151,12 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void BuildChrome()
     {
         if (_menu != null) _root.Children.Remove(_menu);
-        if (_toolbar != null) _root.Children.Remove(_toolbar);
         InputBindings.Clear();
 
         BindKey(Key.O, ModifierKeys.Control, OpenViaDialog);
         BindKey(Key.S, ModifierKeys.Control, SaveActive);
         BindKey(Key.S, ModifierKeys.Control | ModifierKeys.Shift, SaveActiveAs);
-        BindKey(Key.W, ModifierKeys.Control, CloseTab);
+        BindKey(Key.W, ModifierKeys.Control, () => CloseTab(null));
         BindKey(Key.N, ModifierKeys.Control, NewConversation);
         BindKey(Key.N, ModifierKeys.Control | ModifierKeys.Shift, NewQuest);
         BindKey(Key.E, ModifierKeys.Control, () => ExportActive("txt"));
@@ -110,11 +170,11 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         var file = MkMenu(L.MFile);
         file.Items.Add(MkItem(L.OpenTitle, "Ctrl+O", OpenViaDialog));
-        file.Items.Add(MkItem(L.OpenDirBatch, "", () => ShowBatch(null)));
+        file.Items.Add(MkItem(L.OpenDirBatch, "Ctrl+B", () => ShowBatch(null)));
         file.Items.Add(new Separator());
         file.Items.Add(MkItem(L.Save, "Ctrl+S", SaveActive));
         file.Items.Add(MkItem(L.SaveAs, "Ctrl+Shift+S", SaveActiveAs));
-        file.Items.Add(MkItem(L.CloseTab, "Ctrl+W", CloseTab));
+        file.Items.Add(MkItem(L.CloseTab, "Ctrl+W", () => CloseTab(null)));
         file.Items.Add(new Separator());
         file.Items.Add(MkItem(L.Exit, "", Close));
 
@@ -161,28 +221,6 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         Grid.SetRow(menu, 1);
         _root.Children.Add(menu);
         _menu = menu;
-
-        var toolbar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(8, 4, 8, 4),
-        };
-        toolbar.Children.Add(TbBtn(L.OpenBtn, OpenViaDialog));
-        toolbar.Children.Add(TbBtn(L.SaveBtn, SaveActive));
-        toolbar.Children.Add(TbSep());
-        toolbar.Children.Add(TbBtn(L.NewConversationBtn, NewConversation));
-        toolbar.Children.Add(TbBtn(L.NewQuestBtn, NewQuest));
-        toolbar.Children.Add(TbSep());
-        toolbar.Children.Add(TbBtn(L.ExportTxtBtn, () => ExportActive("txt")));
-        toolbar.Children.Add(TbBtn(L.ExportJsonBtn, () => ExportActive("json")));
-        toolbar.Children.Add(TbBtn(L.DumpBtn, () => ExportActive("dump")));
-        toolbar.Children.Add(TbBtn(L.ImportTxtBtn, ImportTxtToActive));
-        toolbar.Children.Add(TbSep());
-        toolbar.Children.Add(TbBtn(L.BatchBtn, () => ShowBatch(null)));
-        toolbar.Children.Add(TbBtn(L.VerifyBtn, VerifyActive));
-        Grid.SetRow(toolbar, 2);
-        _root.Children.Add(toolbar);
-        _toolbar = toolbar;
     }
 
     private static MenuItem MkMenu(string header) => new() { Header = header };
@@ -190,16 +228,7 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private static MenuItem MkItem(string header, string gesture, Action onClick) =>
         new() { Header = header, InputGestureText = gesture, Command = new RelayCommand(onClick) };
 
-    private static FrameworkElement TbSep() => new Separator { Margin = new Thickness(4, 2, 4, 2) };
-
-    private static System.Windows.Controls.Button TbBtn(string text, Action onClick)
-    {
-        var b = new System.Windows.Controls.Button { Content = text, Margin = new Thickness(0, 0, 6, 0), Padding = new Thickness(10, 2, 10, 2) };
-        b.Click += (_, _) => onClick();
-        return b;
-    }
-
-    /// <summary>语言切换：重建菜单/工具栏 + 各页签标题与内容。</summary>
+    /// <summary>语言切换：重建菜单 + 各页签标题与内容。</summary>
     private void OnLanguageChanged()
     {
         Title = L.WindowTitle;
@@ -207,7 +236,7 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         foreach (TabItem page in _tabs.Items)
         {
             var view = (DocView)page.Content;
-            page.Header = view.Doc.Title;
+            SetTabHeader(page, view);
             view.RefreshAll();
         }
         BuildChrome();
@@ -272,18 +301,20 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         var view = new DocView(doc);
         view.DirtyChanged += () =>
         {
-            if (_tabs.SelectedItem is TabItem page) page.Header = doc.Title;
+            if (_tabs.SelectedItem is TabItem sel) SetTabHeader(sel, view);
             UpdateStatus();
         };
-        var page = new TabItem { Header = doc.Title, Content = view };
+        var page = new TabItem { Content = view };
+        SetTabHeader(page, view);
         _tabs.Items.Add(page);
         _tabs.SelectedItem = page;
         UpdateStatus();
     }
 
-    private void CloseTab()
+    private void CloseTab(TabItem? page)
     {
-        if (_tabs.SelectedItem is not TabItem page) return;
+        page ??= _tabs.SelectedItem as TabItem;
+        if (page == null) return;
         var view = (DocView)page.Content;
         if (view.Doc.Dirty)
         {
@@ -489,16 +520,10 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         win.Show();
     }
 
-    /// <summary>选中本地化字符串表页（视图菜单入口）。</summary>
+    /// <summary>切换当前文档的 本地化字符串表 / 结构表 视图。</summary>
     private void SelectLocTab()
     {
-        foreach (TabItem page in _tabs.Items)
-        {
-            var view = (DocView)page.Content;
-            _tabs.SelectedItem = page;
-            view.ShowLoc();
-            return;
-        }
+        if (Active != null) Active.ToggleView();
     }
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
