@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using Wpf.Ui.Appearance;
 
@@ -34,4 +35,19 @@ internal static class WpfTheme
     public static readonly Brush InferredBrush = new SolidColorBrush(Color.FromRgb(230, 126, 34)); // 推断语义
 
     public static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas, Courier New");
+
+    // ---- 表格外观：竖向网格线 + 列头分隔线常显 ----
+    public static readonly Brush GridLineBrush = new SolidColorBrush(Color.FromRgb(0xE4, 0xE7, 0xEC));
+
+    /// <summary>DataGrid 统一外观：横竖网格线 + 列头右/下分隔线（保留默认拖动手柄）。</summary>
+    public static void ApplyGrid(DataGrid grid)
+    {
+        grid.GridLinesVisibility = DataGridGridLinesVisibility.All;
+        grid.VerticalGridLinesBrush = GridLineBrush;
+        grid.HorizontalGridLinesBrush = GridLineBrush;
+        var hs = new Style(typeof(System.Windows.Controls.Primitives.DataGridColumnHeader));
+        hs.Setters.Add(new Setter(System.Windows.Controls.Control.BorderBrushProperty, GridLineBrush));
+        hs.Setters.Add(new Setter(System.Windows.Controls.Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
+        grid.ColumnHeaderStyle = hs;
+    }
 }

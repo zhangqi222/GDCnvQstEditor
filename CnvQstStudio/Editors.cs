@@ -593,6 +593,7 @@ internal sealed class LocalizationGrid : UserControl
         _grid.Columns.Add(colIdx);
         _grid.Columns.Add(colRole);
         _grid.Columns.Add(colTxt);
+        WpfTheme.ApplyGrid(_grid);
         Content = _grid;
     }
 

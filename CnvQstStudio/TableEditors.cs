@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -7,6 +8,16 @@ using System.Windows.Media;
 using CnvQst;
 
 namespace CnvQstStudio;
+
+/// <summary>空字符串 → Collapsed（task 描述副文本行等）。</summary>
+internal sealed class EmptyToCollapsedConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        string.IsNullOrEmpty(value as string) ? Visibility.Collapsed : Visibility.Visible;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
 
 /// <summary>把 {^n} 译成真实换行（单元格显示），提交时反译回去。</summary>
 internal static class TableLayout
@@ -31,11 +42,11 @@ internal sealed class ColoredLine
 /// <summary>CNV 节点的界面名（树形表格第一列：类型徽标 + 文本摘要，层次由缩进表达）。</summary>
 internal static class CnvNodeLabel
 {
-    /// <summary>节点类型的界面名（中文基准，走语言包）。</summary>
+    /// <summary>节点类型的界面名（中文基准，走语言包），带官方风格的图标前缀。</summary>
     public static string KindZh(uint type) => L.T(type switch
     {
-        0 => "根", 1 => "台词", 2 => "继续选项", 3 => "接受选项", 4 => "拒绝选项",
-        5 => "通用", 6 => "结束对话", 7 => "跳转", 8 => "随机选项", _ => "未知类型",
+        0 => "🏁 根", 1 => "💬 台词", 2 => "➡ 继续选项", 3 => "✅ 接受选项", 4 => "❌ 拒绝选项",
+        5 => "🔹 通用", 6 => "🛑 结束对话", 7 => "↪ 跳转", 8 => "🎲 随机选项", _ => "❓ 未知类型",
     });
 
     /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
@@ -139,7 +150,10 @@ internal sealed class CnvRow : INotifyPropertyChanged
     }
 }
 
-/// <summary>QST 行承载：task / objective / event（incentive 也按 event）。</summary>
+/// <summary>
+/// QST 行所有者（层级对齐官方 QuestEditor：
+/// 组名根 → 任务名 → task → OnAccept/Objectives/OnComplete 组 → 事件/目标）。
+/// </summary>
 internal abstract class QstRowOwner
 {
     public abstract object OwnerObject { get; }
@@ -148,10 +162,51 @@ internal abstract class QstRowOwner
     public abstract bool HasScript { get; }
     public abstract ScriptList? Conditions { get; }
     public abstract ScriptList? Actions { get; }
+    public virtual bool CanDelete => false;
+    public virtual string? Tip => null;
+    public virtual Brush NodeBrush => WpfTheme.TextBrush;
+    public virtual string SubText => "";
 }
 
-/// <summary>task 行所有者：携带真实 QstTask 引用（删除/定位用），标题已格式化。</summary>
-internal sealed class QstTaskRow(QstTask t, string nodeLabel) : QstRowOwner
+/// <summary>根行：任务组名（官方红色圆点）。</summary>
+internal sealed class QstRootOwner(string group) : QstRowOwner
+{
+    public override object OwnerObject => this;
+    public override string NodeLabel => group;
+    public override string FieldLabel => "";
+    public override bool HasScript => false;
+    public override ScriptList? Conditions => null;
+    public override ScriptList? Actions => null;
+    public override Brush NodeBrush => WpfTheme.DangerBrush;
+}
+
+/// <summary>任务名行（官方黄旗；右键“任务属性”编辑 quest 头部）。</summary>
+internal sealed class QstQuestOwner(QstFile q, string name) : QstRowOwner
+{
+    public QstFile Q => q;
+    public override object OwnerObject => q;
+    public override string NodeLabel => name;
+    public override string FieldLabel => "";
+    public override bool HasScript => false;
+    public override ScriptList? Conditions => null;
+    public override ScriptList? Actions => null;
+    public override Brush NodeBrush => WpfTheme.AccentBrush;
+}
+
+/// <summary>OnAccept / Objectives / OnComplete 组行（仅折叠分组，无脚本内容）。</summary>
+internal sealed class QstGroupOwner(string label, Brush brush) : QstRowOwner
+{
+    public override object OwnerObject => this;
+    public override string NodeLabel => label;
+    public override string FieldLabel => "";
+    public override bool HasScript => false;
+    public override ScriptList? Conditions => null;
+    public override ScriptList? Actions => null;
+    public override Brush NodeBrush => brush;
+}
+
+/// <summary>task 行：图标 + [N] 标题，副文本为描述。</summary>
+internal sealed class QstTaskRow(QstTask t, string nodeLabel, string desc) : QstRowOwner
 {
     public QstTask T => t;
     public override object OwnerObject => t;
@@ -169,31 +224,36 @@ internal sealed class QstTaskRow(QstTask t, string nodeLabel) : QstRowOwner
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
+    public override bool CanDelete => true;
+    public override string SubText => desc;
 }
 
-internal sealed class QstEventRow : QstRowOwner
+internal sealed class QstEventRow(QstTask ownerTask, QstEvent e, string label) : QstRowOwner
 {
-    public QstEvent E;
-    public string Kind;
-    public QstEventRow(QstEvent e, string kind) { E = e; Kind = kind; }
-    public override object OwnerObject => E;
-    public override string NodeLabel => Kind;
-    public override string FieldLabel => E.Unknown != 0 ? L.F("标志 {0}", E.Unknown) : "";
+    public QstTask OwnerTask => ownerTask;
+    public QstEvent E => e;
+    public override object OwnerObject => e;
+    public override string NodeLabel => label;
+    public override string FieldLabel => e.Unknown != 0 ? L.F("标志 {0}", e.Unknown) : "";
     public override bool HasScript => true;
-    public override ScriptList? Conditions => E.Conditions;
-    public override ScriptList? Actions => E.Actions;
+    public override ScriptList? Conditions => e.Conditions;
+    public override ScriptList? Actions => e.Actions;
+    public override bool CanDelete => true;
 }
 
-internal sealed class QstObjectiveRow : QstRowOwner
+internal sealed class QstObjectiveRow(QstTask ownerTask, QstObjective o, string text) : QstRowOwner
 {
-    public QstObjective O;
-    public QstObjectiveRow(QstObjective o) => O = o;
-    public override object OwnerObject => O;
-    public override string NodeLabel => L.T("目标");
-    public override string FieldLabel => "";
+    public QstTask OwnerTask => ownerTask;
+    public QstObjective O => o;
+    public override object OwnerObject => o;
+    public override string NodeLabel => text.Length > 0 ? text : L.T("（目标）");
+    public override string FieldLabel => o.Unknown1 != 0 ? L.F("标志 {0}", o.Unknown1) : "";
     public override bool HasScript => true;
-    public override ScriptList? Conditions => O.Conditions;
-    public override ScriptList? Actions => O.Actions;
+    public override ScriptList? Conditions => o.Conditions;
+    public override ScriptList? Actions => o.Actions;
+    public override bool CanDelete => true;
+    // 悬停显示 Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标）
+    public override string? Tip => "Objective ID: " + o.Unknown0 + "（0x" + o.Unknown0.ToString("X") + "）";
 }
 
 internal sealed class QstRow : INotifyPropertyChanged
@@ -209,6 +269,9 @@ internal sealed class QstRow : INotifyPropertyChanged
     public double Indent => 2 + Depth * 18;
 
     public string Node { get; private set; }
+    public string SubText { get; private set; }
+    public string? Tip { get; private set; }
+    public Brush NodeBrush { get; private set; }
     public string Field { get; private set; }
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
@@ -238,10 +301,13 @@ internal sealed class QstRow : INotifyPropertyChanged
     public void Reload()
     {
         Node = Owner.NodeLabel;
+        SubText = Owner.SubText;
+        Tip = Owner.Tip;
+        NodeBrush = Owner.NodeBrush;
         Field = Owner.FieldLabel;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(Field), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(Tip), nameof(NodeBrush), nameof(Field), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -305,16 +371,20 @@ internal sealed class CnvTableEditor : UserControl
         Content = _grid;
     }
 
-    private static DataGrid MkGrid() => new()
+    private static DataGrid MkGrid()
     {
-        AutoGenerateColumns = false,
-        CanUserAddRows = false,
-        CanUserDeleteRows = false,
-        CanUserSortColumns = false,
-        HeadersVisibility = DataGridHeadersVisibility.Column,
-        SelectionMode = DataGridSelectionMode.Single,
-        GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-    };
+        var g = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            CanUserSortColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            SelectionMode = DataGridSelectionMode.Single,
+        };
+        WpfTheme.ApplyGrid(g);
+        return g;
+    }
 
     private static Style MkTextBlockStyle(Brush? foreground = null)
     {
@@ -370,7 +440,7 @@ internal sealed class CnvTableEditor : UserControl
         sp.AppendChild(spacer);
 
         var toggle = new FrameworkElementFactory(typeof(System.Windows.Controls.Button));
-        toggle.SetValue(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(CnvRow.ExpandGlyph)));
+        toggle.SetBinding(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(CnvRow.ExpandGlyph)));
         toggle.SetValue(System.Windows.Controls.Button.BackgroundProperty, Brushes.Transparent);
         toggle.SetValue(System.Windows.Controls.Button.BorderThicknessProperty, new Thickness(0));
         toggle.SetValue(FrameworkElement.WidthProperty, 20.0);
@@ -378,7 +448,7 @@ internal sealed class CnvTableEditor : UserControl
         toggle.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         toggle.SetValue(Control.FontSizeProperty, 10.0);
         toggle.SetValue(Control.ForegroundProperty, WpfTheme.MutedBrush);
-        toggle.SetValue(FrameworkElement.VisibilityProperty, new Binding(nameof(CnvRow.HasChildren))
+        toggle.SetBinding(FrameworkElement.VisibilityProperty, new Binding(nameof(CnvRow.HasChildren))
         {
             Converter = new System.Windows.Controls.BooleanToVisibilityConverter(),
         });
@@ -642,16 +712,20 @@ internal sealed class QstTableEditor : UserControl
         Content = _grid;
     }
 
-    private static DataGrid MkGrid() => new()
+    private static DataGrid MkGrid()
     {
-        AutoGenerateColumns = false,
-        CanUserAddRows = false,
-        CanUserDeleteRows = false,
-        CanUserSortColumns = false,
-        HeadersVisibility = DataGridHeadersVisibility.Column,
-        SelectionMode = DataGridSelectionMode.Single,
-        GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-    };
+        var g = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            CanUserAddRows = false,
+            CanUserDeleteRows = false,
+            CanUserSortColumns = false,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            SelectionMode = DataGridSelectionMode.Single,
+        };
+        WpfTheme.ApplyGrid(g);
+        return g;
+    }
 
     private static MenuItem Mi(string header, Action onClick) =>
         new() { Header = header, Command = new RelayCommand(onClick) };
@@ -688,7 +762,7 @@ internal sealed class QstTableEditor : UserControl
         sp.AppendChild(spacer);
 
         var toggle = new FrameworkElementFactory(typeof(System.Windows.Controls.Button));
-        toggle.SetValue(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(QstRow.ExpandGlyph)));
+        toggle.SetBinding(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(QstRow.ExpandGlyph)));
         toggle.SetValue(System.Windows.Controls.Button.BackgroundProperty, Brushes.Transparent);
         toggle.SetValue(System.Windows.Controls.Button.BorderThicknessProperty, new Thickness(0));
         toggle.SetValue(FrameworkElement.WidthProperty, 20.0);
@@ -696,18 +770,35 @@ internal sealed class QstTableEditor : UserControl
         toggle.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         toggle.SetValue(Control.FontSizeProperty, 10.0);
         toggle.SetValue(Control.ForegroundProperty, WpfTheme.MutedBrush);
-        toggle.SetValue(FrameworkElement.VisibilityProperty, new Binding(nameof(QstRow.HasChildren))
+        toggle.SetBinding(FrameworkElement.VisibilityProperty, new Binding(nameof(QstRow.HasChildren))
         {
             Converter = new System.Windows.Controls.BooleanToVisibilityConverter(),
         });
         toggle.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler(OnToggleClick));
         sp.AppendChild(toggle);
 
-        var text = new FrameworkElementFactory(typeof(TextBlock));
-        text.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
-        text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-        text.SetValue(TextBlock.MarginProperty, new Thickness(4, 0, 0, 0));
-        sp.AppendChild(text);
+        // 主行（着色）+ 副文本行（task 描述，斜体灰）
+        var textHost = new FrameworkElementFactory(typeof(StackPanel));
+        textHost.SetValue(StackPanel.OrientationProperty, Orientation.Vertical);
+        textHost.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        textHost.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 0, 0));
+        textHost.SetValue(ToolTipService.ToolTipProperty, new Binding(nameof(QstRow.Tip)));
+
+        var main = new FrameworkElementFactory(typeof(TextBlock));
+        main.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
+        main.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(QstRow.NodeBrush)));
+        textHost.AppendChild(main);
+
+        var sub = new FrameworkElementFactory(typeof(TextBlock));
+        sub.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.SubText)));
+        sub.SetBinding(TextBlock.VisibilityProperty, new Binding(nameof(QstRow.SubText)) { Converter = new EmptyToCollapsedConverter() });
+        sub.SetValue(TextBlock.FontStyleProperty, FontStyles.Italic);
+        sub.SetValue(TextBlock.FontSizeProperty, 11.0);
+        sub.SetValue(TextBlock.ForegroundProperty, WpfTheme.MutedBrush);
+        sub.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 1, 0, 0));
+        textHost.AppendChild(sub);
+
+        sp.AppendChild(textHost);
 
         template.VisualTree = sp;
         return new DataGridTemplateColumn { Header = header, Width = width, IsReadOnly = true, CellTemplate = template };
@@ -761,26 +852,64 @@ internal sealed class QstTableEditor : UserControl
         _qst = doc.Qst!;
         _changed = changed;
 
+        // 层级对齐官方 QuestEditor：
+        //   组名（根，红） → 任务名（旗） → task [N] 标题/描述 → OnAccept / Objectives / OnComplete 组 → 事件/目标行
+        var texts = _qst.Languages.Count > 0 ? _qst.Languages[0].Texts : null;
+        string SlotText(int slot) => texts != null && slot >= 0 && slot < texts.Count ? texts[slot].Text : "";
+
         var rows = new List<QstRow>();
+        var rootRow = new QstRow(this, new QstRootOwner("🔴 " + (SlotText(0).Length > 0 ? SlotText(0) : L.T("（任务组）"))));
+        rows.Add(rootRow);
+        var questRow = new QstRow(this, new QstQuestOwner(_qst, "🚩 " + (SlotText(1).Length > 0 ? SlotText(1) : L.T("（任务名）"))));
+        rows.Add(questRow);
+        questRow.Attach(rootRow);
+
         int no = 1;
         foreach (var t in _qst.Tasks)
         {
-            string title = _qst.Languages.Count > 0 && _qst.TaskTitleSlot(no - 1) < _qst.Languages[0].Texts.Count
-                ? _qst.Languages[0].Texts[_qst.TaskTitleSlot(no - 1)].Text : "";
-            string nodeLabel = title.Length > 0
-                ? L.F("任务 {0}", no) + "：" + (title.Length > 20 ? title[..20] + "…" : title)
-                : L.F("任务 {0}", no);
-            var taskRow = new QstRow(this, new QstTaskRow(t, nodeLabel));
+            int titleSlot = _qst.TaskTitleSlot(no - 1);
+            string title = SlotText(titleSlot);
+            string desc = SlotText(titleSlot + 1);
+            var taskRow = new QstRow(this, new QstTaskRow(t, "📋 [" + no + "] " + (title.Length > 0 ? title : L.T("（无标题）")), desc));
             rows.Add(taskRow);
-            foreach (var inc in t.Incentives) rows.Add(new QstRow(this, new QstEventRow(inc, L.T("接受事件"))));
-            foreach (var o in t.Objectives) rows.Add(new QstRow(this, new QstObjectiveRow(o)));
-            foreach (var e in t.Events) rows.Add(new QstRow(this, new QstEventRow(e, L.T("完成事件"))));
-            // 挂父子：task 行的直属子行
-            int idx = rows.IndexOf(taskRow);
-            int childCount = t.Incentives.Count + t.Objectives.Count + t.Events.Count;
-            for (int k = 1; k <= childCount; k++) rows[idx + k].Attach(taskRow);
+            taskRow.Attach(questRow);
+
+            var acceptRow = new QstRow(this, new QstGroupOwner(
+                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), WpfTheme.AccentBrush));
+            rows.Add(acceptRow);
+            acceptRow.Attach(taskRow);
+            for (int k = 0; k < t.Incentives.Count; k++)
+            {
+                var r = new QstRow(this, new QstEventRow(t, t.Incentives[k], "➳ " + L.T("事件") + " #" + (k + 1)));
+                rows.Add(r);
+                r.Attach(acceptRow);
+            }
+
+            var objRow = new QstRow(this, new QstGroupOwner(
+                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), WpfTheme.OkBrush));
+            rows.Add(objRow);
+            objRow.Attach(taskRow);
+            for (int k = 0; k < t.Objectives.Count; k++)
+            {
+                int slot = titleSlot + 2 + t.Incentives.Count + k;   // 串表槽：标题+描述之后依序排目标
+                var r = new QstRow(this, new QstObjectiveRow(t, t.Objectives[k], "✅ " + SlotText(slot)));
+                rows.Add(r);
+                r.Attach(objRow);
+            }
+
+            var compRow = new QstRow(this, new QstGroupOwner(
+                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count), WpfTheme.OkBrush));
+            rows.Add(compRow);
+            compRow.Attach(taskRow);
+            for (int k = 0; k < t.Events.Count; k++)
+            {
+                var r = new QstRow(this, new QstEventRow(t, t.Events[k], "➳ " + L.T("事件") + " #" + (k + 1)));
+                rows.Add(r);
+                r.Attach(compRow);
+            }
             no++;
         }
+
         _rows = rows;
         _visible = ComputeVisible();
         _grid.ItemsSource = _visible;
@@ -842,27 +971,30 @@ internal sealed class QstTableEditor : UserControl
     {
         var sel = SelectedRow;
         if (sel == null) return;
-        if (QstFieldsDialog.Show(sel.Owner, Window.GetWindow(this)))
+        switch (sel.Owner)
         {
-            sel.Reload();
-            _changed();
+            case QstQuestOwner:
+                EditQuestProps();
+                break;
+            case QstTaskRow or QstEventRow or QstObjectiveRow:
+                if (QstFieldsDialog.Show(sel.Owner, Window.GetWindow(this)))
+                {
+                    sel.Reload();
+                    _changed();
+                }
+                break;
         }
     }
 
     private QstRow? SelectedRow => _grid.SelectedItem is QstRow r ? r : null;
 
+    /// <summary>选中行向上找所属 task（目标/事件行挂在组行下，组行挂在 task 行下）。</summary>
     private QstTask ActiveTask()
     {
-        var sel = SelectedRow;
-        if (sel == null) return _qst.Tasks.FirstOrDefault()!;
-        if (sel.Owner is QstTaskRow tr) return tr.T;
-        if (sel.Owner is QstEventRow er) return TaskOf(er.E);
-        if (sel.Owner is QstObjectiveRow or) return TaskOf(or.O);
+        for (var r = SelectedRow; r != null; r = r.Parent)
+            if (r.Owner is QstTaskRow tr) return tr.T;
         return _qst.Tasks.FirstOrDefault()!;
     }
-
-    private QstTask TaskOf(QstEvent e) => _qst.Tasks.First(t => t.Incentives.Contains(e) || t.Events.Contains(e));
-    private QstTask TaskOf(QstObjective o) => _qst.Tasks.First(t => t.Objectives.Contains(o));
 
     /// <summary>定位：展开父链并选中对应行。</summary>
     public void SelectOwner(object owner)
@@ -926,11 +1058,14 @@ internal sealed class QstTableEditor : UserControl
                 if (!_qst.RemoveTask(tr.T)) return;
                 break;
             case QstEventRow er:
-                if (!_qst.RemoveEvent(TaskOf(er.E), er.E)) return;
+                if (!_qst.RemoveEvent(er.OwnerTask, er.E)) return;
                 break;
             case QstObjectiveRow or:
-                if (!_qst.RemoveObjective(TaskOf(or.O), or.O)) return;
+                if (!_qst.RemoveObjective(or.OwnerTask, or.O)) return;
                 break;
+            default:
+                Gui.Warn(Window.GetWindow(this), L.T("该行是结构分组（组名 / 任务名 / OnAccept / Objectives / OnComplete），不能删除；请删除其下的具体行。"), L.T("删除", "Delete"));
+                return;
         }
         _changed();
         Bind(_doc, _changed);
