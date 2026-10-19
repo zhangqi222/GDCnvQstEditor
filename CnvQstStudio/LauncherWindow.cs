@@ -8,7 +8,7 @@ namespace CnvQstStudio;
 /// <summary>
 /// 启动 UI：仅两个入口 —— 编辑器、批量转换。选择后本窗口关闭、进入对应功能。
 /// </summary>
-internal sealed class LauncherWindow : Wpf.Ui.Controls.FluentWindow
+internal sealed class LauncherWindow : Window
 {
     private readonly TextBlock _title = new()
     {
@@ -27,7 +27,6 @@ internal sealed class LauncherWindow : Wpf.Ui.Controls.FluentWindow
     };
     private readonly System.Windows.Controls.Button _editorBtn;
     private readonly System.Windows.Controls.Button _batchBtn;
-    private readonly Wpf.Ui.Controls.TitleBar _titleBar;
 
     public LauncherWindow()
     {
@@ -37,8 +36,6 @@ internal sealed class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         ResizeMode = ResizeMode.CanMinimize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
-        ExtendsContentIntoTitleBar = true;
-        _titleBar = new Wpf.Ui.Controls.TitleBar { Title = L.WindowTitle };
 
         _editorBtn = BigButton(L.T("编辑器"), L.T("打开 / 查看 / 编辑 / 新建对话与任务"), OpenEditor);
         _batchBtn = BigButton(L.T("批量转换"), L.T("目录批量导出、校验与 TXT 回填"), OpenBatch);
@@ -67,14 +64,7 @@ internal sealed class LauncherWindow : Wpf.Ui.Controls.FluentWindow
         stack.Children.Add(_batchBtn);
         stack.Children.Add(langRow);
 
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_titleBar, 0);
-        Grid.SetRow(stack, 1);
-        root.Children.Add(_titleBar);
-        root.Children.Add(stack);
-        Content = root;
+        Content = stack;
 
         L.Changed += OnLanguageChanged;
         Closed += (_, _) => L.Changed -= OnLanguageChanged;
@@ -105,7 +95,6 @@ internal sealed class LauncherWindow : Wpf.Ui.Controls.FluentWindow
     private void OnLanguageChanged()
     {
         Title = L.WindowTitle;
-        _titleBar.Title = L.WindowTitle;
         _title.Text = L.WindowTitle;
         _subtitle.Text = L.T("选择要启动的功能");
     }

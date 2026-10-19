@@ -38,9 +38,9 @@ internal static class DialogChrome
 
     public static Button Button(string text, bool primary = false, double minWidth = 96)
     {
-        if (primary)
-            return new Wpf.Ui.Controls.Button { Content = text, Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, MinWidth = minWidth, MinHeight = 28, Margin = new Thickness(6, 0, 0, 0) };
-        return new Button { Content = text, MinWidth = minWidth, MinHeight = 28, Margin = new Thickness(6, 0, 0, 0) };
+        var b = new Button { Content = text, MinWidth = minWidth, MinHeight = 28, Margin = new Thickness(6, 0, 0, 0) };
+        if (primary) WpfTheme.MakePrimary(b);
+        return b;
     }
 
     public static TextBlock Heading(string text) => new()

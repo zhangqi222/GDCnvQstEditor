@@ -90,9 +90,8 @@ internal sealed class ScriptListEditor : UserControl
 
     private static System.Windows.Controls.Button MkBtn(string text, Action onClick, bool primary = false)
     {
-        System.Windows.Controls.Button b = primary
-            ? new Wpf.Ui.Controls.Button { Content = text, Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, MinWidth = 96, MinHeight = 28 }
-            : new System.Windows.Controls.Button { Content = text, MinWidth = 72, MinHeight = 28 };
+        var b = new System.Windows.Controls.Button { Content = text, MinWidth = primary ? 96 : 72, MinHeight = 28 };
+        if (primary) WpfTheme.MakePrimary(b);
         b.Margin = new Thickness(0, 0, 8, 0);
         b.Click += (_, _) => onClick();
         return b;

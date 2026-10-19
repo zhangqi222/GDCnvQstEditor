@@ -4,30 +4,39 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Media;
-using Wpf.Ui.Appearance;
+using MaterialDesignColors;
+using MaterialDesignThemes.Wpf;
 
 namespace CnvQstStudio;
 
 /// <summary>
-/// WPF-UI 主题引导：合并 Fluent 控件样式与浅色主题字典，并暴露少量语义色刷
-/// （条件/动作列分色、状态行着色等 WPF-UI 没有直接给出的部分）。
+/// MaterialDesignInXamlToolkit 主题引导：合并 BundledTheme（浅色/Indigo）与 MaterialDesign3 默认字典，
+/// 并暴露少量语义色刷。表格外观（网格线/平直行/子树高亮）沿用本项目自定义模板。
 /// </summary>
 internal static class WpfTheme
 {
     /// <summary>应用启动（含 --smoke）时调用一次。</summary>
     public static void Init(Application app)
     {
-        app.Resources.MergedDictionaries.Add(new ResourceDictionary
+        app.Resources.MergedDictionaries.Add(new BundledTheme
         {
-            Source = new Uri("pack://application:,,,/Wpf.Ui;component/Resources/Theme/Light.xaml", UriKind.Absolute),
+            BaseTheme = BaseTheme.Light,
+            PrimaryColor = PrimaryColor.Indigo,
+            SecondaryColor = SecondaryColor.Indigo,
         });
         app.Resources.MergedDictionaries.Add(new ResourceDictionary
         {
-            Source = new Uri("pack://application:,,,/Wpf.Ui;component/Resources/Wpf.Ui.xaml", UriKind.Absolute),
+            Source = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml", UriKind.Absolute),
         });
-        ApplicationThemeManager.Apply(ApplicationTheme.Light);
     }
 
+    // ---- 主按钮：MaterialDesign Raised 样式 ----
+    public static void MakePrimary(Button button)
+    {
+        button.SetResourceReference(FrameworkElement.StyleProperty, "MaterialDesignRaisedButton");
+    }
+
+    // ---- 语义色刷 ----
     public static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(0x1F, 0x24, 0x30));
     public static readonly Brush MutedBrush = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
     public static readonly Brush AccentBrush = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
@@ -39,24 +48,22 @@ internal static class WpfTheme
 
     public static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas, Courier New");
 
-    // ---- 表格外观：竖向网格线 + 列头分隔线常显 ----
-    public static readonly Brush GridLineBrush = new SolidColorBrush(Color.FromRgb(0xE4, 0xE7, 0xEC));
+    private static readonly Brush GridLineBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0));
+    private static readonly Brush SelectedBrush = new SolidColorBrush(Color.FromArgb(60, 0x3F, 0x51, 0xB5)); // 选中/子树高亮（Indigo 浅底）
 
-    private static readonly Brush SelectedBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFE)); // 选中浅蓝
-
-    /// <summary>DataGrid 统一外观：横竖网格线 + 列头右/下分隔线（保留默认拖动手柄）+ 平直的选中样式。
-    /// 行背景支持 Highlight（子树随选中行同色）；前景恒为正文色（选中不变白）。</summary>
+    /// <summary>DataGrid 统一外观：横竖网格线 + 列头右/下分隔线 + 平直选中样式（无缩进/变色错位）。
+    /// 行背景支持 Highlight（子树随选中行同色）；前景恒为正文色。</summary>
     public static void ApplyGrid(DataGrid grid)
     {
         grid.GridLinesVisibility = DataGridGridLinesVisibility.All;
         grid.VerticalGridLinesBrush = GridLineBrush;
         grid.HorizontalGridLinesBrush = GridLineBrush;
-        var hs = new Style(typeof(System.Windows.Controls.Primitives.DataGridColumnHeader));
-        hs.Setters.Add(new Setter(System.Windows.Controls.Control.BorderBrushProperty, GridLineBrush));
-        hs.Setters.Add(new Setter(System.Windows.Controls.Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
+        var hs = new Style(typeof(DataGridColumnHeader));
+        hs.Setters.Add(new Setter(Control.BorderBrushProperty, GridLineBrush));
+        hs.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
         grid.ColumnHeaderStyle = hs;
 
-        // 单元格：平直模板，前景恒黑（修 WPF 默认选中白字），选中只换浅蓝背景
+        // 单元格：平直模板，前景恒黑，选中只换浅蓝背景
         var cellTpl = new ControlTemplate(typeof(DataGridCell));
         var cellBd = new FrameworkElementFactory(typeof(Border));
         cellBd.Name = "CellBd";
@@ -77,8 +84,6 @@ internal static class WpfTheme
         cellStyle.Setters.Add(new Setter(DataGridCell.BackgroundProperty, Brushes.Transparent));
         cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, TextBrush));
         grid.CellStyle = cellStyle;
-        grid.RowBackground = Brushes.Transparent;
-        grid.AlternatingRowBackground = Brushes.Transparent;
 
         // 行：最小模板（Border + CellsPresenter）；选中 / 子树高亮 → 浅蓝
         var rowTpl = new ControlTemplate(typeof(DataGridRow));

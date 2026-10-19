@@ -9,12 +9,12 @@ using CnvQst.Cli;
 namespace CnvQstStudio;
 
 /// <summary>
-/// 编辑器主窗口（WPF-UI FluentWindow）。布局：
+/// 编辑器主窗口（MaterialDesign）。布局：
 ///   标题栏 → 全量菜单栏 → 文档页签（突出显示、带独立关闭按钮）→ 状态栏
 /// 不设常驻工具栏：文档级操作走菜单，表格级操作走右键菜单（层次感）。
 /// 所有可见文案走 <see cref="L"/>（中文为基准、语言包可扩展）。
 /// </summary>
-internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
+internal sealed class MainWindow : Window
 {
     private readonly TabControl _tabs = new();
     private readonly StatusBarItem _statusDoc = new();
@@ -22,7 +22,6 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly StatusBarItem _statusVer = new();
     private readonly Grid _root = new();
     private Menu? _menu;
-    private Wpf.Ui.Controls.TitleBar? _titleBar;
 
     public MainWindow()
     {
@@ -34,9 +33,7 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         AllowDrop = true;
 
-        ExtendsContentIntoTitleBar = true;
-        _titleBar = new Wpf.Ui.Controls.TitleBar { Title = L.WindowTitle };
-
+        // MaterialDesign：使用系统标题栏，无需自绘 TitleBar
         _tabs.SelectionChanged += (_, _) => UpdateStatus();
         _tabs.ItemContainerStyle = MkTabItemStyle();
 
@@ -47,11 +44,9 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         status.Items.Add(_statusLang);
         status.Items.Add(_statusVer);
 
-        for (int i = 0; i < 4; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
-        Grid.SetRow(_titleBar, 0);
-        Grid.SetRow(_tabs, 2);
-        Grid.SetRow(status, 3);
-        _root.Children.Add(_titleBar);
+        for (int i = 0; i < 3; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        Grid.SetRow(_tabs, 1);
+        Grid.SetRow(status, 2);
         _root.Children.Add(_tabs);
         _root.Children.Add(status);
 
@@ -218,7 +213,7 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
         help.Items.Add(MkItem(L.About, "F1", ShowAbout));
 
         foreach (var m in new[] { file, newMenu, import, export, batch, tools, view, lang, help }) menu.Items.Add(m);
-        Grid.SetRow(menu, 1);
+        Grid.SetRow(menu, 0);
         _root.Children.Add(menu);
         _menu = menu;
     }
@@ -232,7 +227,6 @@ internal sealed class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void OnLanguageChanged()
     {
         Title = L.WindowTitle;
-        if (_titleBar != null) _titleBar.Title = L.WindowTitle;
         foreach (TabItem page in _tabs.Items)
         {
             var view = (DocView)page.Content;
