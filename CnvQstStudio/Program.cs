@@ -44,6 +44,9 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--smoke")
             return RunSmoke();
 
+        if (args.Length == 2 && args[0] == "--treedbg")
+            return RunTreeDebug(args[1]);
+
         if (args.Length == 1 && args[0] is "--help" or "-h" or "help")
         {
             args = ["help"];
@@ -115,6 +118,57 @@ internal static class Program
             Console.WriteLine("UI 冒烟异常：" + e);
             if (attached) FreeConsole();
             return 1;
+        }
+    }
+
+    /// <summary>临时诊断：绑定 qst 文件后检查树形模板内 spacer 宽度绑定是否生效。</summary>
+    private static int RunTreeDebug(string qstPath)
+    {
+        bool attached = AttachConsole(AttachParentProcess);
+        if (attached)
+        {
+            try { Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), Encoding.UTF8) { AutoFlush = true }); }
+            catch { }
+        }
+        try
+        {
+            L.Load();
+            var app = new Application();
+            WpfTheme.Init(app);
+            app.DispatcherUnhandledException += (_, e) => { Console.WriteLine("ERR: " + e.Exception); e.Handled = true; };
+            var win = new Window { Width = 1200, Height = 700 };
+            var editor = new QstTableEditor();
+            win.Content = editor;
+            var doc = DocSession.Open(qstPath);
+            editor.Bind(doc, () => { });
+            win.Loaded += (_, _) => app.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                Walk(win, "");
+                win.Close();
+            }));
+            app.Run(win);
+            if (attached) FreeConsole();
+            return 0;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("TREEDBG 异常：" + e);
+            if (attached) FreeConsole();
+            return 1;
+        }
+
+        static void Walk(DependencyObject d, string path)
+        {
+            int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(d);
+            for (int i = 0; i < n; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(d, i);
+                if (child is System.Windows.Controls.Border b && b.DataContext is QstRow row)
+                    Console.WriteLine($"{path}Border DataContext.Indent={row.Indent} ActualWidth={b.ActualWidth:0.##} Width={b.Width:0.##}");
+                if (child is System.Windows.Controls.StackPanel sp && sp.DataContext is QstRow row2 && sp.Orientation == System.Windows.Controls.Orientation.Horizontal)
+                    Console.WriteLine($"{path}HStack DataContext.Indent={row2.Indent} children={sp.Children.Count}");
+                Walk(child, path + "/");
+            }
         }
     }
 
