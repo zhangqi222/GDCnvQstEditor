@@ -1,23 +1,14 @@
 using System.ComponentModel;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using CnvQst;
+using MaterialDesignThemes.Wpf;
 
 namespace CnvQstStudio;
-
-/// <summary>空字符串 → Collapsed（task 描述副文本行等）。</summary>
-internal sealed class EmptyToCollapsedConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        string.IsNullOrEmpty(value as string) ? Visibility.Collapsed : Visibility.Visible;
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
 
 /// <summary>把 {^n} 译成真实换行（单元格显示），提交时反译回去。</summary>
 internal static class TableLayout
@@ -39,7 +30,7 @@ internal sealed class ColoredLine
     }
 }
 
-/// <summary>CNV 节点的界面名（树形表格第一列：类型徽标 + 文本摘要，层次由缩进表达）。</summary>
+/// <summary>CNV 节点的界面名（树型列表第一列：类型徽标 + 文本摘要）。</summary>
 internal static class CnvNodeLabel
 {
     /// <summary>节点类型的界面名（中文基准，走语言包），带官方风格的图标前缀。</summary>
@@ -49,7 +40,7 @@ internal static class CnvNodeLabel
         5 => "🔹 通用", 6 => "🛑 结束对话", 7 => "↪ 跳转", 8 => "🎲 随机选项", _ => "❓ 未知类型",
     });
 
-    /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
+    /// <summary>树型表用：类型名 + 文本摘要（无缩进——层级由控件的层级缩进表达）。</summary>
     public static string TreeLabel(CnvFile c, CnvStep s)
     {
         string label = KindZh(s.Type);
@@ -65,29 +56,36 @@ internal static class CnvNodeLabel
 }
 
 // ---------------------------------------------------------------------------
-// 行模型（树形表格：父子 + 展开态；INPC 用于编辑后单行刷新）
+// 行模型（INPC：编辑后单行刷新；IsExpanded 与 TreeListViewItem 容器双向绑定）
 // ---------------------------------------------------------------------------
 
 internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
 {
     private readonly CnvTableEditor _editor;
+    private bool _highlight;
     public DocSession Doc { get; }
     public CnvStep Step { get; }
 
     public CnvRow? Parent { get; private set; }
     public List<CnvRow> Children { get; } = new();
-    public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
-    public string ExpandGlyph => IsExpanded ? "▾" : "▸";
-    public double Indent => 4 + Depth * 22;
-    public bool Highlight { get; set; }
+
+    public bool Highlight
+    {
+        get => _highlight;
+        set
+        {
+            if (_highlight == value) return;
+            _highlight = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight)));
+        }
+    }
 
     public string Node { get; private set; } = "";
+    public Brush NodeBrush => WpfTheme.TextBrush;
     public string Attrs { get; private set; } = "";
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
-
-    private int Depth { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -96,7 +94,6 @@ internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         _editor = editor;
         Doc = doc;
         Step = s;
-        Depth = (int)s.Depth;
         Reload();
     }
 
@@ -104,10 +101,7 @@ internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
     {
         Parent = parent;
         parent.Children.Add(this);
-        Depth = parent.Depth + 1;
     }
-
-    public void RaiseGlyph() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExpandGlyph)));
 
     public string Text
     {
@@ -151,11 +145,7 @@ internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
     }
 }
 
-/// <summary>
-/// QST 行所有者（层级对齐官方 QuestEditor：
-/// 组名根 → 任务名 → task → OnAccept/Objectives/OnComplete 组 → 事件/目标）。
-/// 文本（组名/任务名/标题/描述/目标）从串表槽位动态读取，编辑后自动刷新。
-/// </summary>
+/// <summary>QST 行所有者（层级对齐官方 QuestEditor：组名根 → 任务名 → task → 组 → 事件/目标）。</summary>
 internal abstract class QstRowOwner
 {
     public abstract object OwnerObject { get; }
@@ -166,7 +156,7 @@ internal abstract class QstRowOwner
     public virtual bool CanDelete => false;
     public virtual string SubText => "";
     public virtual Brush NodeBrush => WpfTheme.TextBrush;
-    /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
+    /// <summary>Objective ID 列（quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
     public virtual string IdText => "";
     /// <summary>本行在本地化串表中的文本槽位（null = 该行无对应文本）。</summary>
     public virtual int? TextSlot => null;
@@ -190,7 +180,7 @@ internal sealed class QstRootOwner(QstFile q) : QstRowOwner
     public override Brush NodeBrush => WpfTheme.DangerBrush;
 }
 
-/// <summary>任务名行（官方黄旗；文本=串表槽 1；双击编辑 quest 头部与组名/任务名）。</summary>
+/// <summary>任务名行（官方黄旗；文本=串表槽 1；双击编辑 quest 头部）。</summary>
 internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
 {
     public QstFile Q => q;
@@ -215,7 +205,7 @@ internal sealed class QstGroupOwner(string label, Brush brush) : QstRowOwner
     public override Brush NodeBrush => brush;
 }
 
-/// <summary>task 行：图标 + [N] 标题（串表标题槽），副文本为描述（标题槽+1）。</summary>
+/// <summary>task 行：图标 + [N] 标题（串表标题槽），副文本为描述。</summary>
 internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOwner
 {
     public QstTask T => t;
@@ -231,7 +221,13 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public override string IdText => t.UnknownA8.ToString();
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
 
-    internal static int TitleSlotOf(QstFile q, int ti) { int s = 2; for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count; return s; }
+    internal static int TitleSlotOf(QstFile q, int ti)
+    {
+        int s = 2;
+        for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count;
+        return s;
+    }
+
     internal static string Label(QstFile q, int ti, bool desc = false)
     {
         int s = TitleSlotOf(q, ti) + (desc ? 1 : 0);
@@ -250,7 +246,6 @@ internal sealed class QstEventRow(QstFile q, QstTask ownerTask, QstEvent e, int 
     public override ScriptList? Conditions => e.Conditions;
     public override ScriptList? Actions => e.Actions;
     public override bool CanDelete => true;
-    // 事件本身没有落盘 uid（官方运行时分配）；flags 非 0 时在此提示
     public override string IdText => e.Unknown != 0 ? L.F("flags {0}", e.Unknown) : "";
     public override int? TextSlot => slot;
 }
@@ -265,7 +260,7 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override ScriptList? Conditions => o.Conditions;
     public override ScriptList? Actions => o.Actions;
     public override bool CanDelete => true;
-    // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显
+    // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），常显
     public override string IdText => o.Unknown0.ToString();
     public override int? TextSlot => slot;
 }
@@ -273,24 +268,31 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
 internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
 {
     private readonly QstTableEditor _editor;
+    private bool _highlight;
     public QstRowOwner Owner { get; }
 
     public QstRow? Parent { get; private set; }
     public List<QstRow> Children { get; } = new();
-    public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
-    public string ExpandGlyph => IsExpanded ? "▾" : "▸";
-    public double Indent => 4 + Depth * 22;
-    public bool Highlight { get; set; }
+
+    public bool Highlight
+    {
+        get => _highlight;
+        set
+        {
+            if (_highlight == value) return;
+            _highlight = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight)));
+        }
+    }
 
     public string Node { get; private set; }
     public string SubText { get; private set; }
+    public System.Windows.Visibility SubTextVisibility => string.IsNullOrEmpty(SubText) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
     public Brush NodeBrush { get; private set; }
     public string IdText { get; private set; }
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
-
-    private int Depth { get; set; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -308,12 +310,8 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
     {
         Parent = parent;
         parent.Children.Add(this);
-        Depth = parent.Depth + 1;
     }
 
-    public void RaiseGlyph() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ExpandGlyph)));
-
-    /// <summary>刷新标签（Node/SubText/IdText/脚本列）——不动 Text，避免文本列编辑期间回环。</summary>
     public void Reload()
     {
         Node = Owner.NodeLabel;
@@ -322,34 +320,8 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         NodeBrush = Owner.NodeBrush;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(SubTextVisibility), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
-    }
-
-    /// <summary>本行串表文本（本地化文本列；可编辑，写回后同步主行标签）。</summary>
-    public string Text
-    {
-        get
-        {
-            int? slot = Owner.TextSlot;
-            if (slot == null) return "";
-            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
-            return lang != null && slot.Value >= 0 && slot.Value < lang.Texts.Count
-                ? TableLayout.Display(lang.Texts[slot.Value].Text) : "";
-        }
-        set
-        {
-            int? slot = Owner.TextSlot;
-            if (slot == null) return;
-            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
-            if (lang == null || slot.Value >= lang.Texts.Count) return;
-            lang.Texts[slot.Value].SetText(TableLayout.Stored(value));
-            Node = Owner.NodeLabel;
-            SubText = Owner.SubText;
-            foreach (string p in new[] { nameof(Node), nameof(SubText) })
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
-            _editor.NotifyEdited();
-        }
     }
 
     private static List<ColoredLine> ScriptLines(ScriptList list)
@@ -366,10 +338,10 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
 }
 
 // ---------------------------------------------------------------------------
-// 编辑器控件（树形表格 + 右键菜单；无常驻工具条）
+// 编辑器（MaterialDesign TreeListView：控件自带层级缩进与展开钮）
 // ---------------------------------------------------------------------------
 
-/// <summary>CNV 树形表格：`节点(树) | 属性 | 本地化文本 | 条件 | 动作`。</summary>
+/// <summary>CNV 树型列表：节点(树) | 属性 | 本地化文本 | 条件 | 动作。</summary>
 internal sealed class CnvTableEditor : UserControl
 {
     private DocSession _doc = null!;
@@ -377,169 +349,131 @@ internal sealed class CnvTableEditor : UserControl
     private Changed _changed = null!;
     private Action? _locRequested;
     private bool _comfortable;
+    private List<CnvRow> _rows = new();
 
-    private readonly DataGrid _grid = MkGrid();
-    private List<CnvRow> _rows = new();          // 全部行（含折叠的）
-    private List<CnvRow> _visible = new();       // 当前可见行
-    private Action? _selectedChanged;
+    private readonly WorkingTreeListView _list = MkList();
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
+    public event Action? SelectedChanged;
 
-    /// <summary>选中行变化（含重绑定后）——供底部编辑面板联动。</summary>
-    public event Action? SelectedChanged { add => _selectedChanged += value; remove => _selectedChanged -= value; }
-
-    /// <summary>选中行的本地化文本槽位（无选中 = null）。</summary>
     public int? SelectedTextSlot => SelectedStep?.Index;
 
     public CnvTableEditor()
     {
-        _grid.Columns.Add(MkTreeColumn(L.T("节点", "Node"), new DataGridLength(330)));
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = L.T("属性", "Attrs"),
-            Binding = new Binding(nameof(CnvRow.Attrs)),
-            IsReadOnly = true,
-            Width = new DataGridLength(150),
-            ElementStyle = MkTextBlockStyle(WpfTheme.MutedBrush),
-        });
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = L.T("本地化文本", "Localized Text"),
-            Binding = new Binding(nameof(CnvRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-        });
-        _grid.Columns.Add(MkScriptColumn(L.T("条件", "Conditions"), nameof(CnvRow.Cond), new DataGridLength(280)));
-        _grid.Columns.Add(MkScriptColumn(L.T("动作", "Actions"), nameof(CnvRow.Act), new DataGridLength(280)));
-        ApplyTextColumnStyle();
+        var header = MkHeader(new[] { (L.T("节点", "Node"), 320d), (L.T("属性", "Attrs"), 150d), (L.T("本地化文本", "Localized Text"), 0d), (L.T("条件", "Conditions"), 280d), (L.T("动作", "Actions"), 280d) });
 
-        _grid.MouseDoubleClick += OnDoubleClick;
-        _grid.PreviewMouseRightButtonDown += GridRightDown;
-        _grid.ContextMenu = BuildContextMenu();
+        _list.ItemTemplate = BuildTemplate(compact: true);
+        _list.ItemContainerStyle = MkContainerStyle();
+        _list.SelectionChanged += (_, _) => { UpdateHighlight(); SelectedChanged?.Invoke(); };
+        _list.MouseDoubleClick += OnDoubleClick;
+        _list.PreviewMouseRightButtonDown += ListRightDown;
+        _list.ContextMenu = BuildContextMenu();
 
-        Content = _grid;
+        var root = new DockPanel();
+        DockPanel.SetDock(header, Dock.Top);
+        root.Children.Add(header);
+        root.Children.Add(_list);
+        Content = root;
     }
 
-    private static DataGrid MkGrid()
+    private static WorkingTreeListView MkList()
     {
-        var g = new DataGrid
+        var l = new WorkingTreeListView
         {
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            CanUserSortColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            SelectionMode = DataGridSelectionMode.Single,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
         };
-        WpfTheme.ApplyGrid(g);
-        return g;
+        ScrollViewer.SetHorizontalScrollBarVisibility(l, ScrollBarVisibility.Disabled);
+        return l;
     }
 
-    private static Style MkTextBlockStyle(Brush? foreground = null)
+    private static FrameworkElement MkHeader((string, double)[] columns)
     {
-        var s = new Style(typeof(TextBlock));
-        if (foreground != null) s.Setters.Add(new Setter(TextBlock.ForegroundProperty, foreground));
-        return s;
-    }
-
-    /// <summary>文本列样式：换行；紧凑模式封顶 3 行，选中行完整显示。</summary>
-    private void ApplyTextColumnStyle()
-    {
-        var col = (DataGridTextColumn)_grid.Columns[2];
-        var s = new Style(typeof(TextBlock));
-        s.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
-        s.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
-        if (!_comfortable)
+        var g = new Grid { Margin = new Thickness(24, 2, 18, 2) };
+        foreach (var (title, w) in columns)
         {
-            s.Setters.Add(new Setter(TextBlock.MaxHeightProperty, 54.0));
-            var trig = new DataTrigger
-            {
-                Binding = new Binding("IsSelected")
-                {
-                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(DataGridRow), 1),
-                },
-                Value = true,
-            };
-            trig.Setters.Add(new Setter(TextBlock.MaxHeightProperty, 10000.0));
-            s.Triggers.Add(trig);
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
         }
-        col.ElementStyle = s;
+        for (int i = 0; i < columns.Length; i++)
+        {
+            var tb = new TextBlock
+            {
+                Text = columns[i].Item1,
+                FontWeight = FontWeights.Medium,
+                Foreground = WpfTheme.MutedBrush,
+                Margin = new Thickness(2, 0, 8, 0),
+            };
+            tb.SetValue(Grid.ColumnProperty, i);
+            g.Children.Add(tb);
+        }
+        var border = new Border
+        {
+            BorderBrush = WpfTheme.MutedBrush,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = g,
+            Margin = new Thickness(0, 2, 0, 2),
+        };
+        return border;
+    }
 
-        var es = new Style(typeof(TextBox));
-        es.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
-        es.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
-        col.EditingElementStyle = es;
+    /// <summary>行模板：多列 Grid（层级缩进/展开钮由 TreeListView 自带）。</summary>
+    private DataTemplate BuildTemplate(bool compact)
+    {
+        int maxLines = compact ? 3 : 100000;
+        const string xaml = """
+<HierarchicalDataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                           xmlns:md="clr-namespace:MaterialDesignThemes.Wpf;assembly=MaterialDesignThemes.Wpf"
+                           ItemsSource="{Binding Children}">
+  <Grid Background="Transparent">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="320"/>
+      <ColumnDefinition Width="150"/>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="280"/>
+      <ColumnDefinition Width="280"/>
+    </Grid.ColumnDefinitions>
+    <TextBlock Tag="0" Grid.Column="0" Text="{Binding Node}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,2,8,2" Foreground="{Binding NodeBrush}"/>
+    <TextBlock Tag="1" Grid.Column="1" Text="{Binding Attrs}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,2,8,2" Foreground="#6B7280"/>
+    <TextBlock Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Top" Margin="2,2,8,2" MaxHeight="__MAXH__">
+      <TextBlock.Style>
+        <Style TargetType="TextBlock">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type md:TreeListViewItem}}}" Value="True">
+              <Setter Property="MaxHeight" Value="10000"/>
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </TextBlock.Style>
+    </TextBlock>
+    <ItemsControl Tag="3" Grid.Column="3" ItemsSource="{Binding Cond}" IsTabStop="False" Margin="2,2,8,2">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <ItemsControl Tag="4" Grid.Column="4" ItemsSource="{Binding Act}" IsTabStop="False" Margin="2,2,8,2">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </Grid>
+</HierarchicalDataTemplate>
+""";
+        return (HierarchicalDataTemplate)XamlReader.Parse(xaml.Replace("__MAXLINES__", maxLines.ToString()));
+    }
+
+    private Style MkContainerStyle()
+    {
+        var style = new Style(typeof(TreeListViewItem));
+        style.Setters.Add(new Setter(HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        return style;
     }
 
     private void ToggleMode()
     {
         _comfortable = !_comfortable;
-        ApplyTextColumnStyle();
-    }
-
-    /// <summary>第一列：缩进 + 展开/折叠钮 + 节点名（树形）。</summary>
-    private DataGridTemplateColumn MkTreeColumn(string header, DataGridLength width)
-    {
-        var template = new DataTemplate();
-        var sp = new FrameworkElementFactory(typeof(StackPanel));
-        sp.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
-
-        var spacer = new FrameworkElementFactory(typeof(Border));
-        spacer.SetBinding(Border.WidthProperty, new Binding(nameof(CnvRow.Indent)));
-        sp.AppendChild(spacer);
-
-        var toggle = new FrameworkElementFactory(typeof(System.Windows.Controls.Button));
-        toggle.SetBinding(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(CnvRow.ExpandGlyph)));
-        toggle.SetValue(System.Windows.Controls.Button.BackgroundProperty, Brushes.Transparent);
-        toggle.SetValue(System.Windows.Controls.Button.BorderThicknessProperty, new Thickness(0));
-        toggle.SetValue(FrameworkElement.WidthProperty, 20.0);
-        toggle.SetValue(FrameworkElement.HeightProperty, 18.0);
-        toggle.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        toggle.SetValue(Control.FontSizeProperty, 10.0);
-        toggle.SetValue(Control.ForegroundProperty, WpfTheme.MutedBrush);
-        toggle.SetBinding(FrameworkElement.VisibilityProperty, new Binding(nameof(CnvRow.HasChildren))
-        {
-            Converter = new System.Windows.Controls.BooleanToVisibilityConverter(),
-        });
-        toggle.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler(OnToggleClick));
-        sp.AppendChild(toggle);
-
-        var text = new FrameworkElementFactory(typeof(TextBlock));
-        text.SetBinding(TextBlock.TextProperty, new Binding(nameof(CnvRow.Node)));
-        text.SetValue(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Center);
-        text.SetValue(TextBlock.MarginProperty, new Thickness(4, 0, 0, 0));
-        sp.AppendChild(text);
-
-        template.VisualTree = sp;
-        return new DataGridTemplateColumn { Header = header, Width = width, IsReadOnly = true, CellTemplate = template };
-    }
-
-    private void OnToggleClick(object sender, RoutedEventArgs e)
-    {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is CnvRow r)
-        {
-            r.IsExpanded = !r.IsExpanded;
-            r.RaiseGlyph();
-            RebuildVisible(keepSelection: true);
-        }
-    }
-
-    /// <summary>条件/动作列：逐记录一行的模板列。</summary>
-    private static DataGridTemplateColumn MkScriptColumn(string header, string propertyName, DataGridLength width)
-    {
-        var itemTemplate = new DataTemplate();
-        var tb = new FrameworkElementFactory(typeof(TextBlock));
-        tb.SetBinding(TextBlock.TextProperty, new Binding(nameof(ColoredLine.Text)));
-        tb.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(ColoredLine.Brush)));
-        itemTemplate.VisualTree = tb;
-
-        var template = new DataTemplate();
-        var factory = new FrameworkElementFactory(typeof(ItemsControl));
-        factory.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(propertyName));
-        factory.SetValue(ItemsControl.ItemTemplateProperty, itemTemplate);
-        factory.SetValue(ItemsControl.ItemsPanelProperty, new ItemsPanelTemplate(new FrameworkElementFactory(typeof(StackPanel))));
-        template.VisualTree = factory;
-
-        return new DataGridTemplateColumn { Header = header, Width = width, IsReadOnly = true, CellTemplate = template };
+        _list.ItemTemplate = BuildTemplate(_comfortable);
     }
 
     private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
@@ -563,37 +497,45 @@ internal sealed class CnvTableEditor : UserControl
         cm.Items.Add(Mi(L.T("节点属性", "Node Properties"), EditNodeProps));
         cm.Items.Add(Mi(L.LocStringTable, () => _locRequested?.Invoke()));
         cm.Items.Add(new Separator());
-        cm.Items.Add(Mi(_comfortable ? L.T("紧凑模式", "Compact Mode") : L.T("平铺模式", "Flat Mode"), ToggleMode));
+        cm.Items.Add(Mi(_comfortable ? L.T("平铺模式", "Flat Mode") : L.T("紧凑模式", "Compact Mode"), ToggleMode));
         return cm;
     }
 
-    private void GridRightDown(object sender, MouseButtonEventArgs e)
+    private void ListRightDown(object sender, MouseButtonEventArgs e)
     {
-        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
-        if (row != null && row.GetIndex() >= 0) _grid.SelectedIndex = row.GetIndex();
+        var item = FindAncestor<TreeListViewItem>(e.OriginalSource as DependencyObject);
+        if (item != null) item.IsSelected = true;
     }
 
     private void OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        var cell = FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject);
-        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
-        if (cell == null || row == null) return;
-        int colIndex = _grid.Columns.IndexOf(cell.Column);
-        int rowIndex = row.GetIndex();
-        if (rowIndex < 0 || rowIndex >= _visible.Count) return;
-        var s = _visible[rowIndex].Step;
-        if (colIndex == 3)
+        string? tag = FindCellTag(e.OriginalSource as DependencyObject);
+        if (tag == null) return;
+        var s = SelectedStep;
+        if (s == null) return;
+        if (tag == "3")
         {
-            if (ScriptListDialog.Show(_doc, s.Conditions, true, Window.GetWindow(this))) RefreshRow(rowIndex);
+            if (ScriptListDialog.Show(_doc, s.Conditions, true, Window.GetWindow(this))) RefreshSelected();
         }
-        else if (colIndex == 4)
+        else if (tag == "4")
         {
-            if (ScriptListDialog.Show(_doc, s.Actions, false, Window.GetWindow(this))) RefreshRow(rowIndex);
+            if (ScriptListDialog.Show(_doc, s.Actions, false, Window.GetWindow(this))) RefreshSelected();
         }
-        else if (colIndex is 0 or 1)
+        else if (tag is "0" or "1")
         {
             EditNodeProps();
         }
+    }
+
+    /// <summary>向上查找行模板里标记的列 Tag。</summary>
+    private static string? FindCellTag(DependencyObject? d)
+    {
+        while (d != null)
+        {
+            if (d is FrameworkElement fe && fe.Tag is string tag) return tag;
+            d = VisualTreeHelper.GetParent(d);
+        }
+        return null;
     }
 
     private void EditNodeProps()
@@ -607,14 +549,9 @@ internal sealed class CnvTableEditor : UserControl
         }
     }
 
-    private void RefreshRow(int i)
-    {
-        if (i >= 0 && i < _visible.Count) _visible[i].Reload();
-    }
-
     private void RefreshSelected()
     {
-        if (_grid.SelectedItem is CnvRow r) r.Reload();
+        if (_list.SelectedItem is CnvRow r) r.Reload();
     }
 
     public void NotifyEdited()
@@ -629,7 +566,6 @@ internal sealed class CnvTableEditor : UserControl
         _cnv = doc.Cnv!;
         _changed = changed;
 
-        // 构建全部行并挂父子关系
         var byStep = new Dictionary<CnvStep, CnvRow>();
         _rows = _cnv.Steps.Select(s => new CnvRow(this, doc, s)).ToList();
         foreach (var row in _rows) byStep[row.Step] = row;
@@ -639,17 +575,19 @@ internal sealed class CnvTableEditor : UserControl
                 if (byStep.TryGetValue(childStep, out var child)) child.Attach(row);
         }
 
-        _visible = ComputeVisible();
-        _grid.ItemsSource = _visible;
-        if (_visible.Count > 0) _grid.SelectedIndex = 0;
-        _selectedChanged?.Invoke();
+        // TreeListView：ItemsSource 给根集合，子级由模板 Children 提供，展开/缩进由控件管理
+        _list.ItemsSource = _rows.Where(r => r.Parent == null).ToList();
+        if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        SelectedChanged?.Invoke();
     }
+
+    private CnvStep? SelectedStep => _list.SelectedItem is CnvRow r ? r.Step : null;
 
     /// <summary>选中行与其子孙行同色高亮。</summary>
     private void UpdateHighlight()
     {
-        foreach (var r in _visible) r.Highlight = false;
-        if (_grid.SelectedItem is CnvRow sel)
+        foreach (var r in _rows) r.Highlight = false;
+        if (_list.SelectedItem is CnvRow sel)
             WalkHi(sel);
         return;
 
@@ -660,52 +598,28 @@ internal sealed class CnvTableEditor : UserControl
         }
     }
 
-    private List<CnvRow> ComputeVisible()
-    {
-        var list = new List<CnvRow>();
-        void Walk(CnvRow r)
-        {
-            list.Add(r);
-            if (r.IsExpanded) foreach (var c in r.Children) Walk(c);
-        }
-        foreach (var root in _rows.Where(r => r.Parent == null)) Walk(root);
-        return list;
-    }
-
-    private void RebuildVisible(bool keepSelection)
-    {
-        CnvRow? sel = keepSelection ? _grid.SelectedItem as CnvRow : null;
-        _visible = ComputeVisible();
-        _grid.ItemsSource = _visible;
-        if (sel != null && _visible.Contains(sel))
-        {
-            _grid.SelectedItem = sel;
-            _grid.ScrollIntoView(sel);
-        }
-        else if (_visible.Count > 0)
-        {
-            _grid.SelectedIndex = 0;
-        }
-    }
-
-    /// <summary>定位：展开父链并选中对应行。</summary>
+    /// <summary>定位：沿容器链展开父级并选中对应行。</summary>
     public void SelectStep(CnvStep s)
     {
-        var byStep = _rows.FirstOrDefault(r => ReferenceEquals(r.Step, s));
-        if (byStep == null) return;
-        for (var p = byStep.Parent; p != null; p = p.Parent)
+        var row = _rows.FirstOrDefault(r => ReferenceEquals(r.Step, s));
+        if (row == null) return;
+        var path = new List<CnvRow>();
+        for (var r = row; r != null; r = r.Parent) path.Insert(0, r);
+        var gen = _list.ItemContainerGenerator;
+        for (int i = 0; i < path.Count; i++)
         {
-            if (!p.IsExpanded) { p.IsExpanded = true; p.RaiseGlyph(); }
-        }
-        RebuildVisible(keepSelection: false);
-        if (_visible.Contains(byStep))
-        {
-            _grid.SelectedItem = byStep;
-            _grid.ScrollIntoView(byStep);
+            if (gen.ContainerFromItem(path[i]) is not TreeListViewItem container) return;
+            if (i == path.Count - 1)
+            {
+                _list.SelectedItem = path[i];
+                _list.ScrollIntoView(path[i]);
+            }
+            else if (!container.IsExpanded)
+            {
+                container.IsExpanded = true;
+            }
         }
     }
-
-    private CnvStep? SelectedStep => _grid.SelectedItem is CnvRow r ? r.Step : null;
 
     private void AddChild()
     {
@@ -742,7 +656,7 @@ internal sealed class CnvTableEditor : UserControl
     }
 }
 
-/// <summary>QST 树形表格：`节点(树) | 字段 | 条件 | 动作`（task 下挂 接受事件/目标/完成事件）。</summary>
+/// <summary>QST 树型列表：节点(树) | Objective ID | 本地化文本 | 条件 | 动作。</summary>
 internal sealed class QstTableEditor : UserControl
 {
     private DocSession _doc = null!;
@@ -750,88 +664,120 @@ internal sealed class QstTableEditor : UserControl
     private Changed _changed = null!;
     private Action? _locRequested;
 
-    public DocSession Doc => _doc;
-
-    private readonly DataGrid _grid = MkGrid();
+    private readonly WorkingTreeListView _list = MkList();
     private List<QstRow> _rows = new();
-    private List<QstRow> _visible = new();
-    private Action? _selectedChanged;
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
+    public event Action? SelectedChanged;
 
-    /// <summary>选中行变化（含重绑定后）——供底部编辑面板联动。</summary>
-    public event Action? SelectedChanged { add => _selectedChanged += value; remove => _selectedChanged -= value; }
-
-    /// <summary>选中行的本地化文本槽位（无选中 = null）。</summary>
+    public DocSession Doc => _doc;
     public int? SelectedTextSlot => SelectedRow?.Owner.TextSlot;
 
     public QstTableEditor()
     {
-        _grid.Columns.Add(MkTreeColumn(L.T("节点", "Node"), new DataGridLength(300)));
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "Objective ID",
-            Binding = new Binding(nameof(QstRow.IdText)),
-            IsReadOnly = true,
-            Width = new DataGridLength(110),
-            ElementStyle = MkTextBlockStyle(WpfTheme.MutedBrush),
-        });
-        _grid.Columns.Add(new DataGridTextColumn
-        {
-            Header = L.T("本地化文本", "Localized Text"),
-            Binding = new Binding(nameof(QstRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
-        });
-        _grid.Columns.Add(MkScriptColumn(L.T("条件", "Conditions"), nameof(QstRow.Cond), new DataGridLength(270)));
-        _grid.Columns.Add(MkScriptColumn(L.T("动作", "Actions"), nameof(QstRow.Act), new DataGridLength(270)));
-        ApplyTextColumnStyle();
+        var header = MkHeader(new[] { (L.T("节点", "Node"), 340d), ("Objective ID", 110d), (L.T("本地化文本", "Localized Text"), 0d), (L.T("条件", "Conditions"), 270d), (L.T("动作", "Actions"), 270d) });
 
-        _grid.MouseDoubleClick += OnDoubleClick;
-        _grid.PreviewMouseRightButtonDown += GridRightDown;
-        _grid.ContextMenu = BuildContextMenu();
+        _list.ItemTemplate = BuildTemplate();
+        _list.ItemContainerStyle = MkContainerStyle();
+        _list.SelectionChanged += (_, _) => { UpdateHighlight(); SelectedChanged?.Invoke(); };
+        _list.MouseDoubleClick += OnDoubleClick;
+        _list.PreviewMouseRightButtonDown += ListRightDown;
+        _list.ContextMenu = BuildContextMenu();
 
-        Content = _grid;
+        var root = new DockPanel();
+        DockPanel.SetDock(header, Dock.Top);
+        root.Children.Add(header);
+        root.Children.Add(_list);
+        Content = root;
     }
 
-    private static DataGrid MkGrid()
+    private static WorkingTreeListView MkList()
     {
-        var g = new DataGrid
+        var l = new WorkingTreeListView
         {
-            AutoGenerateColumns = false,
-            CanUserAddRows = false,
-            CanUserDeleteRows = false,
-            CanUserSortColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-            SelectionMode = DataGridSelectionMode.Single,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
         };
-        WpfTheme.ApplyGrid(g);
-        return g;
+        ScrollViewer.SetHorizontalScrollBarVisibility(l, ScrollBarVisibility.Disabled);
+        return l;
     }
 
-    /// <summary>本地化文本列样式：换行显示；编辑控件接受回车。</summary>
-    private void ApplyTextColumnStyle()
+    private static FrameworkElement MkHeader((string, double)[] columns)
     {
-        var col = (DataGridTextColumn)_grid.Columns[2];
-        var s = new Style(typeof(TextBlock));
-        s.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
-        s.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
-        s.Setters.Add(new Setter(TextBlock.MaxHeightProperty, 54.0));
-        var trig = new DataTrigger
+        var g = new Grid { Margin = new Thickness(24, 2, 18, 2) };
+        foreach (var (title, w) in columns)
         {
-            Binding = new Binding("IsSelected")
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+        }
+        for (int i = 0; i < columns.Length; i++)
+        {
+            var tb = new TextBlock
             {
-                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(DataGridRow), 1),
-            },
-            Value = true,
+                Text = columns[i].Item1,
+                FontWeight = FontWeights.Medium,
+                Foreground = WpfTheme.MutedBrush,
+                Margin = new Thickness(2, 0, 8, 0),
+            };
+            tb.SetValue(Grid.ColumnProperty, i);
+            g.Children.Add(tb);
+        }
+        return new Border
+        {
+            BorderBrush = WpfTheme.MutedBrush,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = g,
+            Margin = new Thickness(0, 2, 0, 2),
         };
-        trig.Setters.Add(new Setter(TextBlock.MaxHeightProperty, 10000.0));
-        s.Triggers.Add(trig);
-        col.ElementStyle = s;
+    }
 
-        var es = new Style(typeof(TextBox));
-        es.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
-        es.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
-        col.EditingElementStyle = es;
+    private DataTemplate BuildTemplate()
+    {
+        string xaml = """
+<HierarchicalDataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                           ItemsSource="{Binding Children}">
+  <Grid Background="Transparent">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="340"/>
+      <ColumnDefinition Width="110"/>
+      <ColumnDefinition Width="*"/>
+      <ColumnDefinition Width="270"/>
+      <ColumnDefinition Width="270"/>
+    </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <TextBlock Tag="0" Grid.Column="0" Text="{Binding Node}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,2,8,2" Foreground="{Binding NodeBrush}"/>
+    <TextBlock Grid.Column="0" Grid.Row="1" Text="{Binding SubText}" FontStyle="Italic" FontSize="11" Foreground="#6B7280" Margin="2,0,8,2"
+               Visibility="{Binding SubTextVisibility}"/>
+    <TextBlock Grid.Column="1" Text="{Binding IdText}" VerticalAlignment="Center" Margin="2,2,8,2" Foreground="#6B7280"/>
+    <TextBlock Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,2,8,2" MaxHeight="90"/>
+    <ItemsControl Tag="2" Grid.Column="3" ItemsSource="{Binding Cond}" IsTabStop="False" Margin="2,2,8,2">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <ItemsControl Tag="3" Grid.Column="4" ItemsSource="{Binding Act}" IsTabStop="False" Margin="2,2,8,2">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </Grid>
+</HierarchicalDataTemplate>
+""";
+        // 模板里的 EmptyToCollapsed 转换器
+        var tpl = (HierarchicalDataTemplate)XamlReader.Parse(xaml);
+        tpl.Resources["EmptyToCollapsed"] = new EmptyToCollapsedConverter();
+        return tpl;
+    }
+
+    private Style MkContainerStyle()
+    {
+        var style = new Style(typeof(TreeListViewItem));
+        style.Setters.Add(new Setter(HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        return style;
     }
 
     private static MenuItem Mi(string header, Action onClick) =>
@@ -851,90 +797,10 @@ internal sealed class QstTableEditor : UserControl
         return cm;
     }
 
-    private void GridRightDown(object sender, MouseButtonEventArgs e)
+    private void ListRightDown(object sender, MouseButtonEventArgs e)
     {
-        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
-        if (row != null && row.GetIndex() >= 0) _grid.SelectedIndex = row.GetIndex();
-    }
-
-    private DataGridTemplateColumn MkTreeColumn(string header, DataGridLength width)
-    {
-        var template = new DataTemplate();
-        var sp = new FrameworkElementFactory(typeof(StackPanel));
-        sp.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
-
-        var spacer = new FrameworkElementFactory(typeof(Border));
-        spacer.SetBinding(Border.WidthProperty, new Binding(nameof(QstRow.Indent)));
-        sp.AppendChild(spacer);
-
-        var toggle = new FrameworkElementFactory(typeof(System.Windows.Controls.Button));
-        toggle.SetBinding(System.Windows.Controls.Button.ContentProperty, new Binding(nameof(QstRow.ExpandGlyph)));
-        toggle.SetValue(System.Windows.Controls.Button.BackgroundProperty, Brushes.Transparent);
-        toggle.SetValue(System.Windows.Controls.Button.BorderThicknessProperty, new Thickness(0));
-        toggle.SetValue(FrameworkElement.WidthProperty, 20.0);
-        toggle.SetValue(FrameworkElement.HeightProperty, 18.0);
-        toggle.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        toggle.SetValue(Control.FontSizeProperty, 10.0);
-        toggle.SetValue(Control.ForegroundProperty, WpfTheme.MutedBrush);
-        toggle.SetBinding(FrameworkElement.VisibilityProperty, new Binding(nameof(QstRow.HasChildren))
-        {
-            Converter = new System.Windows.Controls.BooleanToVisibilityConverter(),
-        });
-        toggle.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler(OnToggleClick));
-        sp.AppendChild(toggle);
-
-        // 主行（着色）+ 副文本行（task 描述，斜体灰）
-        var textHost = new FrameworkElementFactory(typeof(StackPanel));
-        textHost.SetValue(StackPanel.OrientationProperty, Orientation.Vertical);
-        textHost.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        textHost.SetValue(FrameworkElement.MarginProperty, new Thickness(4, 0, 0, 0));
-
-        var main = new FrameworkElementFactory(typeof(TextBlock));
-        main.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
-        main.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(QstRow.NodeBrush)));
-        textHost.AppendChild(main);
-
-        var sub = new FrameworkElementFactory(typeof(TextBlock));
-        sub.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.SubText)));
-        sub.SetBinding(TextBlock.VisibilityProperty, new Binding(nameof(QstRow.SubText)) { Converter = new EmptyToCollapsedConverter() });
-        sub.SetValue(TextBlock.FontStyleProperty, FontStyles.Italic);
-        sub.SetValue(TextBlock.FontSizeProperty, 11.0);
-        sub.SetValue(TextBlock.ForegroundProperty, WpfTheme.MutedBrush);
-        sub.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 1, 0, 0));
-        textHost.AppendChild(sub);
-
-        sp.AppendChild(textHost);
-
-        template.VisualTree = sp;
-        return new DataGridTemplateColumn { Header = header, Width = width, IsReadOnly = true, CellTemplate = template };
-    }
-
-    private void OnToggleClick(object sender, RoutedEventArgs e)
-    {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is QstRow r)
-        {
-            r.IsExpanded = !r.IsExpanded;
-            r.RaiseGlyph();
-            RebuildVisible(keepSelection: true);
-        }
-    }
-
-    private static DataGridTemplateColumn MkScriptColumn(string header, string propertyName, DataGridLength width)
-    {
-        var itemTemplate = new DataTemplate();
-        var tb = new FrameworkElementFactory(typeof(TextBlock));
-        tb.SetBinding(TextBlock.TextProperty, new Binding(nameof(ColoredLine.Text)));
-        tb.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(ColoredLine.Brush)));
-        itemTemplate.VisualTree = tb;
-
-        var template = new DataTemplate();
-        var factory = new FrameworkElementFactory(typeof(ItemsControl));
-        factory.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(propertyName));
-        factory.SetValue(ItemsControl.ItemTemplateProperty, itemTemplate);
-        factory.SetValue(ItemsControl.ItemsPanelProperty, new ItemsPanelTemplate(new FrameworkElementFactory(typeof(StackPanel))));
-        template.VisualTree = factory;
-
-        return new DataGridTemplateColumn { Header = header, Width = width, IsReadOnly = true, CellTemplate = template };
+        var item = FindAncestor<TreeListViewItem>(e.OriginalSource as DependencyObject);
+        if (item != null) item.IsSelected = true;
     }
 
     private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
@@ -943,18 +809,66 @@ internal sealed class QstTableEditor : UserControl
         return d as T;
     }
 
-    public void NotifyEdited()
+    private void OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        _doc.Dirty = true;
-        _changed();
+        string? tag = null;
+        var d = e.OriginalSource as DependencyObject;
+        while (d != null)
+        {
+            if (d is FrameworkElement fe && fe.Tag is string t) { tag = t; break; }
+            d = VisualTreeHelper.GetParent(d);
+        }
+        if (tag == null) return;
+        var sel = SelectedRow;
+        if (sel == null) return;
+
+        if (tag == "2")
+        {
+            if (ScriptListDialog.Show(_doc, sel.Owner.Conditions, true, Window.GetWindow(this))) sel.Reload();
+        }
+        else if (tag == "3")
+        {
+            if (ScriptListDialog.Show(_doc, sel.Owner.Actions, false, Window.GetWindow(this))) sel.Reload();
+        }
+        else if (tag is "0" or "1")
+        {
+            EditFields();
+        }
     }
 
-    /// <summary>编辑 quest 头部：uid 与 Primary/Secondary/Repeatable（官方 Common.Quest+Flag）。</summary>
+    private void EditFields()
+    {
+        var sel = SelectedRow;
+        if (sel == null) return;
+        switch (sel.Owner)
+        {
+            case QstRootOwner:
+            case QstQuestOwner:
+                EditQuestProps();
+                break;
+            case QstTaskRow or QstEventRow or QstObjectiveRow:
+                if (QstFieldsDialog.Show(sel.Owner, Window.GetWindow(this)))
+                {
+                    sel.Reload();
+                    _changed();
+                }
+                break;
+        }
+    }
+
+    private QstRow? SelectedRow => _list.SelectedItem is QstRow r ? r : null;
+
     private void EditQuestProps()
     {
         if (!QuestPropsDialog.Show(_qst, Window.GetWindow(this))) return;
         _changed();
         Bind(_doc, _changed);
+    }
+
+    public void NotifyEdited()
+    {
+        _doc.Dirty = true;
+        _changed();
     }
 
     public void Bind(DocSession doc, Changed changed)
@@ -965,9 +879,6 @@ internal sealed class QstTableEditor : UserControl
 
         // 层级对齐官方 QuestEditor：
         //   组名（根，红） → 任务名（旗） → task [N] 标题/描述 → OnAccept / Objectives / OnComplete 组 → 事件/目标行
-        var texts = _qst.Languages.Count > 0 ? _qst.Languages[0].Texts : null;
-        string SlotText(int slot) => texts != null && slot >= 0 && slot < texts.Count ? texts[slot].Text : "";
-
         var rows = new List<QstRow>();
         var rootRow = new QstRow(this, new QstRootOwner(_qst));
         rows.Add(rootRow);
@@ -1020,17 +931,16 @@ internal sealed class QstTableEditor : UserControl
         }
 
         _rows = rows;
-        _visible = ComputeVisible();
-        _grid.ItemsSource = _visible;
-        if (_visible.Count > 0) _grid.SelectedIndex = 0;
-        _selectedChanged?.Invoke();
+        _list.ItemsSource = _rows.Where(r => r.Parent == null).ToList();
+        if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        SelectedChanged?.Invoke();
     }
 
     /// <summary>选中行与其子孙行同色高亮。</summary>
     private void UpdateHighlight()
     {
-        foreach (var r in _visible) r.Highlight = false;
-        if (_grid.SelectedItem is QstRow sel)
+        foreach (var r in _rows) r.Highlight = false;
+        if (_list.SelectedItem is QstRow sel)
             WalkHi(sel);
         return;
 
@@ -1041,87 +951,6 @@ internal sealed class QstTableEditor : UserControl
         }
     }
 
-    private List<QstRow> ComputeVisible()
-    {
-        var list = new List<QstRow>();
-        void Walk(QstRow r)
-        {
-            list.Add(r);
-            if (r.IsExpanded) foreach (var c in r.Children) Walk(c);
-        }
-        foreach (var root in _rows.Where(r => r.Parent == null)) Walk(root);
-        return list;
-    }
-
-    private void RebuildVisible(bool keepSelection)
-    {
-        QstRow? sel = keepSelection ? _grid.SelectedItem as QstRow : null;
-        _visible = ComputeVisible();
-        _grid.ItemsSource = _visible;
-        if (sel != null && _visible.Contains(sel))
-        {
-            _grid.SelectedItem = sel;
-            _grid.ScrollIntoView(sel);
-        }
-        else if (_visible.Count > 0)
-        {
-            _grid.SelectedIndex = 0;
-        }
-    }
-
-    private void OnDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        var cell = FindAncestor<DataGridCell>(e.OriginalSource as DependencyObject);
-        var row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
-        if (cell == null || row == null) return;
-        int colIndex = _grid.Columns.IndexOf(cell.Column);
-        int rowIndex = row.GetIndex();
-        if (rowIndex < 0 || rowIndex >= _visible.Count) return;
-        var r = _visible[rowIndex].Owner;
-        if (colIndex == 2 && r.Conditions != null)
-        {
-            if (ScriptListDialog.Show(_doc, r.Conditions, true, Window.GetWindow(this))) _visible[rowIndex].Reload();
-        }
-        else if (colIndex == 3 && r.Actions != null)
-        {
-            if (ScriptListDialog.Show(_doc, r.Actions, false, Window.GetWindow(this))) _visible[rowIndex].Reload();
-        }
-        else if (colIndex is 0 or 1)
-        {
-            EditFields();
-        }
-    }
-
-    private void EditFields()
-    {
-        var sel = SelectedRow;
-        if (sel == null) return;
-        switch (sel.Owner)
-        {
-            case QstRootOwner:
-            case QstQuestOwner:
-                EditQuestProps();
-                break;
-            case QstTaskRow or QstEventRow or QstObjectiveRow:
-                if (QstFieldsDialog.Show(sel.Owner, Window.GetWindow(this)))
-                {
-                    sel.Reload();
-                    _changed();
-                }
-                break;
-        }
-    }
-
-    private static Style MkTextBlockStyle(Brush? foreground = null)
-    {
-        var s = new Style(typeof(TextBlock));
-        if (foreground != null) s.Setters.Add(new Setter(TextBlock.ForegroundProperty, foreground));
-        return s;
-    }
-
-    private QstRow? SelectedRow => _grid.SelectedItem is QstRow r ? r : null;
-
-    /// <summary>选中行向上找所属 task（目标/事件行挂在组行下，组行挂在 task 行下）。</summary>
     private QstTask ActiveTask()
     {
         for (var r = SelectedRow; r != null; r = r.Parent)
@@ -1129,20 +958,26 @@ internal sealed class QstTableEditor : UserControl
         return _qst.Tasks.FirstOrDefault()!;
     }
 
-    /// <summary>定位：展开父链并选中对应行。</summary>
+    /// <summary>定位：沿容器链展开父级并选中对应行。</summary>
     public void SelectOwner(object owner)
     {
         var row = _rows.FirstOrDefault(r => ReferenceEquals(r.Owner.OwnerObject, owner));
         if (row == null) return;
-        for (var p = row.Parent; p != null; p = p.Parent)
+        var path = new List<QstRow>();
+        for (var r = row; r != null; r = r.Parent) path.Insert(0, r);
+        var gen = _list.ItemContainerGenerator;
+        for (int i = 0; i < path.Count; i++)
         {
-            if (!p.IsExpanded) { p.IsExpanded = true; p.RaiseGlyph(); }
-        }
-        RebuildVisible(keepSelection: false);
-        if (_visible.Contains(row))
-        {
-            _grid.SelectedItem = row;
-            _grid.ScrollIntoView(row);
+            if (gen.ContainerFromItem(path[i]) is not TreeListViewItem container) return;
+            if (i == path.Count - 1)
+            {
+                _list.SelectedItem = path[i];
+                _list.ScrollIntoView(path[i]);
+            }
+            else if (!container.IsExpanded)
+            {
+                container.IsExpanded = true;
+            }
         }
     }
 

@@ -36,7 +36,7 @@ internal sealed class NodeTextPanel : UserControl
         idRow.Children.Add(_questIdText);
         idRow.Children.Add(_copyId);
 
-        var grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
+        var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -68,11 +68,14 @@ internal sealed class NodeTextPanel : UserControl
 
     private static TextBlock MkLabel(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 8, 0) };
 
+    private Grid _grid = null!;
+
     private void Place(FrameworkElement e, int row, int col)
     {
         e.SetValue(Grid.RowProperty, row);
         e.SetValue(Grid.ColumnProperty, col);
         if (e is TextBox) e.Margin = new Thickness(0, 2, 0, 2);
+        _grid.Children.Add(e);
     }
 
     /// <summary>绑定选中行的文本槽位；slot 为 null（未选中/该行无文本）时禁用。</summary>

@@ -141,12 +141,20 @@ internal static class Program
             win.Content = editor;
             var doc = DocSession.Open(qstPath);
             editor.Bind(doc, () => { });
-            win.Loaded += (_, _) => app.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, new Action(() =>
+            win.Loaded += (_, _) =>
             {
-                Walk(win, "");
-                win.Close();
-            }));
+                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    Walk(win, "");
+                    win.Close();
+                };
+                timer.Start();
+            };
+
             app.Run(win);
+
             if (attached) FreeConsole();
             return 0;
         }
@@ -163,16 +171,20 @@ internal static class Program
             for (int i = 0; i < n; i++)
             {
                 var child = System.Windows.Media.VisualTreeHelper.GetChild(d, i);
-                if (child is System.Windows.Controls.Border b && b.DataContext is QstRow row)
-                    Console.WriteLine($"{path}Border DataContext.Indent={row.Indent} ActualWidth={b.ActualWidth:0.##} Width={b.Width:0.##}");
-                if (child is System.Windows.Controls.StackPanel sp && sp.DataContext is QstRow row2 && sp.Orientation == System.Windows.Controls.Orientation.Horizontal)
-                    Console.WriteLine($"{path}HStack DataContext.Indent={row2.Indent} children={sp.Children.Count}");
+                if (child is MaterialDesignThemes.Wpf.TreeListViewItem item && item.DataContext is QstRow row)
+                {
+                    var t = typeof(MaterialDesignThemes.Wpf.TreeListViewItem);
+                    var tl = t.GetField("TreeListView", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(item);
+                    var cp = item.Template?.FindName("PART_ContentPresenter", item);
+                    var presenterTemplate = cp?.GetType().GetProperty("Template")?.GetValue(cp) != null;
+                    Console.WriteLine($"{path}TreeItem Level={item.Level} IsExpanded={item.IsExpanded} HasItems={item.HasItems} TreeListView={(tl != null)} PresenterTemplate={presenterTemplate} Node={row.Node}");
+                }
                 Walk(child, path + "/");
             }
         }
     }
 
-    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>
+    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>
     private static void ShowFatal(Exception? ex)
     {
         if (ex == null) return;
