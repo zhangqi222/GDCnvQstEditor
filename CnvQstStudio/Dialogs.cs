@@ -528,14 +528,6 @@ internal sealed class CnvNodeDialog : Window
     private readonly CheckBox _unimportant = new() { Content = L.T("不重要") };
     private readonly TextBox _voPath = new() { MinWidth = 320 };
     private readonly ComboBox _link = new() { MinWidth = 320 };
-    private readonly TextBox _text = new()
-    {
-        MinWidth = 320,
-        AcceptsReturn = true,
-        TextWrapping = TextWrapping.Wrap,
-        Height = 64,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-    };
 
     private CnvNodeDialog(CnvFile c, CnvStep s)
     {
@@ -552,7 +544,6 @@ internal sealed class CnvNodeDialog : Window
         _unimportant.IsChecked = (s.Unknown & 4) != 0;
         _voPath.Text = s.VoPath.Text;
         _voPath.IsEnabled = c.Version >= 6;
-        _text.Text = TableLayout.Display(c.TextFor(s));
         var links = new List<string>();
         for (int i = 0; i < c.Steps.Count; i++)
         {
@@ -571,7 +562,13 @@ internal sealed class CnvNodeDialog : Window
 
         var stack = new StackPanel { Margin = new Thickness(16) };
         stack.Children.Add(Field(L.T("类型") + ":", _type));
-        stack.Children.Add(Field(L.T("台词文本") + ":", _text));
+        stack.Children.Add(new TextBlock
+        {
+            Text = L.T("台词文本请在主界面底部编辑器中修改（选中节点行后编辑）。"),
+            Foreground = WpfTheme.MutedBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 4, 0, 0),
+        });
         var flagsRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 6) };
         flagsRow.Children.Add(new TextBlock { Text = L.T("显示开关") + ":", Width = 100, VerticalAlignment = VerticalAlignment.Center });
         flagsRow.Children.Add(_once);
@@ -605,10 +602,6 @@ internal sealed class CnvNodeDialog : Window
         // 只改低 3 位（编辑器开关），高位为游戏侧保留位，原样保留
         s.Unknown = (s.Unknown & ~7u) | (dlg._once.IsChecked == true ? 1u : 0u) | (dlg._always.IsChecked == true ? 2u : 0u) | (dlg._unimportant.IsChecked == true ? 4u : 0u);
         s.VoPath.SetText(dlg._voPath.Text);
-        // 台词文本写回对应串表槽（{^n} 记号）
-        var texts = doc.PrimaryLanguage.Texts;
-        if (s.Index >= 0 && s.Index < texts.Count)
-            texts[s.Index].SetText(TableLayout.Stored(dlg._text.Text));
         s.HasLink = s.Type == Names.StepLink;
         if (dlg._link.SelectedIndex >= 0 && s.HasLink) s.LinkId = (uint)dlg._link.SelectedIndex;
         return true;
@@ -624,7 +617,7 @@ internal sealed class QuestPropsDialog : Window
     private readonly CheckBox _repeatable = new() { Content = L.T("可重复 Repeatable（bit2）", "Repeatable (bit2)") };
     private readonly List<(string Label, TextBox Box, Action<string> Commit)> _textEditors = new();
 
-    internal QuestPropsDialog(QstFile q, IEnumerable<(string Label, string Text, Action<string> Commit)>? texts)
+    internal QuestPropsDialog(QstFile q)
     {
         DialogChrome.Init(this, L.T("任务属性", "Quest Properties"), 380, 260);
         _uid.Text = Gui.U32Text(q.Id);
@@ -642,16 +635,18 @@ internal sealed class QuestPropsDialog : Window
         cancel.IsCancel = true;
         ok.Click += (_, _) => DialogResult = true;
 
-        _textEditors.AddRange((texts ?? Enumerable.Empty<(string, string, Action<string>)>())
-            .Select(t => (t.Label, new TextBox { Text = t.Text, MinWidth = 220 }, t.Commit)));
-
         var stack = new StackPanel { Margin = new Thickness(16) };
-        foreach (var (lab, box, _) in _textEditors) stack.Children.Add(Field(lab, box));
-        stack.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 8) });
         stack.Children.Add(Field("uid", _uid));
         stack.Children.Add(_primary);
         stack.Children.Add(_secondary);
         stack.Children.Add(_repeatable);
+        stack.Children.Add(new TextBlock
+        {
+            Text = L.T("组名 / 任务名请在主界面底部编辑器中修改（选中对应行后编辑）。"),
+            Foreground = WpfTheme.MutedBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+        });
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
@@ -669,11 +664,10 @@ internal sealed class QuestPropsDialog : Window
         return g;
     }
 
-    public static bool Show(QstFile q, Window? owner, IEnumerable<(string Label, string Text, Action<string> Commit)>? texts = null)
+    public static bool Show(QstFile q, Window? owner)
     {
-        var dlg = new QuestPropsDialog(q, texts) { Owner = owner };
+        var dlg = new QuestPropsDialog(q) { Owner = owner };
         if (dlg.ShowDialog() != true) return false;
-        foreach (var (_, box, commit) in dlg._textEditors) commit(box.Text);
         try { q.Id = Gui.ParseU32(dlg._uid.Text); } catch { }
         uint f = 0;
         if (dlg._primary.IsChecked == true) f |= 1;
@@ -691,12 +685,9 @@ internal sealed class QstFieldsDialog : Window
     private readonly List<(string, TextBox)> _nums = new();
     private readonly List<(string, CheckBox)> _flags = new();
 
-    internal QstFieldsDialog(QstRowOwner row, IEnumerable<(string Label, string Text, Action<string> Commit)>? texts)
+    internal QstFieldsDialog(QstRowOwner row)
     {
         DialogChrome.Init(this, L.T("字段编辑  " + row.NodeLabel, "Fields  " + row.NodeLabel), 460, 0, SizeToContent.Height);
-        _textEditors = (texts ?? Enumerable.Empty<(string, string, Action<string>)>())
-            .Select(t => (t.Label, new TextBox { Text = t.Text, MinWidth = 220, AcceptsReturn = false }, t.Commit))
-            .ToList();
         switch (row)
         {
             case QstTaskRow tr:
@@ -723,16 +714,16 @@ internal sealed class QstFieldsDialog : Window
         var stack = new StackPanel { Margin = new Thickness(16) };
         foreach (var (lab, n) in _nums) stack.Children.Add(Field(lab, n));
         foreach (var (lab, cb) in _flags) { cb.Content = lab; stack.Children.Add(cb); }
-        foreach (var (lab, box, _) in _textEditors)
+        stack.Children.Add(new TextBlock
         {
-            stack.Children.Add(new Separator { Margin = new Thickness(0, 8, 0, 8) });
-            stack.Children.Add(Field(lab, box));
-        }
+            Text = L.T("文本内容请在主界面底部编辑器中修改（选中行后编辑，支持双语）。"),
+            Foreground = WpfTheme.MutedBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+        });
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
-
-    private readonly List<(string Label, TextBox Box, Action<string> Commit)> _textEditors = new();
 
     private static TextBox Num(uint v) => new() { Text = Gui.U32Text(v), MinWidth = 140 };
 
@@ -751,12 +742,11 @@ internal sealed class QstFieldsDialog : Window
         return g;
     }
 
-    public static bool Show(QstRowOwner row, Window? owner, IEnumerable<(string Label, string Text, Action<string> Commit)>? texts = null)
+    public static bool Show(QstRowOwner row, Window? owner)
     {
-        var dlg = new QstFieldsDialog(row, texts) { Owner = owner };
+        var dlg = new QstFieldsDialog(row) { Owner = owner };
         if (dlg.ShowDialog() != true) return false;
         foreach (var (lab, box) in dlg._nums) _ = lab;
-        foreach (var (_, box2, commit) in dlg._textEditors) commit(box2.Text);
         if (row is QstTaskRow tr)
         {
             try { tr.T.UnknownA8 = Gui.ParseU32(dlg._nums[0].Item2.Text); } catch { }

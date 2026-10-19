@@ -68,7 +68,7 @@ internal static class CnvNodeLabel
 // 行模型（树形表格：父子 + 展开态；INPC 用于编辑后单行刷新）
 // ---------------------------------------------------------------------------
 
-internal sealed class CnvRow : INotifyPropertyChanged
+internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
 {
     private readonly CnvTableEditor _editor;
     public DocSession Doc { get; }
@@ -79,7 +79,8 @@ internal sealed class CnvRow : INotifyPropertyChanged
     public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
     public string ExpandGlyph => IsExpanded ? "▾" : "▸";
-    public double Indent => 2 + Depth * 18;
+    public double Indent => 4 + Depth * 22;
+    public bool Highlight { get; set; }
 
     public string Node { get; private set; } = "";
     public string Attrs { get; private set; } = "";
@@ -164,6 +165,7 @@ internal abstract class QstRowOwner
     public abstract ScriptList? Actions { get; }
     public virtual bool CanDelete => false;
     public virtual string SubText => "";
+    public virtual Brush NodeBrush => WpfTheme.TextBrush;
     /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
     public virtual string IdText => "";
     /// <summary>本行在本地化串表中的文本槽位（null = 该行无对应文本）。</summary>
@@ -185,6 +187,7 @@ internal sealed class QstRootOwner(QstFile q) : QstRowOwner
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override int? TextSlot => 0;
+    public override Brush NodeBrush => WpfTheme.DangerBrush;
 }
 
 /// <summary>任务名行（官方黄旗；文本=串表槽 1；双击编辑 quest 头部与组名/任务名）。</summary>
@@ -198,16 +201,18 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
     public override ScriptList? Actions => null;
     public override string IdText => q.Id.ToString();
     public override int? TextSlot => 1;
+    public override Brush NodeBrush => WpfTheme.AccentBrush;
 }
 
 /// <summary>OnAccept / Objectives / OnComplete 组行（仅折叠分组，无脚本内容）。</summary>
-internal sealed class QstGroupOwner(string label) : QstRowOwner
+internal sealed class QstGroupOwner(string label, Brush brush) : QstRowOwner
 {
     public override object OwnerObject => this;
     public override string NodeLabel => label;
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
+    public override Brush NodeBrush => brush;
 }
 
 /// <summary>task 行：图标 + [N] 标题（串表标题槽），副文本为描述（标题槽+1）。</summary>
@@ -265,7 +270,7 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override int? TextSlot => slot;
 }
 
-internal sealed class QstRow : INotifyPropertyChanged
+internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
 {
     private readonly QstTableEditor _editor;
     public QstRowOwner Owner { get; }
@@ -275,10 +280,12 @@ internal sealed class QstRow : INotifyPropertyChanged
     public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
     public string ExpandGlyph => IsExpanded ? "▾" : "▸";
-    public double Indent => 2 + Depth * 18;
+    public double Indent => 4 + Depth * 22;
+    public bool Highlight { get; set; }
 
     public string Node { get; private set; }
     public string SubText { get; private set; }
+    public Brush NodeBrush { get; private set; }
     public string IdText { get; private set; }
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
@@ -293,6 +300,7 @@ internal sealed class QstRow : INotifyPropertyChanged
         Owner = owner;
         Node = owner.NodeLabel;
         IdText = owner.IdText;
+        NodeBrush = owner.NodeBrush;
         Reload();
     }
 
@@ -311,9 +319,10 @@ internal sealed class QstRow : INotifyPropertyChanged
         Node = Owner.NodeLabel;
         SubText = Owner.SubText;
         IdText = Owner.IdText;
+        NodeBrush = Owner.NodeBrush;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -372,8 +381,15 @@ internal sealed class CnvTableEditor : UserControl
     private readonly DataGrid _grid = MkGrid();
     private List<CnvRow> _rows = new();          // 全部行（含折叠的）
     private List<CnvRow> _visible = new();       // 当前可见行
+    private Action? _selectedChanged;
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
+
+    /// <summary>选中行变化（含重绑定后）——供底部编辑面板联动。</summary>
+    public event Action? SelectedChanged { add => _selectedChanged += value; remove => _selectedChanged -= value; }
+
+    /// <summary>选中行的本地化文本槽位（无选中 = null）。</summary>
+    public int? SelectedTextSlot => SelectedStep?.Index;
 
     public CnvTableEditor()
     {
@@ -626,6 +642,22 @@ internal sealed class CnvTableEditor : UserControl
         _visible = ComputeVisible();
         _grid.ItemsSource = _visible;
         if (_visible.Count > 0) _grid.SelectedIndex = 0;
+        _selectedChanged?.Invoke();
+    }
+
+    /// <summary>选中行与其子孙行同色高亮。</summary>
+    private void UpdateHighlight()
+    {
+        foreach (var r in _visible) r.Highlight = false;
+        if (_grid.SelectedItem is CnvRow sel)
+            WalkHi(sel);
+        return;
+
+        void WalkHi(CnvRow r)
+        {
+            r.Highlight = true;
+            foreach (var c in r.Children) WalkHi(c);
+        }
     }
 
     private List<CnvRow> ComputeVisible()
@@ -723,15 +755,22 @@ internal sealed class QstTableEditor : UserControl
     private readonly DataGrid _grid = MkGrid();
     private List<QstRow> _rows = new();
     private List<QstRow> _visible = new();
+    private Action? _selectedChanged;
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
+
+    /// <summary>选中行变化（含重绑定后）——供底部编辑面板联动。</summary>
+    public event Action? SelectedChanged { add => _selectedChanged += value; remove => _selectedChanged -= value; }
+
+    /// <summary>选中行的本地化文本槽位（无选中 = null）。</summary>
+    public int? SelectedTextSlot => SelectedRow?.Owner.TextSlot;
 
     public QstTableEditor()
     {
         _grid.Columns.Add(MkTreeColumn(L.T("节点", "Node"), new DataGridLength(300)));
         _grid.Columns.Add(new DataGridTextColumn
         {
-            Header = "OBJID",
+            Header = "Objective ID",
             Binding = new Binding(nameof(QstRow.IdText)),
             IsReadOnly = true,
             Width = new DataGridLength(110),
@@ -852,6 +891,7 @@ internal sealed class QstTableEditor : UserControl
 
         var main = new FrameworkElementFactory(typeof(TextBlock));
         main.SetBinding(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
+        main.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(QstRow.NodeBrush)));
         textHost.AppendChild(main);
 
         var sub = new FrameworkElementFactory(typeof(TextBlock));
@@ -944,7 +984,7 @@ internal sealed class QstTableEditor : UserControl
             taskRow.Attach(questRow);
 
             var acceptRow = new QstRow(this, new QstGroupOwner(
-                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count)));
+                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), WpfTheme.AccentBrush));
             rows.Add(acceptRow);
             acceptRow.Attach(taskRow);
             for (int k = 0; k < t.Incentives.Count; k++)
@@ -955,7 +995,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var objRow = new QstRow(this, new QstGroupOwner(
-                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count)));
+                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), WpfTheme.OkBrush));
             rows.Add(objRow);
             objRow.Attach(taskRow);
             for (int k = 0; k < t.Objectives.Count; k++)
@@ -967,7 +1007,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var compRow = new QstRow(this, new QstGroupOwner(
-                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count)));
+                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count), WpfTheme.OkBrush));
             rows.Add(compRow);
             compRow.Attach(taskRow);
             for (int k = 0; k < t.Events.Count; k++)
@@ -983,6 +1023,22 @@ internal sealed class QstTableEditor : UserControl
         _visible = ComputeVisible();
         _grid.ItemsSource = _visible;
         if (_visible.Count > 0) _grid.SelectedIndex = 0;
+        _selectedChanged?.Invoke();
+    }
+
+    /// <summary>选中行与其子孙行同色高亮。</summary>
+    private void UpdateHighlight()
+    {
+        foreach (var r in _visible) r.Highlight = false;
+        if (_grid.SelectedItem is QstRow sel)
+            WalkHi(sel);
+        return;
+
+        void WalkHi(QstRow r)
+        {
+            r.Highlight = true;
+            foreach (var c in r.Children) WalkHi(c);
+        }
     }
 
     private List<QstRow> ComputeVisible()
@@ -1040,86 +1096,21 @@ internal sealed class QstTableEditor : UserControl
     {
         var sel = SelectedRow;
         if (sel == null) return;
-        var lang = _qst.Languages.Count > 0 ? _qst.Languages[0] : null;
-        string Slot(int s) => lang != null && s >= 0 && s < lang.Texts.Count ? TableLayout.Display(lang.Texts[s].Text) : "";
-        void Commit(int s, string v)
-        {
-            if (lang == null || s >= lang.Texts.Count) return;
-            lang.Texts[s].SetText(TableLayout.Stored(v));
-        }
-
         switch (sel.Owner)
         {
             case QstRootOwner:
             case QstQuestOwner:
-            {
-                // 组名 / 任务名（串表槽 0 / 1）+ quest 头部
-                var dlg = new QuestPropsDialog(_qst,
-                    new List<(string, string, Action<string>)>
-                    {
-                        (L.T("任务组名"), Slot(0), v => Commit(0, v)),
-                        (L.T("任务名"), Slot(1), v => Commit(1, v)),
-                    })
-                { Owner = Window.GetWindow(this) };
-                if (dlg.ShowDialog() == true)
+                EditQuestProps();
+                break;
+            case QstTaskRow or QstEventRow or QstObjectiveRow:
+                if (QstFieldsDialog.Show(sel.Owner, Window.GetWindow(this)))
                 {
                     sel.Reload();
                     _changed();
                 }
                 break;
-            }
-            case QstTaskRow tr:
-            {
-                int ts = QstTaskRow.TitleSlotOf(_qst, tr.TaskIndex);
-                var dlg = new QstFieldsDialog(sel.Owner,
-                    new List<(string, string, Action<string>)>
-                    {
-                        (L.T("Task 标题"), Slot(ts), v => Commit(ts, v)),
-                        (L.T("Task 描述"), Slot(ts + 1), v => Commit(ts + 1, v)),
-                    })
-                { Owner = Window.GetWindow(this) };
-                if (dlg.ShowDialog() == true)
-                {
-                    sel.Reload();
-                    _changed();
-                }
-                break;
-            }
-            case QstEventRow er:
-            {
-                var dlg = new QstFieldsDialog(sel.Owner,
-                    new List<(string, string, Action<string>)>
-                    {
-                        (L.T("事件文本"), Slot(er.TextSlotIndex), v => Commit(er.TextSlotIndex, v)),
-                    })
-                { Owner = Window.GetWindow(this) };
-                if (dlg.ShowDialog() == true)
-                {
-                    sel.Reload();
-                    _changed();
-                }
-                break;
-            }
-            case QstObjectiveRow or:
-            {
-                var dlg = new QstFieldsDialog(sel.Owner,
-                    new List<(string, string, Action<string>)>
-                    {
-                        (L.T("目标文本"), Slot(ObjectiveSlot(sel)), v => Commit(ObjectiveSlot(sel), v)),
-                    })
-                { Owner = Window.GetWindow(this) };
-                if (dlg.ShowDialog() == true)
-                {
-                    sel.Reload();
-                    _changed();
-                }
-                break;
-            }
         }
     }
-
-    /// <summary>目标行的串表槽号（从 TextSlot 取）。</summary>
-    private static int ObjectiveSlot(QstRow row) => row.Owner.TextSlot ?? 0;
 
     private static Style MkTextBlockStyle(Brush? foreground = null)
     {

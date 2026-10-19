@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Media;
 using Wpf.Ui.Appearance;
 
@@ -42,7 +44,8 @@ internal static class WpfTheme
 
     private static readonly Brush SelectedBrush = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFE)); // 选中浅蓝
 
-    /// <summary>DataGrid 统一外观：横竖网格线 + 列头右/下分隔线（保留默认拖动手柄）+ 平直的选中样式（无缩进/变色错位）。</summary>
+    /// <summary>DataGrid 统一外观：横竖网格线 + 列头右/下分隔线（保留默认拖动手柄）+ 平直的选中样式。
+    /// 行背景支持 Highlight（子树随选中行同色）；前景恒为正文色（选中不变白）。</summary>
     public static void ApplyGrid(DataGrid grid)
     {
         grid.GridLinesVisibility = DataGridGridLinesVisibility.All;
@@ -53,26 +56,31 @@ internal static class WpfTheme
         hs.Setters.Add(new Setter(System.Windows.Controls.Control.BorderThicknessProperty, new Thickness(0, 0, 1, 1)));
         grid.ColumnHeaderStyle = hs;
 
-        // 单元格：平直模板（无 WPF-UI 默认样式的 padding/margin 变化），选中只换浅蓝背景
+        // 单元格：平直模板，前景恒黑（修 WPF 默认选中白字），选中只换浅蓝背景
         var cellTpl = new ControlTemplate(typeof(DataGridCell));
         var cellBd = new FrameworkElementFactory(typeof(Border));
         cellBd.Name = "CellBd";
         cellBd.SetValue(Border.BackgroundProperty, Brushes.Transparent);
         cellBd.SetValue(Border.PaddingProperty, new Thickness(0));
+        cellBd.SetValue(TextElement.ForegroundProperty, TextBrush);
         var cellCp = new FrameworkElementFactory(typeof(ContentPresenter));
         cellCp.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(DataGridCell.ContentProperty));
         cellBd.AppendChild(cellCp);
         cellTpl.VisualTree = cellBd;
         var cellSel = new Trigger { Property = DataGridCell.IsSelectedProperty, Value = true };
         cellSel.Setters.Add(new Setter(Border.BackgroundProperty, SelectedBrush, "CellBd"));
+        cellSel.Setters.Add(new Setter(TextElement.ForegroundProperty, TextBrush));
         cellTpl.Triggers.Add(cellSel);
         var cellStyle = new Style(typeof(DataGridCell));
         cellStyle.Setters.Add(new Setter(DataGridCell.TemplateProperty, cellTpl));
         cellStyle.Setters.Add(new Setter(DataGridCell.BorderThicknessProperty, new Thickness(0)));
         cellStyle.Setters.Add(new Setter(DataGridCell.BackgroundProperty, Brushes.Transparent));
+        cellStyle.Setters.Add(new Setter(Control.ForegroundProperty, TextBrush));
         grid.CellStyle = cellStyle;
+        grid.RowBackground = Brushes.Transparent;
+        grid.AlternatingRowBackground = Brushes.Transparent;
 
-        // 行：最小模板（Border + CellsPresenter），选中浅蓝，无任何 margin 变化
+        // 行：最小模板（Border + CellsPresenter）；选中 / 子树高亮 → 浅蓝
         var rowTpl = new ControlTemplate(typeof(DataGridRow));
         var rowBd = new FrameworkElementFactory(typeof(Border));
         rowBd.Name = "DGR_Border";
@@ -84,9 +92,18 @@ internal static class WpfTheme
         var rowSel = new Trigger { Property = DataGridRow.IsSelectedProperty, Value = true };
         rowSel.Setters.Add(new Setter(Border.BackgroundProperty, SelectedBrush, "DGR_Border"));
         rowTpl.Triggers.Add(rowSel);
+        var rowHi = new DataTrigger { Binding = new Binding(nameof(HighlightableRow.Highlight)), Value = true };
+        rowHi.Setters.Add(new Setter(Border.BackgroundProperty, SelectedBrush, "DGR_Border"));
+        rowTpl.Triggers.Add(rowHi);
         var rowStyle = new Style(typeof(DataGridRow));
         rowStyle.Setters.Add(new Setter(DataGridRow.TemplateProperty, rowTpl));
         rowStyle.Setters.Add(new Setter(DataGridRow.BackgroundProperty, Brushes.Transparent));
         grid.RowStyle = rowStyle;
+    }
+
+    /// <summary>支持子树高亮的行模型（DataTrigger 绑定 Highlight）。</summary>
+    public interface HighlightableRow
+    {
+        bool Highlight { get; set; }
     }
 }

@@ -56,6 +56,19 @@ public sealed class DocSession
 
     public LanguageBlock PrimaryLanguage => Cnv != null ? Cnv.PrimaryLanguage : Qst!.PrimaryLanguage;
 
+    /// <summary>文件内除主语言外的第一个语言块（无则 null）——底部双语编辑器的“本地化文本”栏。</summary>
+    public LanguageBlock? SecondaryLanguage
+    {
+        get
+        {
+            IEnumerable<LanguageBlock> all = Cnv != null ? Cnv.Languages : Qst?.Languages ?? Enumerable.Empty<LanguageBlock>();
+            LanguageBlock? primary;
+            try { primary = PrimaryLanguage; }
+            catch { return all.FirstOrDefault(); }
+            return all.FirstOrDefault(l => !ReferenceEquals(l, primary));
+        }
+    }
+
     public byte[] Serialize() => Cnv != null ? Cnv.Write() : Qst!.Write();
 
     public string KindVersion => Cnv != null ? $"CNV v{Cnv.Version}" : $"QST2 v{Qst!.Version}";

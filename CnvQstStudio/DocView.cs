@@ -31,6 +31,7 @@ internal sealed class DocView : UserControl
         VerticalAlignment = VerticalAlignment.Top,
     };
     private readonly Grid _host = new();
+    private readonly NodeTextPanel _panel = new() { Visibility = Visibility.Collapsed };
 
     public DocView(DocSession doc)
     {
@@ -41,17 +42,33 @@ internal sealed class DocView : UserControl
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(_host, 0);
-        Grid.SetRow(_status, 1);
+        Grid.SetRow(_panel, 1);
+        Grid.SetRow(_status, 2);
         root.Children.Add(_host);
+        root.Children.Add(_panel);
         root.Children.Add(_status);
         Content = root;
 
         _cnvTable.LocRequested += ToggleView;
         _qstTable.LocRequested += ToggleView;
+        _cnvTable.SelectedChanged += OnSelectedChanged;
+        _qstTable.SelectedChanged += OnSelectedChanged;
+        _panel.TextEdited += () => { Doc.Dirty = true; DirtyChanged?.Invoke(); UpdateStatus(); };
 
         ShowCurrent();
         UpdateStatus();
+    }
+
+    /// <summary>选中行变化 → 底部编辑器绑定该行的文本槽位。</summary>
+    private void OnSelectedChanged()
+    {
+        if (_panel.Visibility != Visibility.Visible) return;
+        int? slot = _cnvTable.Visibility == Visibility.Visible ? _cnvTable.SelectedTextSlot
+            : _qstTable.Visibility == Visibility.Visible ? _qstTable.SelectedTextSlot
+            : null;
+        _panel.Bind(Doc, slot);
     }
 
     private void ShowCurrent()
@@ -76,6 +93,10 @@ internal sealed class DocView : UserControl
     {
         foreach (var c in new UIElement[] { _cnvTable, _qstTable, _locGrid, _emptyHint })
             c.Visibility = c == target ? Visibility.Visible : Visibility.Collapsed;
+        // 底部编辑器只在结构表视图显示（本地化表/空视图无行选中语义）
+        bool structure = target == _cnvTable || target == _qstTable;
+        _panel.Visibility = structure ? Visibility.Visible : Visibility.Collapsed;
+        if (structure) OnSelectedChanged();
     }
 
     /// <summary>在 结构表 / 本地化字符串表 之间切换（右键菜单与 Ctrl+L 共用）。</summary>
@@ -105,6 +126,7 @@ internal sealed class DocView : UserControl
         if (_cnvTable.Visibility == Visibility.Visible) _cnvTable.Bind(Doc, OnEdited);
         else if (_qstTable.Visibility == Visibility.Visible) _qstTable.Bind(Doc, OnEdited);
         else if (_locGrid.Visibility == Visibility.Visible) _locGrid.Bind(Doc, OnEdited);
+        OnSelectedChanged();
         UpdateStatus();
     }
 
