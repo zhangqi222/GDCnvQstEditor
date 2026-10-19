@@ -32,6 +32,15 @@ internal sealed class DocView : UserControl
     };
     private readonly Grid _host = new();
     private readonly NodeTextPanel _panel = new() { Visibility = Visibility.Collapsed };
+    private readonly GridSplitter _panelSplitter = new()
+    {
+        Height = 6,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE0, 0xE0, 0xE0)),
+        ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+        ResizeDirection = GridResizeDirection.Rows,
+        Visibility = Visibility.Collapsed,
+    };
 
     public DocView(DocSession doc)
     {
@@ -42,11 +51,14 @@ internal sealed class DocView : UserControl
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });   // 底部编辑器，可拖动分隔条调整
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Grid.SetRow(_host, 0);
-        Grid.SetRow(_panel, 1);
-        Grid.SetRow(_status, 2);
+        Grid.SetRow(_panelSplitter, 1);
+        Grid.SetRow(_panel, 2);
+        Grid.SetRow(_status, 3);
         root.Children.Add(_host);
+        root.Children.Add(_panelSplitter);
         root.Children.Add(_panel);
         root.Children.Add(_status);
         Content = root;
@@ -96,6 +108,7 @@ internal sealed class DocView : UserControl
         // 底部编辑器只在结构表视图显示（本地化表/空视图无行选中语义）
         bool structure = target == _cnvTable || target == _qstTable;
         _panel.Visibility = structure ? Visibility.Visible : Visibility.Collapsed;
+        _panelSplitter.Visibility = structure ? Visibility.Visible : Visibility.Collapsed;
         if (structure) OnSelectedChanged();
     }
 
