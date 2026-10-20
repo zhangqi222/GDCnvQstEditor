@@ -154,6 +154,8 @@ internal abstract class QstRowOwner
     public virtual IBrush NodeBrush => UiTheme.TextBrush;
     /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
     public virtual string IdText => "";
+    /// <summary>该 ID 的作用说明（单元格 ToolTip）。</summary>
+    public virtual string IdTip => "";
     /// <summary>本行在本地化串表中的文本槽位（null = 该行无对应文本）。</summary>
     public virtual int? TextSlot => null;
 
@@ -186,6 +188,7 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override string IdText => q.Id.ToString();
+    public override string IdTip => L.T("Quest ID：任务在存档中的引用标识（官方 QuestEditor 底部显示的 Quest ID）。", "Quest ID: reference id shown at the bottom of the official QuestEditor.");
     public override int? TextSlot => 1;
     public override IBrush NodeBrush => UiTheme.AccentBrush;
 }
@@ -213,8 +216,9 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override bool CanDelete => true;
-    public override string SubText => Label(q, taskIndex, desc: true);
+    public override string SubText => "";   // 描述改为任务节点下的固定描述行，不再以斜体重复显示
     public override string IdText => t.UnknownA8.ToString();
+    public override string IdTip => L.T("uid：task 的引用标识，引擎按此引用 task。", "uid: task reference id used by the engine.");
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
 
     internal static int TitleSlotOf(QstFile q, int ti) { int s = 2; for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count; return s; }
@@ -238,6 +242,7 @@ internal sealed class QstEventRow(QstFile q, QstTask ownerTask, QstEvent e, int 
     public override bool CanDelete => true;
     // 事件本身没有落盘 uid（官方运行时分配）；flags 非 0 时在此提示
     public override string IdText => e.Unknown != 0 ? L.F("flags {0}", e.Unknown) : "";
+    public override string IdTip => L.T("事件无落盘 uid（官方运行时分配）；此处显示 flags。", "Events have no stored uid (assigned at runtime); flags shown here.");
     public override int? TextSlot => slot;
 }
 
@@ -253,7 +258,24 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override bool CanDelete => true;
     // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显
     public override string IdText => o.Unknown0.ToString();
+    public override string IdTip => L.T("Objective ID：对话/任务的条件与动作按此 ID 引用该目标（=objective 的 uid）。", "Objective ID: conditions/actions reference this objective by id (= objective uid).");
     public override int? TextSlot => slot;
+}
+
+/// <summary>task 描述行（串表槽=标题槽+1；对齐官方编辑器：任务标题下固定显示描述行，可编辑）。</summary>
+internal sealed class QstTaskDescRow(QstFile q, QstTask t, int taskIndex) : QstRowOwner
+{
+    public QstTask T => t;
+
+    private int Slot => QstTaskRow.TitleSlotOf(q, taskIndex) + 1;
+
+    public override object OwnerObject => t;
+    public override string NodeLabel => "📝 " + (SlotText(q, Slot).Length > 0 ? SlotText(q, Slot) : L.T("（无描述）", "(no description)"));
+    public override bool HasScript => false;
+    public override ScriptList? Conditions => null;
+    public override ScriptList? Actions => null;
+    public override int? TextSlot => Slot;
+    public override IBrush NodeBrush => UiTheme.MutedBrush;
 }
 
 internal sealed class QstRow : INotifyPropertyChanged
@@ -277,6 +299,7 @@ internal sealed class QstRow : INotifyPropertyChanged
     public string SubText { get; private set; }
     public IBrush NodeBrush { get; private set; }
     public string IdText { get; private set; }
+    public string IdTip { get; private set; } = "";
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
 
@@ -288,6 +311,7 @@ internal sealed class QstRow : INotifyPropertyChanged
         Owner = owner;
         Node = owner.NodeLabel;
         IdText = owner.IdText;
+        IdTip = owner.IdTip;
         NodeBrush = owner.NodeBrush;
         SubText = owner.SubText;
         Reload();
@@ -305,10 +329,11 @@ internal sealed class QstRow : INotifyPropertyChanged
         Node = Owner.NodeLabel;
         SubText = Owner.SubText;
         IdText = Owner.IdText;
+        IdTip = Owner.IdTip;
         NodeBrush = Owner.NodeBrush;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(IdTip), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -365,8 +390,20 @@ internal sealed class HighlightToBrushConverter : Avalonia.Data.Converters.IValu
         throw new NotSupportedException();
 }
 
+/// <summary>空字符串 → null（ToolTip 空内容不弹）。</summary>
+internal sealed class EmptyToNullConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        string.IsNullOrEmpty(value as string) ? null : value;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 internal static class TreeGridShared
 {
+    public static readonly EmptyToNullConverter EmptyToNull = new();
+
     public static readonly HighlightToBrushConverter HighlightToBrush = new();
 
     // 列宽（供 Cnv/Qst 两表共用，保证两文档视图布局一致）

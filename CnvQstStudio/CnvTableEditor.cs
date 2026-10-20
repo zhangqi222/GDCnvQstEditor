@@ -1,13 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Models.TreeDataGrid;
-using Avalonia.Controls.Selection;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CnvQst;
 
@@ -24,6 +25,7 @@ internal sealed class CnvTableEditor : UserControl
     private List<CnvRow> _rows = new();
     private TreeDataGrid _tree = null!;
     private HierarchicalTreeDataGridSource<CnvRow> _source = null!;
+    private (CnvRow Row, int Col)? _lastCell;   // 右键命中的单元格（复制用）
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
     public event Action? SelectedChanged;
@@ -34,7 +36,7 @@ internal sealed class CnvTableEditor : UserControl
     public CnvTableEditor()
     {
         _tree = new TreeDataGrid { CanUserResizeColumns = true };
-        // 右键点击 → 先选中该行（右键菜单语义与左键一致）
+        // 右键点击 → 先选中该行并记录命中单元格（右键菜单语义与左键一致）
         _tree.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         _tree.ContextMenu = BuildContextMenu();
         Content = _tree;
@@ -43,12 +45,18 @@ internal sealed class CnvTableEditor : UserControl
     private CnvStep? SelectedStep => _source?.RowSelection.SelectedItem is CnvRow r ? r.Step : null;
 
     // ------------------------------------------------------------------
-    // 模板
+    // 模板（单元格：网格线 = 右竖线 + 底横线；高亮底色随 Highlight）
     // ------------------------------------------------------------------
 
     private static FuncDataTemplate<CnvRow> CellBorder(Action<Border> build, Action<string>? onDoubleTap = null, string? tapTag = null) => new((_, _) =>
     {
-        var border = new Border { Background = Brushes.Transparent, Padding = new Thickness(2, 3, 8, 3) };
+        var border = new Border
+        {
+            Background = Brushes.Transparent,
+            Padding = new Thickness(2, 3, 8, 3),
+            BorderBrush = UiTheme.GridLineBrush,
+            BorderThickness = new Thickness(0, 0, 1, 1),
+        };
         border.Bind(Border.BackgroundProperty, new Binding(nameof(CnvRow.Highlight)) { Converter = TreeGridShared.HighlightToBrush });
         build(border);
         if (tapTag != null && onDoubleTap != null)
@@ -69,6 +77,7 @@ internal sealed class CnvTableEditor : UserControl
 
     private HierarchicalTreeDataGridSource<CnvRow> BuildSource(List<CnvRow> roots)
     {
+        // 列宽用 Star 权重（保持 300:140:280:230:230 比例），表格填满父容器宽度。
         var s = new HierarchicalTreeDataGridSource<CnvRow>(roots)
         {
             Columns =
@@ -81,7 +90,7 @@ internal sealed class CnvTableEditor : UserControl
                             node.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Node)));
                             b.Child = node;
                         }, OnCellDoubleTap, "0"),
-                        width: new GridLength(TreeGridShared.ColNode)),
+                        width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
                 new TemplateColumn<CnvRow>(L.T("属性", "Attrs"),
                     CellBorder(b =>
@@ -90,7 +99,7 @@ internal sealed class CnvTableEditor : UserControl
                         tb.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Attrs)));
                         b.Child = tb;
                     }, OnCellDoubleTap, "1"),
-                    width: new GridLength(TreeGridShared.ColAttrs)),
+                    width: new GridLength(TreeGridShared.ColAttrs, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("本地化文本", "Localized Text"),
                     CellBorder(b =>
                     {
@@ -99,7 +108,7 @@ internal sealed class CnvTableEditor : UserControl
                         if (!_comfortable) tb.MaxHeight = 54;
                         b.Child = tb;
                     }, OnCellDoubleTap, "2"),
-                    width: new GridLength(TreeGridShared.ColText)),
+                    width: new GridLength(TreeGridShared.ColText, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("条件", "Conditions"),
                     CellBorder(b =>
                     {
@@ -108,7 +117,7 @@ internal sealed class CnvTableEditor : UserControl
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
                     }, OnCellDoubleTap, "3"),
-                    width: new GridLength(TreeGridShared.ColCond)),
+                    width: new GridLength(TreeGridShared.ColCond, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("动作", "Actions"),
                     CellBorder(b =>
                     {
@@ -117,7 +126,7 @@ internal sealed class CnvTableEditor : UserControl
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
                     }, OnCellDoubleTap, "4"),
-                    width: new GridLength(TreeGridShared.ColAct)),
+                    width: new GridLength(TreeGridShared.ColAct, GridUnitType.Star)),
             },
         };
         s.RowSelection.SingleSelect = true;
@@ -133,17 +142,25 @@ internal sealed class CnvTableEditor : UserControl
     {
         if (!e.GetCurrentPoint(_tree).Properties.IsRightButtonPressed) return;
         var visual = e.Source as Visual;
+        (CnvRow? Row, int Col) hit = (null, -1);
         foreach (var anc in visual.GetSelfAndVisualAncestors())
         {
-            if (anc is Control c && _tree.TryGetRowModel(c, out CnvRow? row) && row != null)
-            {
-                SelectRow(row, bringIntoView: false);
-                break;
-            }
+            if (hit.Col < 0 && anc is TreeDataGridCell cell) hit.Col = cell.ColumnIndex;
+            if (hit.Row == null && anc is Control c && _tree.TryGetRowModel(c, out CnvRow? row) && row != null)
+                hit.Row = row;
+        }
+        if (hit.Row != null)
+        {
+            _lastCell = (hit.Row, hit.Col);
+            SelectRow(hit.Row, bringIntoView: false);
+        }
+        else
+        {
+            _lastCell = null;
         }
     }
 
-    /// <summary>按模型选行：遍历平面行定位 IndexPath 后 Select。</summary>
+    /// <summary>按模型选行：遍历平面行定位 IndexPath 后 Select；bringIntoView 时滚动到该行。</summary>
     private void SelectRow(CnvRow target, bool bringIntoView)
     {
         if (_source == null) return;
@@ -153,6 +170,15 @@ internal sealed class CnvTableEditor : UserControl
             if (r is HierarchicalRow<CnvRow> hr && ReferenceEquals(hr.Model, target))
             {
                 _source.RowSelection.Select(hr.ModelIndexPath);
+                if (bringIntoView)
+                {
+                    int idx = flat;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var row = _tree.TryGetRow(idx);
+                        row?.BringIntoView();
+                    }, DispatcherPriority.Loaded);
+                }
                 return;
             }
             flat++;
@@ -174,7 +200,7 @@ internal sealed class CnvTableEditor : UserControl
     }
 
     // ------------------------------------------------------------------
-    // 右键菜单 / 双击
+    // 右键菜单 / 双击 / 复制
     // ------------------------------------------------------------------
 
     private void ToggleMode()
@@ -195,8 +221,32 @@ internal sealed class CnvTableEditor : UserControl
         cm.Items.Add(TreeGridShared.Mi(L.T("节点属性", "Node Properties"), () => _ = EditNodeProps()));
         cm.Items.Add(TreeGridShared.Mi(L.LocStringTable, () => _locRequested?.Invoke()));
         cm.Items.Add(new Separator());
+        cm.Items.Add(TreeGridShared.Mi(L.T("复制单元格", "Copy Cell"), () => _ = CopyCell()));
+        cm.Items.Add(new Separator());
         cm.Items.Add(TreeGridShared.Mi(_comfortable ? L.T("平铺模式", "Flat Mode") : L.T("紧凑模式", "Compact Mode"), ToggleMode));
         return cm;
+    }
+
+    /// <summary>复制右键命中单元格的文本（先右键单元格，再选菜单复制）。</summary>
+    private async Task CopyCell()
+    {
+        if (_lastCell == null)
+        {
+            Gui.Warn(TreeGridShared.OwnerOf(this), L.T("请先右键点击要复制的单元格，再选“复制单元格”。"), L.T("复制", "Copy"));
+            return;
+        }
+        string? text = _lastCell.Value.Col switch
+        {
+            0 => _lastCell.Value.Row.Node,
+            1 => _lastCell.Value.Row.Attrs,
+            2 => _lastCell.Value.Row.Text,
+            3 => string.Join("\n", _lastCell.Value.Row.Cond.Select(l => l.Text)),
+            4 => string.Join("\n", _lastCell.Value.Row.Act.Select(l => l.Text)),
+            _ => null,
+        };
+        if (text == null) return;
+        var tl = TopLevel.GetTopLevel(this);
+        if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(text); } catch { } }
     }
 
     private async void OnCellDoubleTap(string tag)
@@ -258,7 +308,7 @@ internal sealed class CnvTableEditor : UserControl
         _source = BuildSource(roots);
         _tree.Source = _source;
         _source.ExpandAll();
-        if (roots.Count > 0) SelectRow(roots[0], bringIntoView: false);
+        // 默认不选定任何节点（用户指定）；子树高亮仅在真正选中后出现。
         SelectedChanged?.Invoke();
     }
 
@@ -275,9 +325,10 @@ internal sealed class CnvTableEditor : UserControl
         var owner = TreeGridShared.OwnerOf(this);
         var dlg = new CnvTypePicker();
         if (await dlg.ShowDialog<bool>(owner!) != true) return;
-        _cnv.InsertChild(anchor, dlg.Type);
+        var step = _cnv.InsertChild(anchor, dlg.Type);
         _changed();
         Bind(_doc, _changed);
+        SelectStep(step);   // 自动选定并滚动到新行
     }
 
     private void DeleteStep()

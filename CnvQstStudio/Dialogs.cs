@@ -43,6 +43,15 @@ internal static class DialogChrome
         return b;
     }
 
+    /// <summary>取消按钮：点击关闭窗口（ShowDialog 得到 false），Esc 同效。</summary>
+    public static Button Cancel(Window w, string? text = null)
+    {
+        var b = Button(text ?? L.Cancel);
+        b.IsCancel = true;
+        b.Click += (_, _) => w.Close();
+        return b;
+    }
+
     public static TextBlock Heading(string text) => new()
     {
         Text = text,
@@ -117,7 +126,7 @@ internal sealed class StringListDialog : Window
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) =>
         {
             Items = _list.Items.Cast<object?>().Select(o => o?.ToString() ?? "").ToList();
@@ -172,7 +181,7 @@ internal sealed class LuaParamsDialog : Window
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) => { Apply(); Close(true); };
 
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
@@ -241,7 +250,7 @@ internal sealed class NewConversationDialog : Window
 
         var ok = DialogChrome.Button(L.Create, primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(sp.Text))
@@ -308,7 +317,7 @@ internal sealed class NewQuestDialog : Window
 
         var ok = DialogChrome.Button(L.Create, primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(n.Text))
@@ -379,7 +388,7 @@ internal sealed class ImportTxtPreviewDialog : Window
             Margin = new Thickness(0, 0, 0, 8),
         };
 
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         var apply = DialogChrome.Button(L.T("应用回填"), primary: true, minWidth: 120);
         apply.IsEnabled = countOk;
         apply.Click += (_, _) =>
@@ -448,7 +457,7 @@ internal sealed class ScriptListDialog : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         _editor = new ScriptListEditor(_doc, _work, isCondition, () => { });
@@ -515,7 +524,7 @@ internal sealed class CnvNodeDialog : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
@@ -588,7 +597,7 @@ internal sealed class QuestPropsDialog : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
@@ -663,7 +672,7 @@ internal sealed class QstFieldsDialog : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };

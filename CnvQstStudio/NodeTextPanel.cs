@@ -9,7 +9,9 @@ namespace CnvQstStudio;
 
 /// <summary>
 /// 底部节点文本编辑器（官方编辑器风格：选中行后底部编辑，替代弹窗）：
-/// 第一栏 = 任务文件主语言文本；第二栏 = 文件内其它语言块的同一槽位（双语编辑）。
+/// 顶部 = Quest ID 行（仅 QST）；下方两栏左右并排 ——
+/// 左 = 任务文件主语言文本，右 = 文件内其它语言块的同一槽位（双语编辑）。
+/// 输入框自动换行，纵向滚动、无横向滚动条。
 /// </summary>
 internal sealed class NodeTextPanel : UserControl
 {
@@ -19,6 +21,7 @@ internal sealed class NodeTextPanel : UserControl
     private readonly TextBox _alt = NewBox();
     private readonly TextBlock _mainLabel = MkLabel("");
     private readonly TextBlock _altLabel = MkLabel("");
+    private readonly StackPanel _idHost;
     private DocSession? _doc;
     private int? _slot;
     private LanguageBlock? _altLang;
@@ -36,28 +39,25 @@ internal sealed class NodeTextPanel : UserControl
             if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(id); } catch { } }
         };
 
-        var idRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-        idRow.Children.Add(_questIdText);
-        idRow.Children.Add(_copyId);
+        _idHost = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+        _idHost.Children.Add(_questIdText);
+        _idHost.Children.Add(_copyId);
 
+        // 布局：id 行（跨两列）→ 标签行 → 两栏输入框（左右并排，填满剩余高度）
         var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        Place(_mainLabel, 0, 0);
-        Place(_main, 0, 1);
-        Place(_altLabel, 1, 0);
-        Place(_alt, 1, 1);
-        var idHost = new StackPanel { Orientation = Orientation.Horizontal };
-        idHost.Children.Add(idRow);
-        Place(idHost, 2, 1);
+        Place(_idHost, 0, 0, colSpan: 2);
+        Place(_mainLabel, 1, 0);
+        Place(_altLabel, 1, 1);
+        Place(_main, 2, 0, rightMargin: 4);
+        Place(_alt, 2, 1, leftMargin: 4);
 
-        var root = new StackPanel();
-        root.Children.Add(grid);
-        Content = root;
+        Content = grid;
 
         _main.TextChanged += (_, _) => OnEdited(_main, _doc?.PrimaryLanguage);
         _alt.TextChanged += (_, _) => OnEdited(_alt, _altLang);
@@ -66,20 +66,20 @@ internal sealed class NodeTextPanel : UserControl
     private static TextBox NewBox() => new()
     {
         AcceptsReturn = true,
-        TextWrapping = TextWrapping.Wrap,
-        MinHeight = 48,
-        MaxHeight = 96,
+        TextWrapping = TextWrapping.Wrap,   // 超长自动换行；纵向滚动由 TextBox 内建，无横向滚动条
     };
 
-    private static TextBlock MkLabel(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 8, 0) };
+    private static TextBlock MkLabel(string text) => new() { Text = text, Margin = new Thickness(0, 0, 0, 2) };
 
     private Grid _grid = null!;
 
-    private void Place(Control e, int row, int col)
+    private void Place(Control e, int row, int col, int colSpan = 0, int rightMargin = 0, int leftMargin = 0)
     {
         e.SetValue(Grid.RowProperty, row);
         e.SetValue(Grid.ColumnProperty, col);
-        if (e is TextBox) e.Margin = new Thickness(0, 2, 0, 2);
+        if (colSpan > 0) Grid.SetColumnSpan(e, colSpan);
+        var m = new Thickness(leftMargin, 0, rightMargin, 0);
+        e.Margin = m;
         _grid.Children.Add(e);
     }
 
@@ -94,13 +94,11 @@ internal sealed class NodeTextPanel : UserControl
         if (doc?.Qst != null)
         {
             _questIdText.Text = "Quest ID: " + doc.Qst.Id;
-            _questIdText.IsVisible = true;
-            _copyId.IsVisible = true;
+            _idHost.IsVisible = true;
         }
         else
         {
-            _questIdText.IsVisible = false;
-            _copyId.IsVisible = false;
+            _idHost.IsVisible = false;
         }
 
         if (doc == null || slot == null)

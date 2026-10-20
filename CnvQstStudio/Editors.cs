@@ -271,7 +271,7 @@ internal sealed class ScriptRecordDialog : Window
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Button(L.Cancel);
+        var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };

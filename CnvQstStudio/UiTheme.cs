@@ -27,6 +27,9 @@ internal static class UiTheme
 
     public static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas, Courier New");
 
+    /// <summary>表格网格线（横竖分隔）。</summary>
+    public static readonly IBrush GridLineBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0));
+
     /// <summary>选中行 / 子树高亮底色（Indigo 浅底，与旧版一致）。</summary>
     public static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(38, 0x3F, 0x51, 0xB5));
 }
