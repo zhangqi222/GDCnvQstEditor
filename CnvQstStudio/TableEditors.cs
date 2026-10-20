@@ -1,12 +1,9 @@
 using System.ComponentModel;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Markup;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
 using CnvQst;
-using MaterialDesignThemes.Wpf;
 
 namespace CnvQstStudio;
 
@@ -21,16 +18,16 @@ internal static class TableLayout
 internal sealed class ColoredLine
 {
     public string Text { get; }
-    public Brush Brush { get; }
+    public IBrush Brush { get; }
 
     public ColoredLine(string text, bool unknown, bool inferred)
     {
         Text = text;
-        Brush = unknown ? WpfTheme.UnknownBrush : inferred ? WpfTheme.InferredBrush : WpfTheme.TextBrush;
+        Brush = unknown ? UiTheme.UnknownBrush : inferred ? UiTheme.InferredBrush : UiTheme.TextBrush;
     }
 }
 
-/// <summary>CNV 节点的界面名（树型列表第一列：类型徽标 + 文本摘要）。</summary>
+/// <summary>CNV 节点的界面名（树形表格第一列：类型徽标 + 文本摘要，层次由缩进表达）。</summary>
 internal static class CnvNodeLabel
 {
     /// <summary>节点类型的界面名（中文基准，走语言包），带官方风格的图标前缀。</summary>
@@ -40,7 +37,7 @@ internal static class CnvNodeLabel
         5 => "🔹 通用", 6 => "🛑 结束对话", 7 => "↪ 跳转", 8 => "🎲 随机选项", _ => "❓ 未知类型",
     });
 
-    /// <summary>树型表用：类型名 + 文本摘要（层级由控件的层级缩进表达）。</summary>
+    /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
     public static string TreeLabel(CnvFile c, CnvStep s)
     {
         string label = KindZh(s.Type);
@@ -55,31 +52,29 @@ internal static class CnvNodeLabel
     }
 }
 
-// 行模型与所有者（同前）
-internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
+// ---------------------------------------------------------------------------
+// 行模型（父子 + 展开态；INPC 用于编辑后单行刷新）
+// ---------------------------------------------------------------------------
+
+internal sealed class CnvRow : INotifyPropertyChanged
 {
     private readonly CnvTableEditor _editor;
-    private bool _highlight;
     public DocSession Doc { get; }
     public CnvStep Step { get; }
 
     public CnvRow? Parent { get; private set; }
     public List<CnvRow> Children { get; } = new();
+    public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
 
+    private bool _highlight;
     public bool Highlight
     {
         get => _highlight;
-        set
-        {
-            if (_highlight == value) return;
-            _highlight = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight)));
-        }
+        set { if (_highlight != value) { _highlight = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight))); } }
     }
 
     public string Node { get; private set; } = "";
-    public Brush NodeBrush => WpfTheme.TextBrush;
     public string Attrs { get; private set; } = "";
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
@@ -142,6 +137,11 @@ internal sealed class CnvRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
     }
 }
 
+/// <summary>
+/// QST 行所有者（层级对齐官方 QuestEditor：
+/// 组名根 → 任务名 → task → OnAccept/Objectives/OnComplete 组 → 事件/目标）。
+/// 文本（组名/任务名/标题/描述/目标）从串表槽位动态读取，编辑后自动刷新。
+/// </summary>
 internal abstract class QstRowOwner
 {
     public abstract object OwnerObject { get; }
@@ -151,8 +151,10 @@ internal abstract class QstRowOwner
     public abstract ScriptList? Actions { get; }
     public virtual bool CanDelete => false;
     public virtual string SubText => "";
-    public virtual Brush NodeBrush => WpfTheme.TextBrush;
+    public virtual IBrush NodeBrush => UiTheme.TextBrush;
+    /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
     public virtual string IdText => "";
+    /// <summary>本行在本地化串表中的文本槽位（null = 该行无对应文本）。</summary>
     public virtual int? TextSlot => null;
 
     protected static string SlotText(QstFile q, int slot)
@@ -162,6 +164,7 @@ internal abstract class QstRowOwner
     }
 }
 
+/// <summary>根行：任务组名（官方红色圆点图标；文本=串表槽 0）。</summary>
 internal sealed class QstRootOwner(QstFile q) : QstRowOwner
 {
     public override object OwnerObject => this;
@@ -170,9 +173,10 @@ internal sealed class QstRootOwner(QstFile q) : QstRowOwner
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override int? TextSlot => 0;
-    public override Brush NodeBrush => WpfTheme.DangerBrush;
+    public override IBrush NodeBrush => UiTheme.DangerBrush;
 }
 
+/// <summary>任务名行（官方黄旗；文本=串表槽 1；双击编辑 quest 头部与组名/任务名）。</summary>
 internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
 {
     public QstFile Q => q;
@@ -183,19 +187,21 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
     public override ScriptList? Actions => null;
     public override string IdText => q.Id.ToString();
     public override int? TextSlot => 1;
-    public override Brush NodeBrush => WpfTheme.AccentBrush;
+    public override IBrush NodeBrush => UiTheme.AccentBrush;
 }
 
-internal sealed class QstGroupOwner(string label, Brush brush) : QstRowOwner
+/// <summary>OnAccept / Objectives / OnComplete 组行（仅折叠分组，无脚本内容）。</summary>
+internal sealed class QstGroupOwner(string label, IBrush brush) : QstRowOwner
 {
     public override object OwnerObject => this;
     public override string NodeLabel => label;
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
-    public override Brush NodeBrush => brush;
+    public override IBrush NodeBrush => brush;
 }
 
+/// <summary>task 行：图标 + [N] 标题（串表标题槽），副文本为描述（标题槽+1）。</summary>
 internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOwner
 {
     public QstTask T => t;
@@ -211,13 +217,7 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public override string IdText => t.UnknownA8.ToString();
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
 
-    internal static int TitleSlotOf(QstFile q, int ti)
-    {
-        int s = 2;
-        for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count;
-        return s;
-    }
-
+    internal static int TitleSlotOf(QstFile q, int ti) { int s = 2; for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count; return s; }
     internal static string Label(QstFile q, int ti, bool desc = false)
     {
         int s = TitleSlotOf(q, ti) + (desc ? 1 : 0);
@@ -236,6 +236,7 @@ internal sealed class QstEventRow(QstFile q, QstTask ownerTask, QstEvent e, int 
     public override ScriptList? Conditions => e.Conditions;
     public override ScriptList? Actions => e.Actions;
     public override bool CanDelete => true;
+    // 事件本身没有落盘 uid（官方运行时分配）；flags 非 0 时在此提示
     public override string IdText => e.Unknown != 0 ? L.F("flags {0}", e.Unknown) : "";
     public override int? TextSlot => slot;
 }
@@ -250,35 +251,31 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override ScriptList? Conditions => o.Conditions;
     public override ScriptList? Actions => o.Actions;
     public override bool CanDelete => true;
+    // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显
     public override string IdText => o.Unknown0.ToString();
     public override int? TextSlot => slot;
 }
 
-internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
+internal sealed class QstRow : INotifyPropertyChanged
 {
     private readonly QstTableEditor _editor;
-    private bool _highlight;
     public QstRowOwner Owner { get; }
 
     public QstRow? Parent { get; private set; }
     public List<QstRow> Children { get; } = new();
+    public bool HasChildren => Children.Count > 0;
     public bool IsExpanded { get; set; } = true;
 
+    private bool _highlight;
     public bool Highlight
     {
         get => _highlight;
-        set
-        {
-            if (_highlight == value) return;
-            _highlight = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight)));
-        }
+        set { if (_highlight != value) { _highlight = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight))); } }
     }
 
     public string Node { get; private set; }
     public string SubText { get; private set; }
-    public System.Windows.Visibility SubTextVisibility => string.IsNullOrEmpty(SubText) ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-    public Brush NodeBrush { get; private set; }
+    public IBrush NodeBrush { get; private set; }
     public string IdText { get; private set; }
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
@@ -292,6 +289,7 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         Node = owner.NodeLabel;
         IdText = owner.IdText;
         NodeBrush = owner.NodeBrush;
+        SubText = owner.SubText;
         Reload();
     }
 
@@ -301,6 +299,7 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         parent.Children.Add(this);
     }
 
+    /// <summary>刷新标签（Node/SubText/IdText/脚本列）——不动 Text，避免文本列编辑期间回环。</summary>
     public void Reload()
     {
         Node = Owner.NodeLabel;
@@ -309,8 +308,34 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         NodeBrush = Owner.NodeBrush;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(SubTextVisibility), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
+    }
+
+    /// <summary>本行串表文本（本地化文本列；可编辑，写回后同步主行标签）。</summary>
+    public string Text
+    {
+        get
+        {
+            int? slot = Owner.TextSlot;
+            if (slot == null) return "";
+            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
+            return lang != null && slot.Value >= 0 && slot.Value < lang.Texts.Count
+                ? TableLayout.Display(lang.Texts[slot.Value].Text) : "";
+        }
+        set
+        {
+            int? slot = Owner.TextSlot;
+            if (slot == null) return;
+            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
+            if (lang == null || slot.Value >= lang.Texts.Count) return;
+            lang.Texts[slot.Value].SetText(TableLayout.Stored(value));
+            Node = Owner.NodeLabel;
+            SubText = Owner.SubText;
+            foreach (string p in new[] { nameof(Node), nameof(SubText) })
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
+            _editor.NotifyEdited();
+        }
     }
 
     private static List<ColoredLine> ScriptLines(ScriptList list)
@@ -325,56 +350,34 @@ internal sealed class QstRow : INotifyPropertyChanged, WpfTheme.HighlightableRow
         return lines;
     }
 }
+
 // ---------------------------------------------------------------------------
-// 编辑器（MaterialDesign TreeListView：控件自带层级缩进与展开钮）
+// 树形表格共享辅助（TreeDataGrid 版）
 // ---------------------------------------------------------------------------
+
+/// <summary>Highlight=true → 行/单元格高亮底色（子树随选中行同色）。</summary>
+internal sealed class HighlightToBrushConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        value is true ? UiTheme.HighlightBrush : Brushes.Transparent;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}
 
 internal static class TreeGridShared
 {
-    public static Style MkContainerStyle()
-    {
-        var style = new Style(typeof(TreeListViewItem));
-        var implicitStyle = Application.Current.TryFindResource(typeof(TreeListViewItem)) as Style
-            ?? Application.Current.TryFindResource("MaterialDesignTreeListViewItem") as Style;
-        if (implicitStyle != null) style.BasedOn = implicitStyle;
-        style.Setters.Add(new Setter(System.Windows.Controls.Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
-        return style;
-    }
+    public static readonly HighlightToBrushConverter HighlightToBrush = new();
 
-    public static FrameworkElement MkHeader((string, double)[] columns)
-    {
-        var g = new Grid { Margin = new Thickness(24, 2, 18, 2) };
-        foreach (var (title, w) in columns)
-        {
-            g.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
-        }
-        for (int i = 0; i < columns.Length; i++)
-        {
-            var tb = new TextBlock
-            {
-                Text = columns[i].Item1,
-                FontWeight = FontWeights.Medium,
-                Foreground = WpfTheme.MutedBrush,
-                Margin = new Thickness(2, 0, 8, 0),
-            };
-            tb.SetValue(Grid.ColumnProperty, i);
-            g.Children.Add(tb);
-        }
-        return new Border
-        {
-            BorderBrush = WpfTheme.MutedBrush,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = g,
-            Margin = new Thickness(0, 2, 0, 2),
-        };
-    }
+    // 列宽（供 Cnv/Qst 两表共用，保证两文档视图布局一致）
+    public const double ColNode = 300;
+    public const double ColAttrs = 140;
+    public const double ColText = 280;
+    public const double ColCond = 230;
+    public const double ColAct = 230;
+
+    public static Window? OwnerOf(Visual c) => TopLevel.GetTopLevel(c) as Window;
 
     public static MenuItem Mi(string header, Action onClick) =>
         new() { Header = header, Command = new RelayCommand(onClick) };
-
-    public static T? FindAncestor<T>(DependencyObject? d) where T : System.Windows.Media.Visual
-    {
-        while (d != null && d is not T) d = System.Windows.Media.VisualTreeHelper.GetParent(d);
-        return d as T;
-    }
 }

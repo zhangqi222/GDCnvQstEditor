@@ -1,7 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Threading;
 using CnvQst;
 using CnvQst.Cli;
 
@@ -17,7 +18,6 @@ internal static class Program
 
     private const int AttachParentProcess = -1;
 
-    [STAThread]
     private static int Main(string[] args)
     {
         // 无参数（或显式 gui）→ 图形界面；--smoke → 建窗即关（CI/回归用）；带参数 → CLI。
@@ -27,9 +27,8 @@ internal static class Program
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
 
             // 两层 UI：先启动界面（编辑器 / 批量转换），选择后进入对应窗口。
-            var app = new Application { ShutdownMode = ShutdownMode.OnLastWindowClose };
-            WpfTheme.Init(app);
-            app.DispatcherUnhandledException += (_, e) =>
+            var app = BuildApp();
+            Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
                 ShowFatal(e.Exception);
                 e.Handled = true;
@@ -44,15 +43,22 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--smoke")
             return RunSmoke();
 
-        if (args.Length == 2 && args[0] == "--treedbg")
-            return RunTreeDebug(args[1]);
-
         if (args.Length == 1 && args[0] is "--help" or "-h" or "help")
         {
             args = ["help"];
         }
 
         return RunCli(args);
+    }
+
+    /// <summary>构建 Avalonia 应用（Semi.Avalonia 主题），不启动生命周期。</summary>
+    private static Application BuildApp()
+    {
+        var builder = AppBuilder.Configure<StudioApp>().UsePlatformDetect();
+        builder.SetupWithoutStarting();
+        var app = builder.Instance!;
+        app.Name = "CnvQstStudio";
+        return app;
     }
 
     /// <summary>
@@ -72,10 +78,9 @@ internal static class Program
             L.Load();
             CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
 
-            var app = new Application { ShutdownMode = ShutdownMode.OnLastWindowClose };
-            WpfTheme.Init(app);
+            var app = BuildApp();
             Exception? failure = null;
-            app.DispatcherUnhandledException += (_, e) =>
+            Dispatcher.UIThread.UnhandledException += (_, e) =>
             {
                 failure = e.Exception;
                 Console.WriteLine("UI 冒烟失败：" + e.Exception);
@@ -90,6 +95,9 @@ internal static class Program
                 {
                     var editor = new MainWindow();
                     editor.Show();
+                    // 冒烟增强：用内存新建文档各开一页，实际构建 CNV/QST 两个 TreeDataGrid 表格。
+                    editor.OpenSmokeTab(Creation.NewConversation("Smoke", "你好，冒烟测试。", "再见。"));
+                    editor.OpenSmokeTab(Creation.NewQuest("SmokeGroup", "SmokeQuest", "任务一", "这是冒烟测试任务。"));
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
                     timer.Tick += (_, _) => { timer.Stop(); editor.Close(); launcher.Close(); };
                     timer.Start();
@@ -121,87 +129,30 @@ internal static class Program
         }
     }
 
-    /// <summary>临时诊断：绑定 qst 文件后检查树形模板内 spacer 宽度绑定是否生效。</summary>
-    private static int RunTreeDebug(string qstPath)
-    {
-        bool attached = AttachConsole(AttachParentProcess);
-        if (attached)
-        {
-            try { Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), Encoding.UTF8) { AutoFlush = true }); }
-            catch { }
-        }
-        try
-        {
-            L.Load();
-            var app = new Application();
-            WpfTheme.Init(app);
-            app.DispatcherUnhandledException += (_, e) => { Console.WriteLine("ERR: " + e.Exception); e.Handled = true; };
-            var win = new Window { Width = 1200, Height = 700 };
-            var editor = new QstTableEditor();
-            win.Content = editor;
-            var doc = DocSession.Open(qstPath);
-            editor.Bind(doc, () => { });
-            win.Loaded += (_, _) =>
-            {
-                var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
-                timer.Tick += (_, _) =>
-                {
-                    timer.Stop();
-                    Walk(win, "");
-                    win.Close();
-                };
-                timer.Start();
-            };
-
-            app.Run(win);
-
-            if (attached) FreeConsole();
-            return 0;
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine("TREEDBG 异常：" + e);
-            if (attached) FreeConsole();
-            return 1;
-        }
-
-        static void Walk(DependencyObject d, string path)
-        {
-            int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(d);
-            for (int i = 0; i < n; i++)
-            {
-                var child = System.Windows.Media.VisualTreeHelper.GetChild(d, i);
-                if (child is MaterialDesignThemes.Wpf.TreeListViewItem item && item.DataContext is QstRow row)
-                {
-                    var t = typeof(MaterialDesignThemes.Wpf.TreeListViewItem);
-                    var tl = t.GetField("TreeListView", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(item);
-                    var cp = item.Template?.FindName("PART_ContentPresenter", item);
-                    var presenterTemplate = cp?.GetType().GetProperty("Template")?.GetValue(cp) != null;
-                    Console.WriteLine($"{path}TreeItem Level={item.Level} IsExpanded={item.IsExpanded} HasItems={item.HasItems} TreeListView={(tl != null)} PresenterTemplate={presenterTemplate} Node={row.Node}");
-                }
-                Walk(child, path + "/");
-            }
-        }
-    }
-
-    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退），用户点“确定”后继续操作。</summary>
+    /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退）。</summary>
     private static void ShowFatal(Exception? ex)
     {
         if (ex == null) return;
+        string log = "";
         try
         {
-            string log = Path.Combine(Path.GetTempPath(), "CnvQstStudio_crash.log");
+            log = Path.Combine(Path.GetTempPath(), "CnvQstStudio_crash.log");
             File.AppendAllText(log, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
-            string msg = ex.ToString();
-            MessageBox.Show(
-                "程序遇到未预期的错误：\n\n" + (msg.Length > 1200 ? msg[..1200] + "…（详见 " + log + "）" : msg) + "\n\n" + log,
-                "CnvQstStudio 错误",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
         }
         catch
         {
-            // 日志/弹框失败也不能再引发新的崩溃
+            // 日志失败也不能再引发新的崩溃
+        }
+        try
+        {
+            string msg = ex.ToString();
+            _ = MsgBox.Show(null,
+                "程序遇到未预期的错误：\n\n" + (msg.Length > 1200 ? msg[..1200] + "…（详见 " + log + "）" : msg) + "\n\n" + log,
+                "CnvQstStudio 错误", MsgButtons.Ok, warning: true);
+        }
+        catch
+        {
+            // 弹框失败也不能再引发新的崩溃
         }
     }
 

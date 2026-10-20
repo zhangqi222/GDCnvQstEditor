@@ -1,0 +1,10 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="CnvQstStudio.StudioApp">
+  <Application.Styles>
+    <!-- Semi.Avalonia 主题系（控件 / DataGrid / TreeDataGrid） -->
+    <StyleInclude Source="avares://Semi.Avalonia/Index.axaml" />
+    <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
+    <StyleInclude Source="avares://Semi.Avalonia.TreeDataGrid/Index.axaml" />
+  </Application.Styles>
+</Application>

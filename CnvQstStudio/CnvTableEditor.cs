@@ -1,14 +1,19 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using System.Windows.Markup;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Models.TreeDataGrid;
+using Avalonia.Controls.Selection;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.VisualTree;
 using CnvQst;
-using MaterialDesignThemes.Wpf;
 
 namespace CnvQstStudio;
 
-/// <summary>CNV 树型列表：节点(树) | 属性 | 本地化文本 | 条件 | 动作。</summary>
+/// <summary>CNV 树型表格（Semi TreeDataGrid）：节点(树) | 属性 | 本地化文本 | 条件 | 动作。</summary>
 internal sealed class CnvTableEditor : UserControl
 {
     private DocSession _doc = null!;
@@ -17,155 +22,206 @@ internal sealed class CnvTableEditor : UserControl
     private Action? _locRequested;
     private bool _comfortable;
     private List<CnvRow> _rows = new();
-
-    private readonly WorkingTreeListView _list = new()
-    {
-        HorizontalContentAlignment = HorizontalAlignment.Stretch,
-        Background = Brushes.Transparent,
-        BorderThickness = new Thickness(0),
-    };
+    private TreeDataGrid _tree = null!;
+    private HierarchicalTreeDataGridSource<CnvRow> _source = null!;
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
     public event Action? SelectedChanged;
 
+    public DocSession Doc => _doc;
     public int? SelectedTextSlot => SelectedStep?.Index;
 
     public CnvTableEditor()
     {
-        var header = TreeGridShared.MkHeader(new[] { (L.T("节点", "Node"), 320d), (L.T("属性", "Attrs"), 150d), (L.T("本地化文本", "Localized Text"), 0d), (L.T("条件", "Conditions"), 280d), (L.T("动作", "Actions"), 280d) });
-
-        _list.ItemTemplate = BuildTemplate(compact: true);
-        _list.ItemContainerStyle = TreeGridShared.MkContainerStyle();
-        _list.SelectionChanged += (_, _) => { UpdateHighlight(); SelectedChanged?.Invoke(); };
-        _list.MouseDoubleClick += OnDoubleClick;
-        _list.PreviewMouseRightButtonDown += ListRightDown;
-        _list.ContextMenu = BuildContextMenu();
-
-        var root = new DockPanel();
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
-        root.Children.Add(_list);
-        Content = root;
+        _tree = new TreeDataGrid { CanUserResizeColumns = true };
+        // 右键点击 → 先选中该行（右键菜单语义与左键一致）
+        _tree.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
+        _tree.ContextMenu = BuildContextMenu();
+        Content = _tree;
     }
 
-    private DataTemplate BuildTemplate(bool compact)
+    private CnvStep? SelectedStep => _source?.RowSelection.SelectedItem is CnvRow r ? r.Step : null;
+
+    // ------------------------------------------------------------------
+    // 模板
+    // ------------------------------------------------------------------
+
+    private static FuncDataTemplate<CnvRow> CellBorder(Action<Border> build, Action<string>? onDoubleTap = null, string? tapTag = null) => new((_, _) =>
     {
-        int maxLines = compact ? 3 : 100000;
-        const string xaml = """
-<HierarchicalDataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                           xmlns:md="clr-namespace:MaterialDesignThemes.Wpf;assembly=MaterialDesignThemes.Wpf"
-                           ItemsSource="{Binding Children}">
-  <Grid Background="Transparent">
-    <Grid.Style>
-      <Style TargetType="Grid">
-        <Style.Triggers>
-          <DataTrigger Binding="{Binding Highlight}" Value="True">
-            <Setter Property="Background" Value="#263F51B5"/>
-          </DataTrigger>
-        </Style.Triggers>
-      </Style>
-    </Grid.Style>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="320"/>
-      <ColumnDefinition Width="150"/>
-      <ColumnDefinition Width="*"/>
-      <ColumnDefinition Width="280"/>
-      <ColumnDefinition Width="280"/>
-    </Grid.ColumnDefinitions>
-    <Border Grid.Column="1" Width="1" HorizontalAlignment="Left" Background="#E0E0E0" Margin="-2,0,0,0"/>
-    <Border Grid.Column="2" Width="1" HorizontalAlignment="Left" Background="#E0E0E0" Margin="-2,0,0,0"/>
-    <Border Grid.Column="3" Width="1" HorizontalAlignment="Left" Background="#E0E0E0" Margin="-2,0,0,0"/>
-    <Border Grid.Column="4" Width="1" HorizontalAlignment="Left" Background="#E0E0E0" Margin="-2,0,0,0"/>
-    <Border Grid.ColumnSpan="5" VerticalAlignment="Bottom" Height="1" Background="#E0E0E0"/>
-    <TextBlock Tag="0" Grid.Column="0" Text="{Binding Node}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,3,8,3" Foreground="{Binding NodeBrush}"/>
-    <TextBlock Tag="1" Grid.Column="1" Text="{Binding Attrs}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="2,3,8,3" Foreground="#6B7280"/>
-    <TextBlock Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" VerticalAlignment="Top" Margin="2,3,8,3" MaxHeight="__MAXH__">
-      <TextBlock.Style>
-        <Style TargetType="TextBlock">
-          <Style.Triggers>
-            <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType={x:Type md:TreeListViewItem}}}" Value="True">
-              <Setter Property="MaxHeight" Value="10000"/>
-            </DataTrigger>
-          </Style.Triggers>
-        </Style>
-      </TextBlock.Style>
-    </TextBlock>
-    <ItemsControl Tag="3" Grid.Column="3" ItemsSource="{Binding Cond}" IsTabStop="False" Margin="2,3,8,3">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-    <ItemsControl Tag="4" Grid.Column="4" ItemsSource="{Binding Act}" IsTabStop="False" Margin="2,3,8,3">
-      <ItemsControl.ItemTemplate>
-        <DataTemplate><TextBlock Text="{Binding Text}" Foreground="{Binding Brush}" TextWrapping="Wrap"/></DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
-  </Grid>
-</HierarchicalDataTemplate>
-""";
-        return (HierarchicalDataTemplate)XamlReader.Parse(xaml.Replace("__MAXH__", maxLines.ToString()));
+        var border = new Border { Background = Brushes.Transparent, Padding = new Thickness(2, 3, 8, 3) };
+        border.Bind(Border.BackgroundProperty, new Binding(nameof(CnvRow.Highlight)) { Converter = TreeGridShared.HighlightToBrush });
+        build(border);
+        if (tapTag != null && onDoubleTap != null)
+        {
+            string tag = tapTag;
+            border.DoubleTapped += (_, e) => { e.Handled = true; onDoubleTap(tag); };
+        }
+        return border;
+    });
+
+    private static FuncDataTemplate<ColoredLine> LineTemplate() => new((line, _) =>
+    {
+        var tb = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        tb.Bind(TextBlock.TextProperty, new Binding(nameof(ColoredLine.Text)));
+        tb.Bind(TextBlock.ForegroundProperty, new Binding(nameof(ColoredLine.Brush)));
+        return tb;
+    });
+
+    private HierarchicalTreeDataGridSource<CnvRow> BuildSource(List<CnvRow> roots)
+    {
+        var s = new HierarchicalTreeDataGridSource<CnvRow>(roots)
+        {
+            Columns =
+            {
+                new HierarchicalExpanderColumn<CnvRow>(
+                    new TemplateColumn<CnvRow>(L.T("节点", "Node"),
+                        CellBorder(b =>
+                        {
+                            var node = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.TextBrush };
+                            node.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Node)));
+                            b.Child = node;
+                        }, OnCellDoubleTap, "0"),
+                        width: new GridLength(TreeGridShared.ColNode)),
+                    r => r.Children, r => r.HasChildren, r => r.IsExpanded),
+                new TemplateColumn<CnvRow>(L.T("属性", "Attrs"),
+                    CellBorder(b =>
+                    {
+                        var tb = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                        tb.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Attrs)));
+                        b.Child = tb;
+                    }, OnCellDoubleTap, "1"),
+                    width: new GridLength(TreeGridShared.ColAttrs)),
+                new TemplateColumn<CnvRow>(L.T("本地化文本", "Localized Text"),
+                    CellBorder(b =>
+                    {
+                        var tb = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                        tb.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Text)));
+                        if (!_comfortable) tb.MaxHeight = 54;
+                        b.Child = tb;
+                    }, OnCellDoubleTap, "2"),
+                    width: new GridLength(TreeGridShared.ColText)),
+                new TemplateColumn<CnvRow>(L.T("条件", "Conditions"),
+                    CellBorder(b =>
+                    {
+                        var items = new ItemsControl();
+                        items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(CnvRow.Cond)));
+                        items.ItemTemplate = LineTemplate();
+                        b.Child = items;
+                    }, OnCellDoubleTap, "3"),
+                    width: new GridLength(TreeGridShared.ColCond)),
+                new TemplateColumn<CnvRow>(L.T("动作", "Actions"),
+                    CellBorder(b =>
+                    {
+                        var items = new ItemsControl();
+                        items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(CnvRow.Act)));
+                        items.ItemTemplate = LineTemplate();
+                        b.Child = items;
+                    }, OnCellDoubleTap, "4"),
+                    width: new GridLength(TreeGridShared.ColAct)),
+            },
+        };
+        s.RowSelection.SingleSelect = true;
+        s.RowSelection.SelectionChanged += (_, _) => { UpdateHighlight(); SelectedChanged?.Invoke(); };
+        return s;
     }
+
+    // ------------------------------------------------------------------
+    // 选择 / 高亮
+    // ------------------------------------------------------------------
+
+    private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(_tree).Properties.IsRightButtonPressed) return;
+        var visual = e.Source as Visual;
+        foreach (var anc in visual.GetSelfAndVisualAncestors())
+        {
+            if (anc is Control c && _tree.TryGetRowModel(c, out CnvRow? row) && row != null)
+            {
+                SelectRow(row, bringIntoView: false);
+                break;
+            }
+        }
+    }
+
+    /// <summary>按模型选行：遍历平面行定位 IndexPath 后 Select。</summary>
+    private void SelectRow(CnvRow target, bool bringIntoView)
+    {
+        if (_source == null) return;
+        int flat = 0;
+        foreach (var r in _source.Rows)
+        {
+            if (r is HierarchicalRow<CnvRow> hr && ReferenceEquals(hr.Model, target))
+            {
+                _source.RowSelection.Select(hr.ModelIndexPath);
+                return;
+            }
+            flat++;
+        }
+    }
+
+    private void UpdateHighlight()
+    {
+        foreach (var r in _rows) r.Highlight = false;
+        if (_source?.RowSelection.SelectedItem is CnvRow sel)
+            WalkHi(sel);
+        return;
+
+        void WalkHi(CnvRow r)
+        {
+            r.Highlight = true;
+            foreach (var c in r.Children) WalkHi(c);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 右键菜单 / 双击
+    // ------------------------------------------------------------------
 
     private void ToggleMode()
     {
         _comfortable = !_comfortable;
-        _list.ItemTemplate = BuildTemplate(_comfortable);
+        Bind(_doc, _changed);
     }
 
     private ContextMenu BuildContextMenu()
     {
         var cm = new ContextMenu();
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋添加子节点", "+ Add Child"), AddChild));
+        cm.Items.Add(TreeGridShared.Mi(L.T("＋添加子节点", "+ Add Child"), () => _ = AddChild()));
         cm.Items.Add(TreeGridShared.Mi(L.T("－删除子树", "- Delete"), DeleteStep));
         cm.Items.Add(new Separator());
         cm.Items.Add(TreeGridShared.Mi("↑ " + L.T("上移", "Up"), () => MoveStep(-1)));
         cm.Items.Add(TreeGridShared.Mi("↓ " + L.T("下移", "Down"), () => MoveStep(1)));
         cm.Items.Add(new Separator());
-        cm.Items.Add(TreeGridShared.Mi(L.T("节点属性", "Node Properties"), EditNodeProps));
+        cm.Items.Add(TreeGridShared.Mi(L.T("节点属性", "Node Properties"), () => _ = EditNodeProps()));
         cm.Items.Add(TreeGridShared.Mi(L.LocStringTable, () => _locRequested?.Invoke()));
         cm.Items.Add(new Separator());
         cm.Items.Add(TreeGridShared.Mi(_comfortable ? L.T("平铺模式", "Flat Mode") : L.T("紧凑模式", "Compact Mode"), ToggleMode));
         return cm;
     }
 
-    private void ListRightDown(object sender, MouseButtonEventArgs e)
+    private async void OnCellDoubleTap(string tag)
     {
-        var item = TreeGridShared.FindAncestor<TreeListViewItem>(e.OriginalSource as DependencyObject);
-        if (item != null) item.IsSelected = true;
-    }
-
-    private void OnDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        string? tag = null;
-        var d = e.OriginalSource as DependencyObject;
-        while (d != null)
-        {
-            if (d is FrameworkElement fe && fe.Tag is string t) { tag = t; break; }
-            d = System.Windows.Media.VisualTreeHelper.GetParent(d);
-        }
-        if (tag == null) return;
         var s = SelectedStep;
         if (s == null) return;
         if (tag == "3")
         {
-            if (ScriptListDialog.Show(_doc, s.Conditions, true, Window.GetWindow(this))) RefreshSelected();
+            if (await ScriptListDialog.Show(_doc, s.Conditions, true, TreeGridShared.OwnerOf(this))) RefreshSelected();
         }
         else if (tag == "4")
         {
-            if (ScriptListDialog.Show(_doc, s.Actions, false, Window.GetWindow(this))) RefreshSelected();
+            if (await ScriptListDialog.Show(_doc, s.Actions, false, TreeGridShared.OwnerOf(this))) RefreshSelected();
         }
-        else if (tag is "0" or "1")
+        else if (tag is "0" or "1" or "2")
         {
-            EditNodeProps();
+            await EditNodeProps();
         }
     }
 
-    private void EditNodeProps()
+    private async Task EditNodeProps()
     {
         var s = SelectedStep;
         if (s == null) return;
-        if (CnvNodeDialog.Show(_doc, s, Window.GetWindow(this)))
+        if (await CnvNodeDialog.Show(_doc, s, TreeGridShared.OwnerOf(this)))
         {
             RefreshSelected();
             _changed();
@@ -174,7 +230,7 @@ internal sealed class CnvTableEditor : UserControl
 
     private void RefreshSelected()
     {
-        if (_list.SelectedItem is CnvRow r) r.Reload();
+        if (_source?.RowSelection.SelectedItem is CnvRow r) r.Reload();
     }
 
     public void NotifyEdited()
@@ -198,55 +254,27 @@ internal sealed class CnvTableEditor : UserControl
                 if (byStep.TryGetValue(childStep, out var child)) child.Attach(row);
         }
 
-        _list.ItemsSource = _rows.Where(r => r.Parent == null).ToList();
-        if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        var roots = _rows.Where(r => r.Parent == null).ToList();
+        _source = BuildSource(roots);
+        _tree.Source = _source;
+        _source.ExpandAll();
+        if (roots.Count > 0) SelectRow(roots[0], bringIntoView: false);
         SelectedChanged?.Invoke();
-    }
-
-    private CnvStep? SelectedStep => _list.SelectedItem is CnvRow r ? r.Step : null;
-
-    private void UpdateHighlight()
-    {
-        foreach (var r in _rows) r.Highlight = false;
-        if (_list.SelectedItem is CnvRow sel)
-            WalkHi(sel);
-        return;
-
-        void WalkHi(CnvRow r)
-        {
-            r.Highlight = true;
-            foreach (var c in r.Children) WalkHi(c);
-        }
     }
 
     public void SelectStep(CnvStep s)
     {
         var row = _rows.FirstOrDefault(r => ReferenceEquals(r.Step, s));
-        if (row == null) return;
-        var path = new List<CnvRow>();
-        for (var r = row; r != null; r = r.Parent) path.Insert(0, r);
-        var gen = _list.ItemContainerGenerator;
-        for (int i = 0; i < path.Count; i++)
-        {
-            if (gen.ContainerFromItem(path[i]) is not TreeListViewItem container) return;
-            if (i == path.Count - 1)
-            {
-                _list.SelectedItem = path[i];
-                _list.ScrollIntoView(path[i]);
-            }
-            else if (!container.IsExpanded)
-            {
-                container.IsExpanded = true;
-            }
-        }
+        if (row != null) SelectRow(row, bringIntoView: true);
     }
 
-    private void AddChild()
+    private async Task AddChild()
     {
         var anchor = SelectedStep;
         if (anchor == null) return;
-        var dlg = new CnvTypePicker { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true) return;
+        var owner = TreeGridShared.OwnerOf(this);
+        var dlg = new CnvTypePicker();
+        if (await dlg.ShowDialog<bool>(owner!) != true) return;
         _cnv.InsertChild(anchor, dlg.Type);
         _changed();
         Bind(_doc, _changed);
@@ -258,7 +286,7 @@ internal sealed class CnvTableEditor : UserControl
         if (s == null) return;
         if (s == _cnv.Root)
         {
-            Gui.Warn(Window.GetWindow(this), L.T("不能删除根节点。", "The root node cannot be deleted."), L.T("删除", "Delete"));
+            Gui.Warn(TreeGridShared.OwnerOf(this), L.T("不能删除根节点。", "The root node cannot be deleted."), L.T("删除", "Delete"));
             return;
         }
         if (!_cnv.RemoveSubtree(s)) return;

@@ -1,6 +1,7 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
 using CnvQst;
 
 namespace CnvQstStudio;
@@ -14,26 +15,26 @@ internal sealed class LauncherWindow : Window
     {
         Text = L.WindowTitle,
         FontSize = 20,
-        FontWeight = FontWeights.SemiBold,
+        FontWeight = FontWeight.SemiBold,
         HorizontalAlignment = HorizontalAlignment.Center,
         Margin = new Thickness(0, 8, 0, 2),
     };
     private readonly TextBlock _subtitle = new()
     {
         Text = L.T("选择要启动的功能"),
-        Foreground = WpfTheme.MutedBrush,
+        Foreground = UiTheme.MutedBrush,
         HorizontalAlignment = HorizontalAlignment.Center,
         Margin = new Thickness(0, 0, 0, 20),
     };
-    private readonly System.Windows.Controls.Button _editorBtn;
-    private readonly System.Windows.Controls.Button _batchBtn;
+    private readonly Button _editorBtn;
+    private readonly Button _batchBtn;
 
     public LauncherWindow()
     {
         Title = L.WindowTitle;
         Width = 440;
         Height = 320;
-        ResizeMode = ResizeMode.CanMinimize;
+        CanResize = false;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
 
@@ -46,7 +47,7 @@ internal sealed class LauncherWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 18, 0, 0),
         };
-        langRow.Children.Add(new TextBlock { Text = L.Language + "：", VerticalAlignment = VerticalAlignment.Center, Foreground = WpfTheme.MutedBrush });
+        langRow.Children.Add(new TextBlock { Text = L.Language + "：", VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush });
         var lang = new ComboBox { MinWidth = 140 };
         lang.ItemsSource = L.Languages.Select(l => l.Name).ToList();
         lang.SelectedIndex = L.Languages.ToList().FindIndex(l => l.Code == L.Code);
@@ -70,12 +71,12 @@ internal sealed class LauncherWindow : Window
         Closed += (_, _) => L.Changed -= OnLanguageChanged;
     }
 
-    private static System.Windows.Controls.Button BigButton(string title, string sub, Action onClick)
+    private static Button BigButton(string title, string sub, Action onClick)
     {
         var content = new StackPanel { Margin = new Thickness(6, 8, 6, 8) };
-        content.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeights.SemiBold });
-        content.Children.Add(new TextBlock { Text = sub, FontSize = 12, Foreground = WpfTheme.MutedBrush, Margin = new Thickness(0, 2, 0, 0) });
-        var b = new System.Windows.Controls.Button { Content = content, Height = 64, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 12) };
+        content.Children.Add(new TextBlock { Text = title, FontSize = 16, FontWeight = FontWeight.SemiBold });
+        content.Children.Add(new TextBlock { Text = sub, FontSize = 12, Foreground = UiTheme.MutedBrush, Margin = new Thickness(0, 2, 0, 0) });
+        var b = new Button { Content = content, Height = 64, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 0, 0, 12) };
         b.Click += (_, _) => onClick();
         return b;
     }

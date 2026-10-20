@@ -1,8 +1,8 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Data;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
 using CnvQst;
 using CnvQst.Cli;
 
@@ -24,7 +24,7 @@ internal static class DialogChrome
     }
 
     /// <summary>右下角按钮行（参数顺序与 WinForms 版相反：第一个为主按钮）。</summary>
-    public static UIElement Footer(params ButtonBase[] buttons)
+    public static Control Footer(params Button[] buttons)
     {
         var sp = new StackPanel
         {
@@ -39,7 +39,7 @@ internal static class DialogChrome
     public static Button Button(string text, bool primary = false, double minWidth = 96)
     {
         var b = new Button { Content = text, MinWidth = minWidth, MinHeight = 28, Margin = new Thickness(6, 0, 0, 0) };
-        if (primary) WpfTheme.MakePrimary(b);
+        if (primary) UiTheme.MakePrimary(b);
         return b;
     }
 
@@ -47,20 +47,19 @@ internal static class DialogChrome
     {
         Text = text,
         FontSize = 17,
-        FontWeight = FontWeights.SemiBold,
+        FontWeight = FontWeight.SemiBold,
         Margin = new Thickness(0, 0, 0, 8),
     };
 
     public static TextBlock Caption(string text) => new()
     {
         Text = text,
-        Foreground = WpfTheme.MutedBrush,
+        Foreground = UiTheme.MutedBrush,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(0, 0, 0, 6),
     };
 
     public static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center };
-
 }
 
 /// <summary>纯文本查看窗口（anchors 输出等）。</summary>
@@ -73,13 +72,15 @@ internal sealed class TextWindow : Window
         {
             Text = text,
             IsReadOnly = true,
-            FontFamily = WpfTheme.MonoFont,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            FontFamily = UiTheme.MonoFont,
             TextWrapping = TextWrapping.NoWrap,
         };
         var copy = DialogChrome.Button(L.Copy, primary: true);
-        copy.Click += (_, _) => { try { Clipboard.SetText(box.Text); } catch { } };
+        copy.Click += async (_, _) =>
+        {
+            var tl = TopLevel.GetTopLevel(this);
+            if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(box.Text ?? ""); } catch { } }
+        };
 
         var root = new DockPanel { Margin = new Thickness(12) };
         DockPanel.SetDock(copy, Dock.Bottom);
@@ -111,36 +112,28 @@ internal sealed class StringListDialog : Window
         _edit.TextChanged += (_, _) =>
         {
             int i = _list.SelectedIndex;
-            if (i >= 0) _list.Items[i] = _edit.Text;
+            if (i >= 0) _list.Items[i] = _edit.Text ?? "";
         };
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
         ok.Click += (_, _) =>
         {
-            Items = _list.Items.Cast<object>().Select(o => o?.ToString() ?? "").ToList();
-            DialogResult = true;
+            Items = _list.Items.Cast<object?>().Select(o => o?.ToString() ?? "").ToList();
+            Close(true);
         };
 
         var root = new DockPanel { Margin = new Thickness(14) };
-        DockPanel.SetDock(DialogChrome.Footer(cancel, ok), Dock.Bottom);
-        root.Children.Add(DialogChrome.Footer(cancel, ok));
+        var footer = DialogChrome.Footer(cancel, ok);
+        DockPanel.SetDock(footer, Dock.Bottom);
+        root.Children.Add(footer);
 
         var top = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
         top.Children.Add(DialogChrome.Caption(L.T("每行一项；右侧按钮可增删。")));
-        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        var add2 = new Button { Content = L.Add, MinWidth = 76, Margin = new Thickness(0, 0, 6, 0) };
-        var del2 = new Button { Content = L.Delete, MinWidth = 76 };
-        add2.Click += (_, _) => { _list.Items.Add(""); _list.SelectedIndex = _list.Items.Count - 1; _edit.Focus(); };
-        del2.Click += (_, _) =>
-        {
-            int i = _list.SelectedIndex;
-            if (i >= 0) { _list.Items.RemoveAt(i); _edit.Text = ""; }
-        };
-        btnRow.Children.Add(add2);
-        btnRow.Children.Add(del2);
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 6) };
+        btnRow.Children.Add(add);
+        btnRow.Children.Add(del);
         top.Children.Add(btnRow);
         top.Children.Add(_edit);
         DockPanel.SetDock(top, Dock.Top);
@@ -156,7 +149,7 @@ internal sealed class StringListDialog : Window
 internal sealed class LuaParamsDialog : Window
 {
     private readonly ScriptField _field;
-    private readonly DataGrid _grid = new() { AutoGenerateColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column };
+    private readonly DataGrid _grid = new() { AutoGenerateColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, CanUserReorderColumns = false };
 
     public LuaParamsDialog(ScriptField field)
     {
@@ -180,8 +173,7 @@ internal sealed class LuaParamsDialog : Window
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => { Apply(); DialogResult = true; };
+        ok.Click += (_, _) => { Apply(); Close(true); };
 
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         bar.Children.Add(add);
@@ -250,7 +242,6 @@ internal sealed class NewConversationDialog : Window
         var ok = DialogChrome.Button(L.Create, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
         ok.Click += (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(sp.Text))
@@ -258,10 +249,10 @@ internal sealed class NewConversationDialog : Window
                 Gui.Warn(this, L.SpeakerRequired, L.NewConversationTitle);
                 return;
             }
-            Speaker = sp.Text;
-            FirstText = ft.Text;
-            EndText = et.Text;
-            DialogResult = true;
+            Speaker = sp.Text ?? "";
+            FirstText = ft.Text ?? "";
+            EndText = et.Text ?? "";
+            Close(true);
         };
 
         Content = Layout(
@@ -273,7 +264,7 @@ internal sealed class NewConversationDialog : Window
             DialogChrome.Footer(cancel, ok));
     }
 
-    private static UIElement Layout(params UIElement[] items)
+    private static Control Layout(params Control[] items)
     {
         var root = new DockPanel { Margin = new Thickness(16) };
         var footer = items[^1];
@@ -285,14 +276,15 @@ internal sealed class NewConversationDialog : Window
         return root;
     }
 
-    private static UIElement Field(string label, FrameworkElement control)
+    internal static Control Field(string label, Control control)
     {
         var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        DialogChrome.Label(label).SetValue(Grid.ColumnProperty, 0);
+        var lbl = DialogChrome.Label(label);
+        lbl.SetValue(Grid.ColumnProperty, 0);
         control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(DialogChrome.Label(label));
+        g.Children.Add(lbl);
         g.Children.Add(control);
         return g;
     }
@@ -317,7 +309,6 @@ internal sealed class NewQuestDialog : Window
         var ok = DialogChrome.Button(L.Create, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
         ok.Click += (_, _) =>
         {
             if (string.IsNullOrWhiteSpace(n.Text))
@@ -325,11 +316,11 @@ internal sealed class NewQuestDialog : Window
                 Gui.Warn(this, L.QuestNameRequired, L.NewQuestTitle);
                 return;
             }
-            Group = g.Text;
-            QuestName = n.Text;
-            TaskTitle = t.Text;
-            TaskDesc = d.Text;
-            DialogResult = true;
+            Group = g.Text ?? "";
+            QuestName = n.Text ?? "";
+            TaskTitle = t.Text ?? "";
+            TaskDesc = d.Text ?? "";
+            Close(true);
         };
 
         var root = new DockPanel { Margin = new Thickness(16) };
@@ -347,18 +338,7 @@ internal sealed class NewQuestDialog : Window
         Content = root;
     }
 
-    private static UIElement NewConversationDialogField(string label, FrameworkElement control)
-    {
-        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var lbl = DialogChrome.Label(label);
-        lbl.SetValue(Grid.ColumnProperty, 0);
-        control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(lbl);
-        g.Children.Add(control);
-        return g;
-    }
+    private static Control NewConversationDialogField(string label, Control control) => NewConversationDialog.Field(label, control);
 }
 
 /// <summary>TXT 回填预览：txt 行 vs 当前本地化表逐行对照；行数不符禁止应用。</summary>
@@ -377,19 +357,16 @@ internal sealed class ImportTxtPreviewDialog : Window
         {
             AutoGenerateColumns = false,
             IsReadOnly = true,
-            CanUserAddRows = false,
             CanUserSortColumns = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
         };
         grid.Columns.Add(new DataGridTextColumn { Header = L.T("行"), Binding = new Binding(nameof(PreviewRow.Idx)), Width = new DataGridLength(60) });
-        var colNew = new DataGridTextColumn { Header = L.T("txt 行"), Binding = new Binding(nameof(PreviewRow.New)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) };
-        var colCur = new DataGridTextColumn { Header = L.T("当前文本"), Binding = new Binding(nameof(PreviewRow.Cur)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) };
-        grid.Columns.Add(colNew);
-        grid.Columns.Add(colCur);
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("txt 行"), Binding = new Binding(nameof(PreviewRow.New)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("当前文本"), Binding = new Binding(nameof(PreviewRow.Cur)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
 
         var rows = new List<PreviewRow>();
         foreach (var (idx, line, cur) in preview)
-            rows.Add(new PreviewRow(idx.ToString(), line, cur, line != cur, line == "<缺失>" || cur == "<缺失>"));
+            rows.Add(new PreviewRow(idx.ToString(), line, cur));
         grid.ItemsSource = rows;
 
         var info = new TextBlock
@@ -397,13 +374,12 @@ internal sealed class ImportTxtPreviewDialog : Window
             Text = countOk
                 ? L.F("行数匹配：{0} 行。红色行是将被替换的内容。", preview.Count)
                 : L.T("行数不匹配：txt 与本地化表不一致，禁止回填（游戏按行号位置回填文本）。"),
-            Foreground = countOk ? WpfTheme.TextBrush : WpfTheme.DangerBrush,
+            Foreground = countOk ? UiTheme.TextBrush : UiTheme.DangerBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
         var apply = DialogChrome.Button(L.T("应用回填"), primary: true, minWidth: 120);
         apply.IsEnabled = countOk;
         apply.Click += (_, _) =>
@@ -411,7 +387,7 @@ internal sealed class ImportTxtPreviewDialog : Window
             var lines = TextExport.SplitTxt(BatchOps.ReadTextAuto(txtPath));
             TextExport.ApplyTxt(doc.PrimaryLanguage, lines);
             Applied = true;
-            DialogResult = true;
+            Close(true);
         };
 
         var root = new DockPanel { Margin = new Thickness(14) };
@@ -424,23 +400,7 @@ internal sealed class ImportTxtPreviewDialog : Window
         Content = root;
     }
 
-    private sealed class PreviewRow
-    {
-        public string Idx { get; }
-        public string New { get; }
-        public string Cur { get; }
-        public Brush NewBrush { get; }
-        public Brush CurBrush { get; }
-
-        public PreviewRow(string idx, string nw, string cur, bool differ, bool missing)
-        {
-            Idx = idx;
-            New = nw;
-            Cur = cur;
-            NewBrush = missing ? WpfTheme.DangerBrush : differ ? WpfTheme.DangerBrush : WpfTheme.TextBrush;
-            CurBrush = missing ? WpfTheme.DangerBrush : WpfTheme.TextBrush;
-        }
-    }
+    private sealed record PreviewRow(string Idx, string New, string Cur);
 }
 
 /// <summary>条件/动作编辑模态窗：克隆编辑，确定才回填原列表。逻辑字（AND/OR）仅条件显示。</summary>
@@ -463,8 +423,8 @@ internal sealed class ScriptListDialog : Window
             Text = isCondition
                 ? L.T("⚑ 条件 —— 全部满足时，这段内容才会出现 / 生效")
                 : L.T("⚡ 动作 —— 条件满足后要执行的效果"),
-            Foreground = isCondition ? WpfTheme.AccentBrush : WpfTheme.OkBrush,
-            FontWeight = FontWeights.SemiBold,
+            Foreground = isCondition ? UiTheme.AccentBrush : UiTheme.OkBrush,
+            FontWeight = FontWeight.SemiBold,
             Padding = new Thickness(12, 8, 8, 8),
             Background = isCondition
                 ? new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFE))
@@ -489,8 +449,7 @@ internal sealed class ScriptListDialog : Window
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => DialogResult = true;
+        ok.Click += (_, _) => { Close(true); };
 
         _editor = new ScriptListEditor(_doc, _work, isCondition, () => { });
 
@@ -508,10 +467,10 @@ internal sealed class ScriptListDialog : Window
     }
 
     /// <summary>弹窗编辑；用户确定时回填原列表并返回 true。</summary>
-    public static bool Show(DocSession doc, ScriptList original, bool isCondition, Window? owner)
+    public static async Task<bool> Show(DocSession doc, ScriptList original, bool isCondition, Window? owner)
     {
-        var dlg = new ScriptListDialog(doc, original, isCondition) { Owner = owner };
-        if (dlg.ShowDialog() != true) return false;
+        var dlg = new ScriptListDialog(doc, original, isCondition);
+        if (await dlg.ShowDialog<bool>(owner!) != true) return false;
         original.CopyFrom(dlg._work);
         return true;
     }
@@ -557,19 +516,18 @@ internal sealed class CnvNodeDialog : Window
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => DialogResult = true;
+        ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
         stack.Children.Add(Field(L.T("类型") + ":", _type));
         stack.Children.Add(new TextBlock
         {
             Text = L.T("台词文本请在主界面底部编辑器中修改（选中节点行后编辑）。"),
-            Foreground = WpfTheme.MutedBrush,
+            Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 0),
         });
-        var flagsRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 6) };
+        var flagsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 6) };
         flagsRow.Children.Add(new TextBlock { Text = L.T("显示开关") + ":", Width = 100, VerticalAlignment = VerticalAlignment.Center });
         flagsRow.Children.Add(_once);
         flagsRow.Children.Add(_always);
@@ -581,7 +539,7 @@ internal sealed class CnvNodeDialog : Window
         Content = stack;
     }
 
-    private static UIElement Field(string label, FrameworkElement control)
+    private static Control Field(string label, Control control)
     {
         var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
@@ -594,14 +552,14 @@ internal sealed class CnvNodeDialog : Window
         return g;
     }
 
-    public static bool Show(DocSession doc, CnvStep s, Window? owner)
+    public static async Task<bool> Show(DocSession doc, CnvStep s, Window? owner)
     {
-        var dlg = new CnvNodeDialog(doc.Cnv!, s) { Owner = owner };
-        if (dlg.ShowDialog() != true) return false;
+        var dlg = new CnvNodeDialog(doc.Cnv!, s);
+        if (await dlg.ShowDialog<bool>(owner!) != true) return false;
         s.Type = (uint)dlg._type.SelectedIndex;
         // 只改低 3 位（编辑器开关），高位为游戏侧保留位，原样保留
         s.Unknown = (s.Unknown & ~7u) | (dlg._once.IsChecked == true ? 1u : 0u) | (dlg._always.IsChecked == true ? 2u : 0u) | (dlg._unimportant.IsChecked == true ? 4u : 0u);
-        s.VoPath.SetText(dlg._voPath.Text);
+        s.VoPath.SetText(dlg._voPath.Text ?? "");
         s.HasLink = s.Type == Names.StepLink;
         if (dlg._link.SelectedIndex >= 0 && s.HasLink) s.LinkId = (uint)dlg._link.SelectedIndex;
         return true;
@@ -615,7 +573,6 @@ internal sealed class QuestPropsDialog : Window
     private readonly CheckBox _primary = new() { Content = L.T("主线任务 Primary（bit0）", "Primary (bit0)") };
     private readonly CheckBox _secondary = new() { Content = L.T("支线任务 Secondary（bit1）", "Secondary (bit1)") };
     private readonly CheckBox _repeatable = new() { Content = L.T("可重复 Repeatable（bit2）", "Repeatable (bit2)") };
-    private readonly List<(string Label, TextBox Box, Action<string> Commit)> _textEditors = new();
 
     internal QuestPropsDialog(QstFile q)
     {
@@ -626,14 +583,13 @@ internal sealed class QuestPropsDialog : Window
         _secondary.IsChecked = (f & 2) != 0;
         _repeatable.IsChecked = (f & 4) != 0;
         // Primary / Secondary 互斥（照官方 setter 的行为）
-        _primary.Checked += (_, _) => _secondary.IsChecked = false;
-        _secondary.Checked += (_, _) => _primary.IsChecked = false;
+        _primary.IsCheckedChanged += (_, _) => { if (_primary.IsChecked == true) _secondary.IsChecked = false; };
+        _secondary.IsCheckedChanged += (_, _) => { if (_secondary.IsChecked == true) _primary.IsChecked = false; };
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => DialogResult = true;
+        ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
         stack.Children.Add(Field("uid", _uid));
@@ -643,7 +599,7 @@ internal sealed class QuestPropsDialog : Window
         stack.Children.Add(new TextBlock
         {
             Text = L.T("组名 / 任务名请在主界面底部编辑器中修改（选中对应行后编辑）。"),
-            Foreground = WpfTheme.MutedBrush,
+            Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0),
         });
@@ -651,7 +607,7 @@ internal sealed class QuestPropsDialog : Window
         Content = stack;
     }
 
-    private static UIElement Field(string label, FrameworkElement control)
+    private static Control Field(string label, Control control)
     {
         var g = new Grid { Margin = new Thickness(0, 4, 0, 10) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
@@ -664,11 +620,11 @@ internal sealed class QuestPropsDialog : Window
         return g;
     }
 
-    public static bool Show(QstFile q, Window? owner)
+    public static async Task<bool> Show(QstFile q, Window? owner)
     {
-        var dlg = new QuestPropsDialog(q) { Owner = owner };
-        if (dlg.ShowDialog() != true) return false;
-        try { q.Id = Gui.ParseU32(dlg._uid.Text); } catch { }
+        var dlg = new QuestPropsDialog(q);
+        if (await dlg.ShowDialog<bool>(owner!) != true) return false;
+        try { q.Id = Gui.ParseU32(dlg._uid.Text ?? ""); } catch { }
         uint f = 0;
         if (dlg._primary.IsChecked == true) f |= 1;
         if (dlg._secondary.IsChecked == true) f |= 2;
@@ -708,8 +664,7 @@ internal sealed class QstFieldsDialog : Window
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.T("取消", "Cancel"));
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => DialogResult = true;
+        ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
         foreach (var (lab, n) in _nums) stack.Children.Add(Field(lab, n));
@@ -717,7 +672,7 @@ internal sealed class QstFieldsDialog : Window
         stack.Children.Add(new TextBlock
         {
             Text = L.T("文本内容请在主界面底部编辑器中修改（选中行后编辑，支持双语）。"),
-            Foreground = WpfTheme.MutedBrush,
+            Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0),
         });
@@ -729,7 +684,7 @@ internal sealed class QstFieldsDialog : Window
 
     private static CheckBox Check(bool v) => new() { IsChecked = v };
 
-    private static UIElement Field(string label, FrameworkElement control)
+    private static Control Field(string label, Control control)
     {
         var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
@@ -742,26 +697,26 @@ internal sealed class QstFieldsDialog : Window
         return g;
     }
 
-    public static bool Show(QstRowOwner row, Window? owner)
+    public static async Task<bool> Show(QstRowOwner row, Window? owner)
     {
-        var dlg = new QstFieldsDialog(row) { Owner = owner };
-        if (dlg.ShowDialog() != true) return false;
+        var dlg = new QstFieldsDialog(row);
+        if (await dlg.ShowDialog<bool>(owner!) != true) return false;
         foreach (var (lab, box) in dlg._nums) _ = lab;
         if (row is QstTaskRow tr)
         {
-            try { tr.T.UnknownA8 = Gui.ParseU32(dlg._nums[0].Item2.Text); } catch { }
-            try { tr.T.UnknownAC = Gui.ParseU32(dlg._nums[1].Item2.Text); } catch { }
+            try { tr.T.UnknownA8 = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
+            try { tr.T.UnknownAC = Gui.ParseU32(dlg._nums[1].Item2.Text ?? ""); } catch { }
             tr.T.Flag8 = dlg._flags[0].Item2.IsChecked == true;
             tr.T.Flag9 = dlg._flags[1].Item2.IsChecked == true;
         }
         else if (row is QstObjectiveRow or)
         {
-            try { or.O.Unknown0 = Gui.ParseU32(dlg._nums[0].Item2.Text); } catch { }
-            try { or.O.Unknown1 = Gui.ParseU32(dlg._nums[1].Item2.Text); } catch { }
+            try { or.O.Unknown0 = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
+            try { or.O.Unknown1 = Gui.ParseU32(dlg._nums[1].Item2.Text ?? ""); } catch { }
         }
         else if (row is QstEventRow er)
         {
-            try { er.E.Unknown = Gui.ParseU32(dlg._nums[0].Item2.Text); } catch { }
+            try { er.E.Unknown = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
         }
         return true;
     }
@@ -783,7 +738,7 @@ internal sealed class CnvTypePicker : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        ok.Click += (_, _) => { Type = (uint)_box.SelectedIndex; DialogResult = true; };
+        ok.Click += (_, _) => { Type = (uint)Math.Max(0, _box.SelectedIndex); Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
         stack.Children.Add(_box);

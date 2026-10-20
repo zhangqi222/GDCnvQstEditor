@@ -1,33 +1,34 @@
 using System.ComponentModel;
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using CnvQst;
 using CnvQst.Cli;
 
 namespace CnvQstStudio;
 
 /// <summary>
-/// 批量处理窗口（WPF 版）：目录扫描 → 勾选 → 批量导出 TXT/JSON、校验、TXT 回填、CSV 报告。
-/// 布局：源目录行 / 选项行 / 操作行 / 结果表 / 状态行，全部走 <see cref="L"/>。
+/// 批量处理窗口（Avalonia 版）：目录扫描 → 勾选 → 批量导出 TXT/JSON、校验、TXT 回填、CSV 报告。
+/// 布局：源目录行 / 生成目录行 / 选项行 / 操作行 / 结果表 / 状态行，全部走 <see cref="L"/>。
 /// </summary>
 internal sealed class BatchWindow : Window
 {
     private readonly TextBox _path = new();
     private readonly TextBox _outPath = new();
     private readonly CheckBox _subDirs = new() { Content = L.T("含子目录"), IsChecked = true };
-    private readonly RadioButton _keepStructure = new() { Content = L.T("保持原目录结构"), IsChecked = true, Margin = new Thickness(0, 0, 16, 0) };
-    private readonly RadioButton _flatten = new() { Content = L.T("全部放在同一目录") };
+    private readonly RadioButton _keepStructure = new() { Content = L.T("保持原目录结构"), IsChecked = true, GroupName = "out" };
+    private readonly RadioButton _flatten = new() { Content = L.T("全部放在同一目录"), GroupName = "out" };
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
-        CanUserAddRows = false,
         CanUserSortColumns = false,
         HeadersVisibility = DataGridHeadersVisibility.Column,
     };
-    private readonly TextBlock _status = new() { Foreground = WpfTheme.MutedBrush, Margin = new Thickness(14, 2, 14, 6) };
+    private readonly TextBlock _status = new() { Foreground = UiTheme.MutedBrush, Margin = new Thickness(14, 2, 14, 6), TextWrapping = TextWrapping.Wrap };
     private List<BatchItem> _items = new();
 
     public BatchWindow()
@@ -36,7 +37,7 @@ internal sealed class BatchWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = false;
 
-        var browse = MkBtn(L.T("浏览"), Browse);
+        var browse = MkBtn(L.T("浏览"), () => _ = Browse());
         var scan = MkBtn(L.T("扫描"), Scan);
         var pathRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
@@ -61,25 +62,24 @@ internal sealed class BatchWindow : Window
         var lblOut = DialogChrome.Label(L.T("生成目录"));
         lblOut.SetValue(Grid.ColumnProperty, 0);
         _outPath.SetValue(Grid.ColumnProperty, 1);
-        var outBrowse = MkBtn(L.T("浏览"), BrowseOut);
+        var outBrowse = MkBtn(L.T("浏览"), () => _ = BrowseOut());
         outBrowse.SetValue(Grid.ColumnProperty, 2);
         outBrowse.Margin = new Thickness(6, 0, 0, 0);
         outRow.Children.Add(lblOut);
         outRow.Children.Add(_outPath);
         outRow.Children.Add(outBrowse);
 
-        var optRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        _subDirs.Margin = new Thickness(0, 0, 16, 0);
+        var optRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, Margin = new Thickness(0, 0, 0, 8) };
         optRow.Children.Add(_subDirs);
         optRow.Children.Add(_keepStructure);
         optRow.Children.Add(_flatten);
 
-        var actRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        var actRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 8) };
         actRow.Children.Add(MkBtn(L.T("导出 TXT"), () => Export(ExportKind.Txt)));
         actRow.Children.Add(MkBtn(L.T("导出 JSON"), () => Export(ExportKind.Json)));
         actRow.Children.Add(MkBtn(L.T("校验所选"), VerifySelected));
-        actRow.Children.Add(MkBtn(L.T("TXT 回填"), ImportTxt));
-        actRow.Children.Add(MkBtn(L.T("导出报告 CSV"), ExportCsv));
+        actRow.Children.Add(MkBtn(L.T("TXT 回填"), () => _ = ImportTxt()));
+        actRow.Children.Add(MkBtn(L.T("导出报告 CSV"), () => _ = ExportCsv()));
 
         BuildColumns();
 
@@ -104,21 +104,9 @@ internal sealed class BatchWindow : Window
 
     private enum ExportKind { Txt, Json }
 
-    /// <summary>勾选列（CheckBox 点击后刷新计数）。</summary>
-    private static DataGridTemplateColumn MkCheckColumn(string header, string propertyName)
-    {
-        var template = new DataTemplate();
-        var cb = new FrameworkElementFactory(typeof(CheckBox));
-        cb.SetValue(CheckBox.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        cb.SetBinding(CheckBox.IsCheckedProperty, new Binding(propertyName) { Mode = BindingMode.TwoWay, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
-        cb.AddHandler(CheckBox.ClickEvent, new RoutedEventHandler((_, _) => { }));
-        template.VisualTree = cb;
-        return new DataGridTemplateColumn { Header = header, CellTemplate = template, Width = new DataGridLength(40) };
-    }
-
     private static Button MkBtn(string text, Action onClick)
     {
-        var b = new Button { Content = text, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 2, 10, 2) };
+        var b = new Button { Content = text, Padding = new Thickness(10, 2, 10, 2) };
         b.Click += (_, _) => onClick();
         return b;
     }
@@ -126,16 +114,28 @@ internal sealed class BatchWindow : Window
     private void BuildColumns()
     {
         _grid.Columns.Add(MkCheckColumn(L.T("选"), nameof(BatchRow.Sel)));
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("文件"), Binding = new Binding(nameof(BatchRow.File)), IsReadOnly = true, Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("类型"), Binding = new Binding(nameof(BatchRow.Kind)), IsReadOnly = true, Width = new DataGridLength(56) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("版本"), Binding = new Binding(nameof(BatchRow.Ver)), IsReadOnly = true, Width = new DataGridLength(52) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("节点 / task"), Binding = new Binding(nameof(BatchRow.Count)), IsReadOnly = true, Width = new DataGridLength(80) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("txt 行数"), Binding = new Binding(nameof(BatchRow.Lines)), IsReadOnly = true, Width = new DataGridLength(66) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("校验"), Binding = new Binding(nameof(BatchRow.Ok)), IsReadOnly = true, Width = new DataGridLength(48) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("失败原因"), Binding = new Binding(nameof(BatchRow.Err)), IsReadOnly = true, Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("文件"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.File)), IsReadOnly = true, Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("类型"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Kind)), IsReadOnly = true, Width = new DataGridLength(56) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("版本"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ver)), IsReadOnly = true, Width = new DataGridLength(52) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("节点 / task"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Count)), IsReadOnly = true, Width = new DataGridLength(80) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("txt 行数"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Lines)), IsReadOnly = true, Width = new DataGridLength(66) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("校验"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ok)), IsReadOnly = true, Width = new DataGridLength(48) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("失败原因"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Err)), IsReadOnly = true, Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
     }
 
-    private sealed class BatchRow : INotifyPropertyChanged
+    /// <summary>勾选列（CheckBox 双向绑定直接写回模型）。</summary>
+    private static DataGridTemplateColumn MkCheckColumn(string header, string propertyName)
+    {
+        var template = new FuncDataTemplate<object?>((_, _) =>
+        {
+            var cb = new CheckBox { HorizontalAlignment = HorizontalAlignment.Center };
+            cb.Bind(CheckBox.IsCheckedProperty, new Avalonia.Data.Binding(propertyName) { Mode = Avalonia.Data.BindingMode.TwoWay });
+            return cb;
+        });
+        return new DataGridTemplateColumn { Header = header, CellTemplate = template, Width = new DataGridLength(40) };
+    }
+
+    private sealed class BatchRow
     {
         private readonly BatchItem _it;
         public BatchRow(BatchItem it) { _it = it; Path = it.Path; Sel = true; }
@@ -147,9 +147,7 @@ internal sealed class BatchWindow : Window
         public string Count => _it.StepsOrTasks.ToString();
         public string Lines => _it.TxtLines.ToString();
         public string Ok => _it.AllOk ? "✓" : "✗";
-        public Brush OkBrush => _it.AllOk ? WpfTheme.OkBrush : WpfTheme.DangerBrush;
         public string Err => _it.FailReason;
-        public event PropertyChangedEventHandler? PropertyChanged;
     }
 
     /// <summary>供主窗口"打开目录（批量）"直接带入路径。</summary>
@@ -169,26 +167,32 @@ internal sealed class BatchWindow : Window
 
     // ------------------------------------------------------------------
 
-    private void Browse()
+    private async Task Browse()
     {
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择源目录") };
-        if (Directory.Exists(_path.Text)) dlg.InitialDirectory = _path.Text;
-        if (dlg.ShowDialog(this) == true) _path.Text = dlg.FolderName;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = L.T("选择源目录"),
+            AllowMultiple = false,
+        });
+        if (folders.Count > 0) _path.Text = folders[0].Path.LocalPath;
     }
 
-    private void BrowseOut()
+    private async Task BrowseOut()
     {
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择输出目录") };
-        if (Directory.Exists(_outPath.Text)) dlg.InitialDirectory = _outPath.Text;
-        if (dlg.ShowDialog(this) == true) _outPath.Text = dlg.FolderName;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = L.T("选择输出目录"),
+            AllowMultiple = false,
+        });
+        if (folders.Count > 0) _outPath.Text = folders[0].Path.LocalPath;
     }
 
     private void Scan()
     {
-        string path = _path.Text.Trim();
+        string path = _path.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(path) || !Directory.Exists(path) && !File.Exists(path))
         {
-            Gui.Warn(this, L.T("请先选择存在的文件或目录。"), Title);
+            Gui.Warn(this, L.T("请先选择存在的文件或目录。"), Title ?? "");
             return;
         }
         try
@@ -200,7 +204,7 @@ internal sealed class BatchWindow : Window
         }
         catch (Exception e)
         {
-            Gui.Warn(this, L.F("扫描失败：{0}", e.Message), Title);
+            Gui.Warn(this, L.F("扫描失败：{0}", e.Message), Title ?? "");
         }
     }
 
@@ -212,11 +216,11 @@ internal sealed class BatchWindow : Window
 
     private void Export(ExportKind kind)
     {
-        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("请先扫描并勾选文件。"), Title); return; }
-        string outDir = _outPath.Text.Trim();
+        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("请先扫描并勾选文件。"), Title ?? ""); return; }
+        string outDir = _outPath.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(outDir) || !Directory.Exists(outDir))
         {
-            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录。"), Title);
+            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录。"), Title ?? "");
             return;
         }
 
@@ -227,7 +231,7 @@ internal sealed class BatchWindow : Window
             {
                 byte[] data = File.ReadAllBytes(file);
                 var model = BatchOps.Load(file, data);
-                string target = BatchOps.TargetPath(file, _path.Text.Trim(), outDir, _flatten.IsChecked == true,
+                string target = BatchOps.TargetPath(file, _path.Text!.Trim(), outDir, _flatten.IsChecked == true,
                     kind == ExportKind.Txt ? ".txt" : ".json");
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 if (kind == ExportKind.Txt)
@@ -260,12 +264,12 @@ internal sealed class BatchWindow : Window
 
     private void VerifySelected()
     {
-        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("请先扫描并勾选文件。"), Title); return; }
+        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("请先扫描并勾选文件。"), Title ?? ""); return; }
         int pass = 0, fail = 0;
         var errors = new List<string>();
         foreach (string file in SelectedFiles())
         {
-            var item = BatchOps.Inspect(file, _path.Text.Trim());
+            var item = BatchOps.Inspect(file, _path.Text!.Trim());
             if (item.AllOk) pass++;
             else { fail++; errors.Add($"{item.Rel}：{item.FailReason}"); }
         }
@@ -275,24 +279,28 @@ internal sealed class BatchWindow : Window
                 L.T("校验失败项"));
     }
 
-    private void ImportTxt()
+    private async Task ImportTxt()
     {
-        string binPath = _path.Text.Trim();
+        string binPath = _path.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(binPath) || !Directory.Exists(binPath) && !File.Exists(binPath))
         {
-            Gui.Warn(this, L.T("请先选择二进制源目录。"), Title);
+            Gui.Warn(this, L.T("请先选择二进制源目录。"), Title ?? "");
             return;
         }
-        string outDir = _outPath.Text.Trim();
+        string outDir = _outPath.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(outDir) || !Directory.Exists(outDir))
         {
-            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录（不覆盖源文件）。"), Title);
+            Gui.Warn(this, L.T("请先在“生成目录”中选择输出目录（不覆盖源文件）。"), Title ?? "");
             return;
         }
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("选择译文 txt 所在目录（按同名配对）") };
-        if (dlg.ShowDialog(this) != true) return;
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = L.T("选择译文 txt 所在目录（按同名配对）"),
+            AllowMultiple = false,
+        });
+        if (folders.Count == 0) return;
 
-        var results = BatchOps.ImportTxtDir(binPath, dlg.FolderName, outDir);
+        var results = BatchOps.ImportTxtDir(binPath, folders[0].Path.LocalPath, outDir);
         int ok = results.Count(r => r.Error == null), fail = results.Count - ok;
         SetStatus(L.F("TXT 回填完成：成功 {0}，跳过/失败 {1}。输出目录 {2}", ok, fail, outDir));
         var problems = results.Where(r => r.Error != null).Select(r => $"{Path.GetFileName(r.Bin)}：{r.Error}").ToList();
@@ -301,11 +309,17 @@ internal sealed class BatchWindow : Window
                 L.T("回填未完成项"));
     }
 
-    private void ExportCsv()
+    private async Task ExportCsv()
     {
-        if (_items.Count == 0) { Gui.Warn(this, L.T("请先扫描。"), Title); return; }
-        var dlg = new Microsoft.Win32.SaveFileDialog { Filter = L.T("CSV|*.csv"), FileName = "batch_report.csv" };
-        if (dlg.ShowDialog(this) != true) return;
+        if (_items.Count == 0) { Gui.Warn(this, L.T("请先扫描。"), Title ?? ""); return; }
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = L.T("导出报告 CSV"),
+            SuggestedFileName = "batch_report.csv",
+            DefaultExtension = "csv",
+            FileTypeChoices = new[] { new FilePickerFileType("CSV") { Patterns = new[] { "*.csv" } } },
+        });
+        if (file == null) return;
         var sb = new StringBuilder();
         sb.AppendLine(L.T("文件,类型,版本,节点或task,txt行数,通过,失败原因"));
         foreach (var i in _items)
@@ -313,7 +327,7 @@ internal sealed class BatchWindow : Window
               .Append(i.Kind).Append(',').Append(i.Version).Append(',')
               .Append(i.StepsOrTasks).Append(',').Append(i.TxtLines).Append(',')
               .Append(i.AllOk ? L.T("是") : L.T("否")).Append(",\"").Append(i.FailReason.Replace("\"", "\"\"")).Append("\"\n");
-        File.WriteAllText(dlg.FileName, "\uFEFF" + sb, new UTF8Encoding(false));
-        SetStatus(L.F("报告已写出 {0}", dlg.FileName));
+        await File.WriteAllTextAsync(file.Path.LocalPath, "\uFEFF" + sb, new UTF8Encoding(false));
+        SetStatus(L.F("报告已写出 {0}", file.Path.LocalPath));
     }
 }

@@ -1,7 +1,8 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Layout;
+using Avalonia.Media;
 using CnvQst;
 
 namespace CnvQstStudio;
@@ -19,10 +20,11 @@ internal sealed class ScriptListEditor : UserControl
     private Changed _changed;
 
     private readonly ListBox _records = new() { MinHeight = 150, MinWidth = 560 };
-    private readonly GroupBox _existingBox = new();
+    private readonly Border _existingBox = new();
+    private readonly TextBlock _existingHeader = new() { FontWeight = FontWeight.Medium, Margin = new Thickness(0, 0, 0, 6) };
     private readonly ComboBox _logic = new() { MinWidth = 170 };
     private readonly TextBlock _logicLabel = new() { Text = L.T("关系逻辑", "Logic") + "：", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
-    private readonly System.Windows.Controls.Button _add, _edit, _del, _dup, _up, _down;
+    private readonly Button _add, _edit, _del, _dup, _up, _down;
     private bool _building;
 
     public ScriptListEditor(DocSession doc, ScriptList list, bool isCondition, Changed changed)
@@ -32,8 +34,8 @@ internal sealed class ScriptListEditor : UserControl
         _isCondition = isCondition;
         _changed = changed;
 
-        _add = MkBtn(_isCondition ? L.T("＋ 添加条件", "+ Add") : L.T("＋ 添加动作", "+ Add"), AddRecord, primary: true);
-        _edit = MkBtn(L.T("编辑", "Edit"), EditRecord);
+        _add = MkBtn(_isCondition ? L.T("＋ 添加条件", "+ Add") : L.T("＋ 添加动作", "+ Add"), () => _ = AddRecord(), primary: true);
+        _edit = MkBtn(L.T("编辑", "Edit"), () => _ = EditRecord());
         _del = MkBtn(L.T("删除", "Delete"), DelRecord);
         _dup = MkBtn(L.T("复制", "Copy"), DupRecord);
         _up = MkBtn(L.T("上移", "Up"), () => MoveRecord(-1));
@@ -45,7 +47,7 @@ internal sealed class ScriptListEditor : UserControl
         {
             if (!_building) _list.Logic = _logic.SelectedIndex == 1 ? 1u : 0u;
         };
-        _logicLabel.Visibility = _logic.Visibility = _isCondition ? Visibility.Visible : Visibility.Collapsed;
+        _logicLabel.IsVisible = _logic.IsVisible = _isCondition;
 
         _records.SelectionChanged += (_, _) => UpdateButtons();
 
@@ -65,7 +67,7 @@ internal sealed class ScriptListEditor : UserControl
         Rebuild();
     }
 
-    private UIElement BuildLayout()
+    private Control BuildLayout()
     {
         // 标题行：关系逻辑（仅条件）
         var logicRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
@@ -73,14 +75,15 @@ internal sealed class ScriptListEditor : UserControl
         logicRow.Children.Add(_logic);
 
         // 操作按钮行
-        var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+        var btns = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 0) };
         foreach (var b in new[] { _add, _edit, _del, _dup, _up, _down }) btns.Children.Add(b);
 
-        var inner = new StackPanel();
+        var inner = new StackPanel { Margin = new Thickness(8) };
+        inner.Children.Add(_existingHeader);
         inner.Children.Add(logicRow);
         inner.Children.Add(_records);
         inner.Children.Add(btns);
-        _existingBox.Content = inner;
+        _existingBox.Child = inner;
 
         var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(_existingBox, Dock.Top);
@@ -88,11 +91,10 @@ internal sealed class ScriptListEditor : UserControl
         return root;
     }
 
-    private static System.Windows.Controls.Button MkBtn(string text, Action onClick, bool primary = false)
+    private static Button MkBtn(string text, Action onClick, bool primary = false)
     {
-        var b = new System.Windows.Controls.Button { Content = text, MinWidth = primary ? 96 : 72, MinHeight = 28 };
-        if (primary) WpfTheme.MakePrimary(b);
-        b.Margin = new Thickness(0, 0, 8, 0);
+        var b = new Button { Content = text, MinWidth = primary ? 96 : 72, MinHeight = 28, Margin = new Thickness(0, 0, 0, 0) };
+        if (primary) UiTheme.MakePrimary(b);
         b.Click += (_, _) => onClick();
         return b;
     }
@@ -127,10 +129,10 @@ internal sealed class ScriptListEditor : UserControl
         string cn = L.T(_isCondition ? "条件" : "动作");
         string logic = _isCondition ? $"  · {Names.LogicWord(_list.Logic)} ({_list.Logic})" : "";
         string empty = _list.Present ? "" : L.T("  （空列表）", "  (empty)");
-        _existingBox.Header = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
+        _existingHeader.Text = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
     }
 
-    private void AddRecord()
+    private async Task AddRecord()
     {
         uint defType = _isCondition ? 0u : 1u;   // 动作类型 0 无效，从 1 开始
         var rec = new ScriptRecord
@@ -144,8 +146,8 @@ internal sealed class ScriptListEditor : UserControl
         };
         rec.Fields = FieldFactory.Resync(rec.BodySpec, rec.SubType, null, _isCondition);
         string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn);
+        if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
 
         int at = _records.SelectedIndex >= 0 ? _records.SelectedIndex + 1 : _list.Records.Count;
         _list.Records.Insert(Math.Min(at, _list.Records.Count), rec);
@@ -159,14 +161,14 @@ internal sealed class ScriptListEditor : UserControl
         _changed();
     }
 
-    private void EditRecord()
+    private async Task EditRecord()
     {
         int sel = _records.SelectedIndex;
         if (sel < 0 || sel >= _list.Records.Count) return;
         var copy = ScriptRecordCloner.Clone(_list.Records[sel]);
         string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn) { Owner = Window.GetWindow(this) };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn);
+        if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
         _list.Records[sel] = copy;
         Rebuild();
         _records.SelectedIndex = sel;
@@ -251,7 +253,7 @@ internal sealed class ScriptRecordDialog : Window
         DialogChrome.Init(this, title, 580, 0, SizeToContent.Height);
 
         _type.ItemsSource = TypeList(isCondition);
-        _type.DisplayMemberPath = nameof(ComboType.Text);
+        _type.ItemTemplate = new FuncDataTemplate<ComboType>((ct, _) => new TextBlock { Text = ct?.Text ?? "" });
         SyncTypeCombo();
         _type.SelectionChanged += (_, _) => ChangeType();
 
@@ -262,8 +264,7 @@ internal sealed class ScriptRecordDialog : Window
             if (_building) return;
             if (_isCondition) _rec.Uid = (uint)Math.Max(0, _cmp.SelectedIndex);
         };
-        Visibility cmpVis = isCondition ? Visibility.Visible : Visibility.Collapsed;
-        _cmp.Visibility = cmpVis;
+        _cmp.IsVisible = isCondition;
 
         _fields = new FieldsPanel(() => { });
         _fields.Bind(rec);
@@ -271,14 +272,13 @@ internal sealed class ScriptRecordDialog : Window
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Button(L.Cancel);
-        cancel.IsCancel = true;
-        ok.Click += (_, _) => DialogResult = true;
+        ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        var top = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
-        top.Children.Add(new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        var top = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 8) };
+        top.Children.Add(new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center });
         top.Children.Add(_type);
-        top.Children.Add(new TextBlock { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 8, 0), Visibility = cmpVis });
+        top.Children.Add(new TextBlock { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center, IsVisible = isCondition });
         top.Children.Add(_cmp);
         stack.Children.Add(top);
         stack.Children.Add(_fields);
@@ -305,7 +305,7 @@ internal sealed class ScriptRecordDialog : Window
 
     private void SyncTypeCombo()
     {
-        var items = (List<ComboType>)_type.ItemsSource;
+        var items = (List<ComboType>)_type.ItemsSource!;
         for (int i = 0; i < items.Count; i++)
             if (items[i].Id == _rec.Type) { _type.SelectedIndex = i; return; }
         if (items.Count > 0) _type.SelectedIndex = 0;
@@ -395,7 +395,6 @@ internal sealed class FieldsPanel : ScrollViewer
     public FieldsPanel(Changed changed)
     {
         _changed = changed;
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
         MaxHeight = 380;
     }
 
@@ -413,7 +412,7 @@ internal sealed class FieldsPanel : ScrollViewer
 
         if (_rec == null)
         {
-            panel.Children.Add(new TextBlock { Text = L.T("（未选择记录）"), Foreground = WpfTheme.MutedBrush });
+            panel.Children.Add(new TextBlock { Text = L.T("（未选择记录）"), Foreground = UiTheme.MutedBrush });
             _building = false;
             return;
         }
@@ -426,7 +425,7 @@ internal sealed class FieldsPanel : ScrollViewer
                 case FieldKind.Str:
                 {
                     var box = new TextBox { Text = f.S.Text, MinWidth = 300, MaxWidth = 460 };
-                    box.TextChanged += (_, _) => { if (_building) return; f.S.SetText(box.Text); _changed(); };
+                    box.TextChanged += (_, _) => { if (_building) return; f.S.SetText(box.Text ?? ""); _changed(); };
                     panel.Children.Add(Row(f.Param.Length > 0 ? f.Param : L.F("串[{0}]", i), box));
                     break;
                 }
@@ -436,14 +435,14 @@ internal sealed class FieldsPanel : ScrollViewer
                     var note = new TextBlock
                     {
                         Text = f.Param.Length > 0 ? f.Note : L.T("（语义未知；支持 0x 十六进制）"),
-                        Foreground = WpfTheme.MutedBrush,
+                        Foreground = UiTheme.MutedBrush,
                         VerticalAlignment = VerticalAlignment.Center,
                         Margin = new Thickness(8, 0, 0, 0),
                     };
                     box.TextChanged += (_, _) =>
                     {
                         if (_building) return;
-                        try { f.U = Gui.ParseU32(box.Text); box.Foreground = WpfTheme.TextBrush; }
+                        try { f.U = Gui.ParseU32(box.Text ?? ""); box.Foreground = UiTheme.TextBrush; }
                         catch { box.Foreground = Brushes.Red; return; }
                         _changed();
                     };
@@ -457,37 +456,36 @@ internal sealed class FieldsPanel : ScrollViewer
                         Content = (f.Param.Length > 0 ? f.Param : L.F("布尔[{0}]", i)) + L.T("（0=False / 非0=True）"),
                         IsChecked = f.B != 0,
                     };
-                    cb.Checked += (_, _) => { if (!_building) { f.B = 1; _changed(); } };
-                    cb.Unchecked += (_, _) => { if (!_building) { f.B = 0; _changed(); } };
+                    cb.IsCheckedChanged += (_, _) => { if (!_building) { f.B = cb.IsChecked == true ? (byte)1 : (byte)0; _changed(); } };
                     panel.Children.Add(cb);
                     break;
                 }
                 case FieldKind.P:
                 {
                     var btn = new Button { Content = L.T("编辑路径列表…"), MinWidth = 130 };
-                    btn.Click += (_, _) =>
+                    btn.Click += async (_, _) =>
                     {
-                        var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList()) { Owner = Window.GetWindow(this) };
-                        if (dlg.ShowDialog() == true)
-                        {
-                            f.Paths = dlg.Items.Select(s => new GdString(s)).ToList();
-                            f.Count = f.Paths.Count;
-                            _changed();
-                        }
+                        var owner = TreeGridShared.OwnerOf(this);
+                        var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList());
+                        if (await dlg.ShowDialog<bool>(owner!) != true) return;
+                        f.Paths = dlg.Items.Select(s => new GdString(s)).ToList();
+                        f.Count = f.Paths.Count;
+                        _changed();
                     };
                     panel.Children.Add(Row(f.Param.Length > 0 ? f.Param : L.F("路径×{0}", f.Paths!.Count), btn,
-                        new TextBlock { Text = L.F("尾字={0}", f.Trailing), Foreground = WpfTheme.MutedBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }));
+                        new TextBlock { Text = L.F("尾字={0}", f.Trailing), Foreground = UiTheme.MutedBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }));
                     break;
                 }
                 case FieldKind.Lua:
                 {
                     var call = new TextBox { Text = f.S.Text, MinWidth = 280, MaxWidth = 300 };
-                    call.TextChanged += (_, _) => { if (_building) return; f.S.SetText(call.Text); _changed(); };
+                    call.TextChanged += (_, _) => { if (_building) return; f.S.SetText(call.Text ?? ""); _changed(); };
                     var btn = new Button { Content = L.F("参数×{0}…", f.Params!.Count), MinWidth = 110, Margin = new Thickness(8, 0, 0, 0) };
-                    btn.Click += (_, _) =>
+                    btn.Click += async (_, _) =>
                     {
-                        var dlg = new LuaParamsDialog(f) { Owner = Window.GetWindow(this) };
-                        if (dlg.ShowDialog() == true) _changed();
+                        var owner = TreeGridShared.OwnerOf(this);
+                        var dlg = new LuaParamsDialog(f);
+                        if (await dlg.ShowDialog<bool>(owner!) == true) _changed();
                     };
                     var row = Row(f.Param.Length > 0 ? f.Param : L.T("Lua 调用"), call, btn);
                     panel.Children.Add(row);
@@ -503,7 +501,7 @@ internal sealed class FieldsPanel : ScrollViewer
                         t1.TextChanged += (_, _) => { if (!_building) Try(t1, v => t.T1 = v); };
                         t2.TextChanged += (_, _) => { if (!_building) { if (byte.TryParse(t2.Text, out byte b)) { t.T2 = b; _changed(); } } };
                         t3.TextChanged += (_, _) => { if (!_building) Try(t3, v => t.T3 = v); };
-                        ts.TextChanged += (_, _) => { if (!_building) { t.S.SetText(ts.Text); _changed(); } };
+                        ts.TextChanged += (_, _) => { if (!_building) { t.S.SetText(ts.Text ?? ""); _changed(); } };
                         panel.Children.Add(Row(L.T("条件尾部"), t0, t1, t2, t3, ts));
                     }
                     break;
@@ -515,7 +513,7 @@ internal sealed class FieldsPanel : ScrollViewer
         panel.Children.Add(new TextBlock
         {
             Text = L.T("⚠ 带“推断”的名称与位标志未经引擎证实；保存仅保证结构合法。"),
-            Foreground = WpfTheme.WarnBrush,
+            Foreground = UiTheme.WarnBrush,
             Margin = new Thickness(0, 8, 0, 0),
             TextWrapping = TextWrapping.Wrap,
         });
@@ -524,14 +522,14 @@ internal sealed class FieldsPanel : ScrollViewer
 
     private void Try(TextBox box, Action<uint> set)
     {
-        try { set(Gui.ParseU32(box.Text)); box.Foreground = WpfTheme.TextBrush; _changed(); }
+        try { set(Gui.ParseU32(box.Text ?? "")); box.Foreground = UiTheme.TextBrush; _changed(); }
         catch { box.Foreground = Brushes.Red; }
     }
 
     /// <summary>一行：左标签 + 若干控件横排。</summary>
-    private static FrameworkElement Row(string label, params FrameworkElement[] controls)
+    private static Control Row(string label, params Control[] controls)
     {
-        var sp = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 3, 0, 3) };
         sp.Children.Add(new TextBlock
         {
             Text = label,
@@ -552,8 +550,7 @@ internal sealed class LocalizationGrid : UserControl
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
-        CanUserAddRows = false,
-        CanUserDeleteRows = false,
+        CanUserSortColumns = false,
         IsReadOnly = false,
         HeadersVisibility = DataGridHeadersVisibility.Column,
     };
@@ -563,36 +560,28 @@ internal sealed class LocalizationGrid : UserControl
         var colIdx = new DataGridTextColumn
         {
             Header = "#",
-            Binding = new Binding(nameof(LocRow.Idx)),
+            Binding = new Avalonia.Data.Binding(nameof(LocRow.Idx)),
             IsReadOnly = true,
             Width = new DataGridLength(40),
         };
         var colRole = new DataGridTextColumn
         {
             Header = L.T("角色 / 对应节点"),
-            Binding = new Binding(nameof(LocRow.Role)),
+            Binding = new Avalonia.Data.Binding(nameof(LocRow.Role)),
             IsReadOnly = true,
             Width = new DataGridLength(260),
         };
         var colTxt = new DataGridTextColumn
         {
             Header = L.T("文本（{^n} 表示换行；行数不可增删）"),
-            Binding = new Binding(nameof(LocRow.Text)) { UpdateSourceTrigger = UpdateSourceTrigger.LostFocus },
+            Binding = new Avalonia.Data.Binding(nameof(LocRow.Text)),
             Width = new DataGridLength(1, DataGridLengthUnitType.Star),
         };
-        var wrap = new Style(typeof(TextBlock));
-        wrap.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
-        wrap.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
-        colTxt.ElementStyle = wrap;
-        var edit = new Style(typeof(TextBox));
-        edit.Setters.Add(new Setter(TextBox.AcceptsReturnProperty, true));
-        edit.Setters.Add(new Setter(TextBox.TextWrappingProperty, TextWrapping.Wrap));
-        colTxt.EditingElementStyle = edit;
 
         _grid.Columns.Add(colIdx);
         _grid.Columns.Add(colRole);
         _grid.Columns.Add(colTxt);
-        WpfTheme.ApplyGrid(_grid);
+        _grid.CellEditEnding += (_, _) => { };
         Content = _grid;
     }
 

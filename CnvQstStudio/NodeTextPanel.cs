@@ -1,5 +1,8 @@
-using System.Windows;
-using System.Windows.Controls;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
 using CnvQst;
 
 namespace CnvQstStudio;
@@ -10,8 +13,8 @@ namespace CnvQstStudio;
 /// </summary>
 internal sealed class NodeTextPanel : UserControl
 {
-    private readonly TextBlock _questIdText = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = WpfTheme.MutedBrush };
-    private readonly System.Windows.Controls.Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
+    private readonly TextBlock _questIdText = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
+    private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
     private readonly TextBox _main = NewBox();
     private readonly TextBox _alt = NewBox();
     private readonly TextBlock _mainLabel = MkLabel("");
@@ -26,10 +29,11 @@ internal sealed class NodeTextPanel : UserControl
 
     public NodeTextPanel()
     {
-        _copyId.Click += (_, _) =>
+        _copyId.Click += async (_, _) =>
         {
-            string id = _questIdText.Text.Replace("Quest ID: ", "");
-            try { Clipboard.SetText(id); } catch { }
+            string id = _questIdText.Text?.Replace("Quest ID: ", "") ?? "";
+            var tl = TopLevel.GetTopLevel(this);
+            if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(id); } catch { } }
         };
 
         var idRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
@@ -39,7 +43,6 @@ internal sealed class NodeTextPanel : UserControl
         var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -55,6 +58,9 @@ internal sealed class NodeTextPanel : UserControl
         var root = new StackPanel();
         root.Children.Add(grid);
         Content = root;
+
+        _main.TextChanged += (_, _) => OnEdited(_main, _doc?.PrimaryLanguage);
+        _alt.TextChanged += (_, _) => OnEdited(_alt, _altLang);
     }
 
     private static TextBox NewBox() => new()
@@ -63,14 +69,13 @@ internal sealed class NodeTextPanel : UserControl
         TextWrapping = TextWrapping.Wrap,
         MinHeight = 48,
         MaxHeight = 96,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
     };
 
     private static TextBlock MkLabel(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 8, 0) };
 
     private Grid _grid = null!;
 
-    private void Place(FrameworkElement e, int row, int col)
+    private void Place(Control e, int row, int col)
     {
         e.SetValue(Grid.RowProperty, row);
         e.SetValue(Grid.ColumnProperty, col);
@@ -89,13 +94,13 @@ internal sealed class NodeTextPanel : UserControl
         if (doc?.Qst != null)
         {
             _questIdText.Text = "Quest ID: " + doc.Qst.Id;
-            _questIdText.Visibility = Visibility.Visible;
-            _copyId.Visibility = Visibility.Visible;
+            _questIdText.IsVisible = true;
+            _copyId.IsVisible = true;
         }
         else
         {
-            _questIdText.Visibility = Visibility.Collapsed;
-            _copyId.Visibility = Visibility.Collapsed;
+            _questIdText.IsVisible = false;
+            _copyId.IsVisible = false;
         }
 
         if (doc == null || slot == null)
@@ -135,7 +140,7 @@ internal sealed class NodeTextPanel : UserControl
         if (_building || _doc == null || _slot == null || lang == null) return;
         int s = _slot.Value;
         if (s >= lang.Texts.Count) return;
-        lang.Texts[s].SetText(TableLayout.Stored(box.Text));
+        lang.Texts[s].SetText(TableLayout.Stored(box.Text ?? ""));
         TextEdited?.Invoke();
     }
 }

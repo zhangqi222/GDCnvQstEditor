@@ -1,15 +1,16 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using System.Windows.Input;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using CnvQst;
 using CnvQst.Cli;
 
 namespace CnvQstStudio;
 
 /// <summary>
-/// 编辑器主窗口（MaterialDesign）。布局：
+/// 编辑器主窗口（Semi.Avalonia）。布局：
 ///   标题栏 → 全量菜单栏 → 文档页签（突出显示、带独立关闭按钮）→ 状态栏
 /// 不设常驻工具栏：文档级操作走菜单，表格级操作走右键菜单（层次感）。
 /// 所有可见文案走 <see cref="L"/>（中文为基准、语言包可扩展）。
@@ -17,11 +18,12 @@ namespace CnvQstStudio;
 internal sealed class MainWindow : Window
 {
     private readonly TabControl _tabs = new();
-    private readonly StatusBarItem _statusDoc = new();
-    private readonly StatusBarItem _statusLang = new();
-    private readonly StatusBarItem _statusVer = new();
+    private readonly TextBlock _statusDoc = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _statusLang = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _statusVer = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Grid _root = new();
     private Menu? _menu;
+    private bool _forceClose;
 
     public MainWindow()
     {
@@ -31,18 +33,21 @@ internal sealed class MainWindow : Window
         MinWidth = 960;
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        AllowDrop = true;
 
-        // MaterialDesign：使用系统标题栏，无需自绘 TitleBar
         _tabs.SelectionChanged += (_, _) => UpdateStatus();
-        _tabs.ItemContainerStyle = MkTabItemStyle();
 
-        var status = new StatusBar();
-        _statusDoc.HorizontalContentAlignment = HorizontalAlignment.Left;
-        status.Items.Add(_statusDoc);
-        status.Items.Add(new StatusBarItem { Content = "·", Foreground = WpfTheme.MutedBrush });
-        status.Items.Add(_statusLang);
-        status.Items.Add(_statusVer);
+        var status = new Border
+        {
+            BorderBrush = UiTheme.MutedBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Padding = new Thickness(10, 4, 10, 4),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children = { _statusDoc, new TextBlock { Text = "·", VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush }, _statusLang, _statusVer },
+            },
+        };
 
         for (int i = 0; i < 3; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
         Grid.SetRow(_tabs, 1);
@@ -54,21 +59,22 @@ internal sealed class MainWindow : Window
         BuildChrome();
         UpdateStatus();
 
-        DragEnter += (_, e) =>
+        AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
-            e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.DragEffects = e.Data.Contains(DataFormats.Files) ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
-        };
-        Drop += (_, e) =>
+        });
+        AddHandler(DragDrop.DropEvent, (_, e) =>
         {
-            if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+            var paths = e.Data.GetFiles()?.Select(f => f.Path.LocalPath).ToArray();
+            if (paths == null) return;
             foreach (string p in paths)
             {
                 if (Directory.Exists(p)) ShowBatch(p);
-                else if (File.Exists(p)) OpenFile(p);
+                else if (File.Exists(p)) _ = OpenFile(p);
             }
             e.Handled = true;
-        };
+        });
 
         L.Changed += OnLanguageChanged;
         Closing += OnWindowClosing;
@@ -77,140 +83,98 @@ internal sealed class MainWindow : Window
     private DocView? Active => _tabs.SelectedItem is TabItem page ? page.Content as DocView : null;
 
     // ------------------------------------------------------------------
-    // 页签样式：选中态突出（白底 + 强调色下边框），Header 含独立关闭按钮
+    // 页签：Header 含独立关闭按钮（Semi 主题自带选中态高亮）
     // ------------------------------------------------------------------
 
-    private static Style MkTabItemStyle()
-    {
-        var template = new ControlTemplate(typeof(TabItem));
-        var bd = new FrameworkElementFactory(typeof(Border));
-        bd.Name = "Bd";
-        bd.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xF3, 0xF4, 0xF6)));
-        bd.SetValue(Border.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0xE4, 0xE7, 0xEC)));
-        bd.SetValue(Border.BorderThicknessProperty, new Thickness(1, 1, 1, 0));
-        bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(6, 6, 0, 0));
-        bd.SetValue(Border.MarginProperty, new Thickness(4, 4, 0, 0));
-        bd.SetValue(Border.PaddingProperty, new Thickness(4, 4, 2, 4));
-        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
-        cp.SetValue(ContentPresenter.ContentSourceProperty, "Header");
-        cp.SetValue(FrameworkElement.MarginProperty, new Thickness(0));
-        bd.AppendChild(cp);
-        template.VisualTree = bd;
-
-        var selBg = new Trigger { Property = TabItem.IsSelectedProperty, Value = true };
-        selBg.Setters.Add(new Setter(Border.BackgroundProperty, Brushes.White, "Bd"));
-        selBg.Setters.Add(new Setter(Border.BorderBrushProperty, WpfTheme.AccentBrush, "Bd"));
-        template.Triggers.Add(selBg);
-
-        var style = new Style(typeof(TabItem));
-        style.Setters.Add(new Setter(TabItem.TemplateProperty, template));
-        style.Setters.Add(new Setter(TabItem.ForegroundProperty, WpfTheme.TextBrush));
-        return style;
-    }
-
-    /// <summary>页签 Header：文件名 + 独立关闭按钮。</summary>
-    private FrameworkElement MakeTabHeader(TabItem page, string title)
+    /// <summary>页签 Header：文件名 + 独立关闭按钮（中键关闭）。</summary>
+    private Control MakeTabHeader(TabItem page, string title)
     {
         var dock = new DockPanel { LastChildFill = true };
-        var close = new System.Windows.Controls.Button
+        var close = new Button
         {
             Content = "✕",
             Width = 20,
             Height = 20,
             Padding = new Thickness(0),
             FontSize = 11,
-            Foreground = WpfTheme.MutedBrush,
+            Foreground = UiTheme.MutedBrush,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
-            ToolTip = L.CloseTab,
         };
+        ToolTip.SetTip(close, L.CloseTab);
         DockPanel.SetDock(close, Dock.Right);
-        close.Click += (_, _) => CloseTab(page);
+        close.Click += (_, _) => _ = CloseTab(page);
         var text = new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 8, 0) };
         dock.Children.Add(close);
         dock.Children.Add(text);
-        dock.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) CloseTab(page); };
+        dock.PointerReleased += (_, e) =>
+        {
+            if (e.GetCurrentPoint(dock).Properties.IsMiddleButtonPressed) _ = CloseTab(page);
+        };
         return dock;
     }
 
     private void SetTabHeader(TabItem page, DocView view) => page.Header = MakeTabHeader(page, view.Doc.Title);
 
     // ------------------------------------------------------------------
-    // 菜单
+    // 菜单（快捷键用 MenuItem.HotKey，窗口聚焦时全局生效）
     // ------------------------------------------------------------------
-
-    private void BindKey(Key key, ModifierKeys mods, Action exec) =>
-        InputBindings.Add(new KeyBinding(new RelayCommand(exec), key, mods));
 
     private void BuildChrome()
     {
         if (_menu != null) _root.Children.Remove(_menu);
-        InputBindings.Clear();
-
-        BindKey(Key.O, ModifierKeys.Control, OpenViaDialog);
-        BindKey(Key.S, ModifierKeys.Control, SaveActive);
-        BindKey(Key.S, ModifierKeys.Control | ModifierKeys.Shift, SaveActiveAs);
-        BindKey(Key.W, ModifierKeys.Control, () => CloseTab(null));
-        BindKey(Key.N, ModifierKeys.Control, NewConversation);
-        BindKey(Key.N, ModifierKeys.Control | ModifierKeys.Shift, NewQuest);
-        BindKey(Key.E, ModifierKeys.Control, () => ExportActive("txt"));
-        BindKey(Key.B, ModifierKeys.Control, () => ShowBatch(null));
-        BindKey(Key.R, ModifierKeys.Control, ReloadActive);
-        BindKey(Key.L, ModifierKeys.Control, SelectLocTab);
-        BindKey(Key.F5, ModifierKeys.None, VerifyActive);
-        BindKey(Key.F1, ModifierKeys.None, ShowAbout);
 
         var menu = new Menu();
 
         var file = MkMenu(L.MFile);
-        file.Items.Add(MkItem(L.OpenTitle, "Ctrl+O", OpenViaDialog));
-        file.Items.Add(MkItem(L.OpenDirBatch, "Ctrl+B", () => ShowBatch(null)));
+        file.Items.Add(MkItem(L.OpenTitle, new KeyGesture(Key.O, KeyModifiers.Control), () => _ = OpenViaDialog()));
+        file.Items.Add(MkItem(L.OpenDirBatch, new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null)));
         file.Items.Add(new Separator());
-        file.Items.Add(MkItem(L.Save, "Ctrl+S", SaveActive));
-        file.Items.Add(MkItem(L.SaveAs, "Ctrl+Shift+S", SaveActiveAs));
-        file.Items.Add(MkItem(L.CloseTab, "Ctrl+W", () => CloseTab(null)));
+        file.Items.Add(MkItem(L.Save, new KeyGesture(Key.S, KeyModifiers.Control), () => _ = SaveActive()));
+        file.Items.Add(MkItem(L.SaveAs, new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift), () => _ = SaveActiveAs()));
+        file.Items.Add(MkItem(L.CloseTab, new KeyGesture(Key.W, KeyModifiers.Control), () => _ = CloseTab(null)));
         file.Items.Add(new Separator());
-        file.Items.Add(MkItem(L.Exit, "", Close));
+        file.Items.Add(MkItem(L.Exit, null, Close));
 
         var newMenu = MkMenu(L.MNew);
-        newMenu.Items.Add(MkItem(L.NewConversationMenu, "Ctrl+N", NewConversation));
-        newMenu.Items.Add(MkItem(L.NewQuestMenu, "Ctrl+Shift+N", NewQuest));
+        newMenu.Items.Add(MkItem(L.NewConversationMenu, new KeyGesture(Key.N, KeyModifiers.Control), () => _ = NewConversation()));
+        newMenu.Items.Add(MkItem(L.NewQuestMenu, new KeyGesture(Key.N, KeyModifiers.Control | KeyModifiers.Shift), () => _ = NewQuest()));
 
         var import = MkMenu(L.MImport);
-        import.Items.Add(MkItem(L.ImportTxtToActive, "", ImportTxtToActive));
-        import.Items.Add(MkItem(L.ImportJsonNewTab, "", ImportJson));
+        import.Items.Add(MkItem(L.ImportTxtToActive, null, () => _ = ImportTxtToActive()));
+        import.Items.Add(MkItem(L.ImportJsonNewTab, null, () => _ = ImportJson()));
 
         var export = MkMenu(L.MExport);
-        export.Items.Add(MkItem(L.ExportTxtOfficial, "Ctrl+E", () => ExportActive("txt")));
-        export.Items.Add(MkItem(L.ExportJson, "", () => ExportActive("json")));
-        export.Items.Add(MkItem(L.ExportDump, "", () => ExportActive("dump")));
+        export.Items.Add(MkItem(L.ExportTxtOfficial, new KeyGesture(Key.E, KeyModifiers.Control), () => _ = ExportActive("txt")));
+        export.Items.Add(MkItem(L.ExportJson, null, () => _ = ExportActive("json")));
+        export.Items.Add(MkItem(L.ExportDump, null, () => _ = ExportActive("dump")));
 
         var batch = MkMenu(L.MBatch);
-        batch.Items.Add(MkItem(L.BatchPanel, "Ctrl+B", () => ShowBatch(null)));
+        batch.Items.Add(MkItem(L.BatchPanel, new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null)));
 
         var tools = MkMenu(L.MTools);
-        tools.Items.Add(MkItem(L.VerifyCurrent, "F5", VerifyActive));
-        tools.Items.Add(MkItem(L.Anchors, "", ShowAnchors));
-        tools.Items.Add(MkItem(L.ReloadCurrent, "Ctrl+R", ReloadActive));
+        tools.Items.Add(MkItem(L.VerifyCurrent, new KeyGesture(Key.F5), VerifyActive));
+        tools.Items.Add(MkItem(L.Anchors, null, ShowAnchors));
+        tools.Items.Add(MkItem(L.ReloadCurrent, new KeyGesture(Key.R, KeyModifiers.Control), () => _ = ReloadActive()));
 
         var view = MkMenu(L.MView);
-        view.Items.Add(MkItem(L.LocStringTable, "Ctrl+L", SelectLocTab));
+        view.Items.Add(MkItem(L.LocStringTable, new KeyGesture(Key.L, KeyModifiers.Control), SelectLocTab));
 
         var lang = MkMenu(L.MenuLanguage);
         foreach (var info in L.Languages)
         {
             var code = info.Code;
-            var item = MkItem(info.Name, "", () => L.Use(code));
-            item.IsCheckable = true;
+            var item = MkItem(info.Name, null, () => L.Use(code));
+            item.ToggleType = MenuItemToggleType.CheckBox;
             item.IsChecked = code == L.Code;
             lang.Items.Add(item);
         }
         lang.Items.Add(new Separator());
-        lang.Items.Add(MkItem(L.OpenLangFolder, "", OpenLangFolder));
+        lang.Items.Add(MkItem(L.OpenLangFolder, null, OpenLangFolder));
 
         var help = MkMenu(L.MHelp);
-        help.Items.Add(MkItem(L.About, "F1", ShowAbout));
+        help.Items.Add(MkItem(L.About, new KeyGesture(Key.F1), ShowAbout));
 
         foreach (var m in new[] { file, newMenu, import, export, batch, tools, view, lang, help }) menu.Items.Add(m);
         Grid.SetRow(menu, 0);
@@ -220,8 +184,8 @@ internal sealed class MainWindow : Window
 
     private static MenuItem MkMenu(string header) => new() { Header = header };
 
-    private static MenuItem MkItem(string header, string gesture, Action onClick) =>
-        new() { Header = header, InputGestureText = gesture, Command = new RelayCommand(onClick) };
+    private static MenuItem MkItem(string header, KeyGesture? hotkey, Action onClick) =>
+        new() { Header = header, HotKey = hotkey, Command = new RelayCommand(onClick) };
 
     /// <summary>语言切换：重建菜单 + 各页签标题与内容。</summary>
     private void OnLanguageChanged()
@@ -229,7 +193,7 @@ internal sealed class MainWindow : Window
         Title = L.WindowTitle;
         foreach (TabItem page in _tabs.Items)
         {
-            var view = (DocView)page.Content;
+            var view = (DocView)page.Content!;
             SetTabHeader(page, view);
             view.RefreshAll();
         }
@@ -251,28 +215,37 @@ internal sealed class MainWindow : Window
 
     private void UpdateStatus()
     {
-        _statusDoc.Content = Active?.Doc.Summary ?? L.StatusReady;
-        _statusDoc.Foreground = Active?.Doc.ReadOnly == true ? WpfTheme.WarnBrush : WpfTheme.TextBrush;
-        _statusLang.Content = L.DisplayName;
-        _statusVer.Content = "CnvQstStudio 1.2";
+        _statusDoc.Text = Active?.Doc.Summary ?? L.StatusReady;
+        _statusDoc.Foreground = Active?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
+        _statusLang.Text = L.DisplayName;
+        _statusVer.Text = "CnvQstStudio 1.3";
     }
 
     // ------------------------------------------------------------------
     // 打开 / 关闭
     // ------------------------------------------------------------------
 
-    private void OpenViaDialog()
+    private async Task OpenViaDialog()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = L.T("Grim Dawn 对话 / 任务|*.cnv;*.qst|全部文件|*.*") };
-        if (dlg.ShowDialog(this) != true) return;
-        OpenFile(dlg.FileName);
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = L.OpenTitle,
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType(L.T("Grim Dawn 对话 / 任务")) { Patterns = new[] { "*.cnv", "*.qst" } },
+                new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } },
+            },
+        });
+        if (files.Count == 0) return;
+        await OpenFile(files[0].Path.LocalPath);
     }
 
-    private void OpenFile(string path)
+    private async Task OpenFile(string path)
     {
         foreach (TabItem page in _tabs.Items)
         {
-            var existing = (DocView)page.Content;
+            var existing = (DocView)page.Content!;
             if (existing.Doc.FilePath != null &&
                 string.Equals(Path.GetFullPath(existing.Doc.FilePath), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
             {
@@ -288,7 +261,11 @@ internal sealed class MainWindow : Window
         {
             Gui.Warn(this, L.F("打开失败：{0}", e.Message), L.T("打开"));
         }
+        await Task.CompletedTask;
     }
+
+    /// <summary>冒烟测试专用：内存新建文档页签（不落盘、不弹框）。</summary>
+    public void OpenSmokeTab(object model) => AddTab(DocSession.FromModel(model, null));
 
     private void AddTab(DocSession doc)
     {
@@ -305,38 +282,39 @@ internal sealed class MainWindow : Window
         UpdateStatus();
     }
 
-    private void CloseTab(TabItem? page)
+    private async Task<bool> CloseTab(TabItem? page)
     {
         page ??= _tabs.SelectedItem as TabItem;
-        if (page == null) return;
-        var view = (DocView)page.Content;
+        if (page == null) return false;
+        var view = (DocView)page.Content!;
         if (view.Doc.Dirty)
         {
-            var r = MessageBox.Show(this,
+            var r = await MsgBox.Show(this,
                 L.F("{0} 有未保存修改，保存后再关闭？", view.Doc.Title),
-                L.CloseTab, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-            if (r == MessageBoxResult.Cancel) return;
-            if (r == MessageBoxResult.Yes && !DoSave(view, saveAs: false)) return;
+                L.CloseTab, MsgButtons.YesNoCancel, warning: true);
+            if (r == MsgResult.Cancel) return false;
+            if (r == MsgResult.Yes && !await DoSave(view, saveAs: false)) return false;
         }
         _tabs.Items.Remove(page);
         UpdateStatus();
+        return true;
     }
 
     // ------------------------------------------------------------------
     // 新建
     // ------------------------------------------------------------------
 
-    private void NewConversation()
+    private async Task NewConversation()
     {
-        var dlg = new NewConversationDialog { Owner = this };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new NewConversationDialog();
+        if (await dlg.ShowDialog<bool>(this) != true) return;
         AddTab(DocSession.FromModel(Creation.NewConversation(dlg.Speaker, dlg.FirstText, dlg.EndText), null));
     }
 
-    private void NewQuest()
+    private async Task NewQuest()
     {
-        var dlg = new NewQuestDialog { Owner = this };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new NewQuestDialog();
+        if (await dlg.ShowDialog<bool>(this) != true) return;
         AddTab(DocSession.FromModel(Creation.NewQuest(dlg.Group, dlg.QuestName, dlg.TaskTitle, dlg.TaskDesc), null));
     }
 
@@ -344,11 +322,11 @@ internal sealed class MainWindow : Window
     // 保存
     // ------------------------------------------------------------------
 
-    private void SaveActive() => _ = DoSave(Active, saveAs: false);
+    private Task<bool> SaveActive() => DoSave(Active, saveAs: false);
 
-    private void SaveActiveAs() => _ = DoSave(Active, saveAs: true);
+    private Task<bool> SaveActiveAs() => DoSave(Active, saveAs: true);
 
-    private bool DoSave(DocView? view, bool saveAs)
+    private async Task<bool> DoSave(DocView? view, bool saveAs)
     {
         if (view == null) return false;
         var doc = view.Doc;
@@ -360,14 +338,20 @@ internal sealed class MainWindow : Window
         string? path = doc.FilePath;
         if (saveAs || path == null)
         {
-            var dlg = new Microsoft.Win32.SaveFileDialog
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                Filter = doc.Cnv != null ? L.T("Grim Dawn 对话|*.cnv") : L.T("Grim Dawn 任务|*.qst"),
-                FileName = path != null ? Path.GetFileName(path)
+                Title = L.Save,
+                SuggestedFileName = path != null ? System.IO.Path.GetFileName(path)
                     : doc.Cnv != null ? L.T("未命名对话.cnv") : L.T("未命名任务.qst"),
-            };
-            if (dlg.ShowDialog(this) != true) return false;
-            path = dlg.FileName;
+                DefaultExtension = doc.Cnv != null ? "cnv" : "qst",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType(doc.Cnv != null ? L.T("Grim Dawn 对话") : L.T("Grim Dawn 任务"))
+                        { Patterns = new[] { doc.Cnv != null ? "*.cnv" : "*.qst" } },
+                },
+            });
+            if (file == null) return false;
+            path = file.Path.LocalPath;
         }
         string? err = doc.Save(path, backup: true);
         if (err != null)
@@ -384,7 +368,7 @@ internal sealed class MainWindow : Window
     // 导入 / 导出
     // ------------------------------------------------------------------
 
-    private void ImportTxtToActive()
+    private async Task ImportTxtToActive()
     {
         var view = Active;
         if (view?.Doc.ReadOnly != false)
@@ -392,21 +376,31 @@ internal sealed class MainWindow : Window
             Gui.Warn(this, L.T("请先打开一个可编辑的 .cnv / .qst 页签。"), L.ImportTxtToActive);
             return;
         }
-        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = L.T("TXT|*.txt|全部文件|*.*") };
-        if (dlg.ShowDialog(this) != true) return;
-        var preview = new ImportTxtPreviewDialog(view.Doc, dlg.FileName) { Owner = this };
-        if (preview.ShowDialog() != true || !preview.Applied) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = L.ImportTxtToActive,
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("TXT") { Patterns = new[] { "*.txt" } }, new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } } },
+        });
+        if (files.Count == 0) return;
+        var preview = new ImportTxtPreviewDialog(view.Doc, files[0].Path.LocalPath);
+        if (await preview.ShowDialog<bool>(this) != true || !preview.Applied) return;
         view.RefreshAll();
         Gui.Info(this, L.T("回填完成（尚未保存，请检查后保存）。"), L.ImportTxtToActive);
     }
 
-    private void ImportJson()
+    private async Task ImportJson()
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = L.T("JSON|*.json|全部文件|*.*") };
-        if (dlg.ShowDialog(this) != true) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = L.ImportJsonNewTab,
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("JSON") { Patterns = new[] { "*.json" } }, new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } } },
+        });
+        if (files.Count == 0) return;
         try
         {
-            byte[] data = JsonIO.ImportToBytes(File.ReadAllText(dlg.FileName));
+            byte[] data = JsonIO.ImportToBytes(await File.ReadAllTextAsync(files[0].Path.LocalPath));
             object model = data.Length > 4 && data[0] == 'C' ? CnvFile.Parse(data) : QstFile.Parse(data);
             bool valid = model switch
             {
@@ -423,20 +417,21 @@ internal sealed class MainWindow : Window
         }
     }
 
-    private void ExportActive(string kind)
+    private async Task ExportActive(string kind)
     {
         var view = Active;
         if (view == null) { Gui.Warn(this, L.T("请先打开一个文件。"), L.MExport); return; }
-        string filter = kind switch
-        {
-            "txt" => L.T("TXT|*.txt"),
-            "json" => L.T("JSON|*.json"),
-            _ => L.T("TXT|*.txt"),
-        };
+        string ext = kind == "json" ? "json" : "txt";
         string name = Path.GetFileNameWithoutExtension(view.Doc.FilePath
             ?? (view.Doc.Cnv != null ? L.T("未命名对话") : L.T("未命名任务")));
-        var dlg = new Microsoft.Win32.SaveFileDialog { Filter = filter, FileName = name + (kind == "json" ? ".json" : ".txt") };
-        if (dlg.ShowDialog(this) != true) return;
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = L.MExport,
+            SuggestedFileName = name + "." + ext,
+            DefaultExtension = ext,
+            FileTypeChoices = new[] { new FilePickerFileType(ext.ToUpperInvariant()) { Patterns = new[] { "*." + ext } } },
+        });
+        if (file == null) return;
         try
         {
             string content = kind switch
@@ -445,7 +440,7 @@ internal sealed class MainWindow : Window
                 "json" => view.Doc.JsonText(),
                 _ => view.Doc.DumpText(),
             };
-            File.WriteAllText(dlg.FileName, content, new System.Text.UTF8Encoding(false));
+            await File.WriteAllTextAsync(file.Path.LocalPath, content, new System.Text.UTF8Encoding(false));
         }
         catch (Exception e)
         {
@@ -491,25 +486,25 @@ internal sealed class MainWindow : Window
         }
         var sw = new StringWriter();
         CliApp.Run(["anchors", view.Doc.FilePath], sw, sw);
-        new TextWindow("anchors — " + Path.GetFileName(view.Doc.FilePath), sw.ToString()) { Owner = this }.Show();
+        new TextWindow("anchors — " + Path.GetFileName(view.Doc.FilePath), sw.ToString()).Show();
     }
 
-    private void ReloadActive()
+    private async Task ReloadActive()
     {
         var view = Active;
         if (view?.Doc.FilePath == null) return;
         if (view.Doc.Dirty &&
-            MessageBox.Show(this, L.T("放弃未保存修改并重新加载？"), L.ReloadCurrent,
-                MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            await MsgBox.Show(this, L.T("放弃未保存修改并重新加载？"), L.ReloadCurrent,
+                MsgButtons.OkCancel, warning: true) != MsgResult.Ok)
             return;
         string path = view.Doc.FilePath;
         if (_tabs.SelectedItem is TabItem page) _tabs.Items.Remove(page);
-        OpenFile(path);
+        await OpenFile(path);
     }
 
     private void ShowBatch(string? path)
     {
-        var win = new BatchWindow { Owner = this };
+        var win = new BatchWindow();
         if (path != null) win.PresetDirectory(path);
         win.Show();
     }
@@ -520,18 +515,21 @@ internal sealed class MainWindow : Window
         if (Active != null) Active.ToggleView();
     }
 
-    private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        foreach (TabItem page in _tabs.Items)
+        if (_forceClose) return;
+        var firstDirty = _tabs.Items.OfType<TabItem>()
+            .Select(p => (TabItem: p, View: (DocView)p.Content!))
+            .FirstOrDefault(x => x.View.Doc.Dirty);
+        if (firstDirty.TabItem == null) return;
+        e.Cancel = true;
+        var r = await MsgBox.Show(this,
+            L.F("{0} 有未保存修改，仍然退出？", firstDirty.View.Doc.Title), L.Exit,
+            MsgButtons.YesNo, warning: true);
+        if (r == MsgResult.Yes)
         {
-            var view = (DocView)page.Content;
-            if (view.Doc.Dirty)
-            {
-                var r = MessageBox.Show(this, L.F("{0} 有未保存修改，仍然退出？", view.Doc.Title), L.Exit,
-                    MessageBoxButton.YesNo, MessageBoxImage.Warning);
-                if (r == MessageBoxResult.No) e.Cancel = true;
-                return;
-            }
+            _forceClose = true;
+            Close();
         }
     }
 }
