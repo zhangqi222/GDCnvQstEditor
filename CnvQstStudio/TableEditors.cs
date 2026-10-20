@@ -55,7 +55,7 @@ internal static class CnvNodeLabel
             if (text.Length > 30) text = text[..30] + "…";
             label += $"：{text}";
         }
-        if (s.HasLink) label += L.T("（跳转）");
+        if (s.HasLink) label += L.F("（跳转→#{0}）", s.LinkId);   // 表格里直接显示跳转目标编号，便于识别
         return label;
     }
 }

@@ -32,10 +32,12 @@ internal sealed class CnvTableEditor : UserControl
     public DocSession Doc => _doc;
     public int? SelectedTextSlot => SelectedStep?.Index;
 
+    private static readonly Dictionary<string, int> ColFromTag = new() { ["0"] = 0, ["1"] = 1, ["2"] = 2, ["3"] = 3, ["4"] = 4 };
+
     public CnvTableEditor()
     {
         _tree = new TreeDataGrid { CanUserResizeColumns = true };
-        // 右键：先选中该行、记录命中单元格，并按行/列动态生成右键菜单
+        // 右键：选中行在此处理；菜单在单元格模板的 ContextRequested 里按行+列动态生成
         _tree.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         _tree.ContextMenu = BuildContextMenu(null, -1);
         Content = _tree;
@@ -47,7 +49,7 @@ internal sealed class CnvTableEditor : UserControl
     // 模板：单元格单行高度（不自动换行增高），网格线 = 右竖线 + 底横线
     // ------------------------------------------------------------------
 
-    private static FuncDataTemplate<CnvRow> CellBorder(Action<Border> build, Action<string>? onDoubleTap = null, string? tapTag = null) => new((_, _) =>
+    private FuncDataTemplate<CnvRow> CellBorder(Action<Border> build, Action<string>? onDoubleTap = null, string? tapTag = null) => new((_, _) =>
     {
         var border = new Border
         {
@@ -62,6 +64,15 @@ internal sealed class CnvTableEditor : UserControl
         {
             string tag = tapTag;
             border.DoubleTapped += (_, e) => { e.Handled = true; onDoubleTap(tag); };
+        }
+        if (tapTag != null)
+        {
+            // 右键以单元格为基准：ContextRequested 在单元格模板内捕获列 tag（与双击同一机制）
+            string tag = tapTag;
+            border.ContextRequested += (_, e) =>
+            {
+                if (border.DataContext is CnvRow r) OnCellRightPressed(tag, r);
+            };
         }
         return border;
     });
@@ -82,7 +93,7 @@ internal sealed class CnvTableEditor : UserControl
 
     private HierarchicalTreeDataGridSource<CnvRow> BuildSource(List<CnvRow> roots)
     {
-        // 五列等宽（各 20%，Star 权重），表格填满父容器宽度。
+        // 列宽：节点 30% / 属性 10% / 本地化·条件·动作各 20%（Star 权重），表格填满父容器宽度。
         var s = new HierarchicalTreeDataGridSource<CnvRow>(roots)
         {
             Columns =
@@ -102,7 +113,7 @@ internal sealed class CnvTableEditor : UserControl
                             row.Children.Add(node);
                             b.Child = row;
                         }, OnCellDoubleTap, "0"),
-                        width: new GridLength(1, GridUnitType.Star)),
+                        width: new GridLength(3, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
                 new TemplateColumn<CnvRow>(L.T("属性", "Attrs"),
                     CellBorder(b =>
@@ -149,17 +160,24 @@ internal sealed class CnvTableEditor : UserControl
     {
         if (!e.GetCurrentPoint(_tree).Properties.IsRightButtonPressed) return;
         var visual = e.Source as Visual;
-        (CnvRow? Row, int Col) hit = (null, -1);
         foreach (var anc in visual.GetSelfAndVisualAncestors())
         {
-            if (hit.Col < 0 && anc is TreeDataGridCell cell) hit.Col = cell.ColumnIndex;
-            if (hit.Row == null && anc is Control c && _tree.TryGetRowModel(c, out CnvRow? row) && row != null)
-                hit.Row = row;
+            if (anc is Control c && _tree.TryGetRowModel(c, out CnvRow? row) && row != null)
+            {
+                SelectRow(row, bringIntoView: false);
+                return;
+            }
         }
-        _lastCell = hit.Row != null ? (hit.Row, hit.Col) : null;
-        // 右键菜单按命中行/列动态生成（精确到单元格）
-        _tree.ContextMenu = BuildContextMenu(hit.Row, hit.Col);
-        if (hit.Row != null) SelectRow(hit.Row, bringIntoView: false);
+        // 空白区域（不在任何行上）：清空菜单
+        _tree.ContextMenu = BuildContextMenu(null, -1);
+    }
+
+    /// <summary>右键命中单元格（模板 ContextRequested，按列 tag 定位）→ 生成精确到单元格的菜单。</summary>
+    private void OnCellRightPressed(string tag, CnvRow row)
+    {
+        int col = ColFromTag.GetValueOrDefault(tag, -1);
+        _lastCell = (row, col);
+        _tree.ContextMenu = BuildContextMenu(row, col);
     }
 
     private void SelectRow(CnvRow target, bool bringIntoView)
