@@ -37,10 +37,18 @@ internal static class CnvNodeLabel
         5 => "🔹 通用", 6 => "🛑 结束对话", 7 => "↪ 跳转", 8 => "🎲 随机选项", _ => "❓ 未知类型",
     });
 
+    /// <summary>无 emoji 的类型名（根节点改用 Semi 图标时，文本不再重复图标语义）。</summary>
+    public static string KindName(uint type) => L.T(type switch
+    {
+        0 => "根", 1 => "台词", 2 => "继续选项", 3 => "接受选项", 4 => "拒绝选项",
+        5 => "通用", 6 => "结束对话", 7 => "跳转", 8 => "随机选项", _ => "未知类型",
+    });
+
     /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
     public static string TreeLabel(CnvFile c, CnvStep s)
     {
-        string label = KindZh(s.Type);
+        // 根节点：图标改用 Semi 小房子（PathIcon），文本不再带 emoji
+        string label = s.Type == Names.StepRoot && s.Depth == 0 ? KindName(s.Type) : KindZh(s.Type);
         string text = c.TextFor(s).Replace("\n", " ");
         if (text.Length > 0)
         {
@@ -72,6 +80,14 @@ internal sealed class CnvRow : INotifyPropertyChanged
     {
         get => _highlight;
         set { if (_highlight != value) { _highlight = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Highlight))); } }
+    }
+
+    /// <summary>Semi 图标资源键（null = 无图标，仅根节点 = SemiIconHome）。</summary>
+    private string? _iconKey;
+    public string? IconKey
+    {
+        get => _iconKey;
+        private set { if (_iconKey != value) { _iconKey = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconKey))); } }
     }
 
     public string Node { get; private set; } = "";
@@ -111,6 +127,7 @@ internal sealed class CnvRow : INotifyPropertyChanged
 
     public void Reload()
     {
+        IconKey = Step.Type == Names.StepRoot && Step.Depth == 0 ? "SemiIconHome" : null;
         Node = CnvNodeLabel.TreeLabel(Doc.Cnv!, Step);
         var parts = new List<string>();
         if ((Step.Unknown & 1) != 0) parts.Add(L.T("仅一次"));
@@ -120,7 +137,7 @@ internal sealed class CnvRow : INotifyPropertyChanged
         Attrs = string.Join("　", parts);
         Cond = ScriptLines(Step.Conditions);
         Act = ScriptLines(Step.Actions);
-        foreach (string p in new[] { nameof(Node), nameof(Attrs), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(IconKey), nameof(Attrs), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -156,6 +173,8 @@ internal abstract class QstRowOwner
     public virtual string IdText => "";
     /// <summary>该 ID 的作用说明（单元格 ToolTip）。</summary>
     public virtual string IdTip => "";
+    /// <summary>Semi 图标资源键（null = 无图标）。</summary>
+    public virtual string? IconKey => null;
     /// <summary>本行在本地化串表中的文本槽位（null = 该行无对应文本）。</summary>
     public virtual int? TextSlot => null;
 
@@ -170,7 +189,8 @@ internal abstract class QstRowOwner
 internal sealed class QstRootOwner(QstFile q) : QstRowOwner
 {
     public override object OwnerObject => this;
-    public override string NodeLabel => "🔴 " + (SlotText(q, 0).Length > 0 ? SlotText(q, 0) : L.T("（任务组）"));
+    public override string NodeLabel => SlotText(q, 0).Length > 0 ? SlotText(q, 0) : L.T("（任务组）");
+    public override string? IconKey => "SemiIconHome";
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
@@ -300,6 +320,7 @@ internal sealed class QstRow : INotifyPropertyChanged
     public IBrush NodeBrush { get; private set; }
     public string IdText { get; private set; }
     public string IdTip { get; private set; } = "";
+    public string? IconKey { get; private set; }
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
 
@@ -312,6 +333,7 @@ internal sealed class QstRow : INotifyPropertyChanged
         Node = owner.NodeLabel;
         IdText = owner.IdText;
         IdTip = owner.IdTip;
+        IconKey = owner.IconKey;
         NodeBrush = owner.NodeBrush;
         SubText = owner.SubText;
         Reload();
@@ -330,10 +352,11 @@ internal sealed class QstRow : INotifyPropertyChanged
         SubText = Owner.SubText;
         IdText = Owner.IdText;
         IdTip = Owner.IdTip;
+        IconKey = Owner.IconKey;
         NodeBrush = Owner.NodeBrush;
         Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
         Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
-        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(IdTip), nameof(NodeBrush), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(IdTip), nameof(IconKey), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -400,9 +423,24 @@ internal sealed class EmptyToNullConverter : Avalonia.Data.Converters.IValueConv
         throw new NotSupportedException();
 }
 
+/// <summary>Semi 图标资源键（如 SemiIconHome）→ Geometry（图标字典已随主题并入应用资源）。</summary>
+internal sealed class IconKeyToGeometryConverter : Avalonia.Data.Converters.IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
+    {
+        if (value is not string key || Application.Current == null) return null;
+        var theme = Application.Current.ActualThemeVariant ?? global::Avalonia.Styling.ThemeVariant.Default;
+        return Application.Current.TryFindResource(key, theme, out var v) ? v as Geometry : null;
+    }
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 internal static class TreeGridShared
 {
     public static readonly EmptyToNullConverter EmptyToNull = new();
+    public static readonly IconKeyToGeometryConverter IconToGeometry = new();
 
     public static readonly HighlightToBrushConverter HighlightToBrush = new();
 

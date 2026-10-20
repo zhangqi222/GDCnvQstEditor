@@ -86,9 +86,15 @@ internal sealed class CnvTableEditor : UserControl
                     new TemplateColumn<CnvRow>(L.T("节点", "Node"),
                         CellBorder(b =>
                         {
-                            var node = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.TextBrush };
+                            var row = new StackPanel { Orientation = Orientation.Horizontal };
+                            var icon = new PathIcon { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+                            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(CnvRow.IconKey)) { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
+                            icon.Bind(PathIcon.DataProperty, new Binding(nameof(CnvRow.IconKey)) { Converter = TreeGridShared.IconToGeometry });
+                            row.Children.Add(icon);
+                            var node = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.TextBrush, VerticalAlignment = VerticalAlignment.Center };
                             node.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Node)));
-                            b.Child = node;
+                            row.Children.Add(node);
+                            b.Child = row;
                         }, OnCellDoubleTap, "0"),
                         width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),

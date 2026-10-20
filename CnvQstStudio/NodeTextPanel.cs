@@ -43,19 +43,26 @@ internal sealed class NodeTextPanel : UserControl
         _idHost.Children.Add(_questIdText);
         _idHost.Children.Add(_copyId);
 
-        // 布局：id 行（跨两列）→ 标签行 → 两栏输入框（左右并排，填满剩余高度）
+        // 布局：id 行（跨两列）→ 标签行 → 两栏输入框（左右并排，固定高度填满剩余空间，中间竖分割线）
         var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });          // 分割竖线
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        Place(_idHost, 0, 0, colSpan: 2);
+        var divider = new Border { Background = UiTheme.GridLineBrush, Margin = new Thickness(4, 0, 4, 0) };
+        divider.SetValue(Grid.RowProperty, 1);
+        Grid.SetRowSpan(divider, 2);
+        divider.SetValue(Grid.ColumnProperty, 1);
+        grid.Children.Add(divider);
+
+        Place(_idHost, 0, 0, colSpan: 3);
         Place(_mainLabel, 1, 0);
-        Place(_altLabel, 1, 1);
-        Place(_main, 2, 0, rightMargin: 4);
-        Place(_alt, 2, 1, leftMargin: 4);
+        Place(_altLabel, 1, 2);
+        Place(_main, 2, 0, rightMargin: 2);
+        Place(_alt, 2, 2, leftMargin: 2);
 
         Content = grid;
 
@@ -67,6 +74,7 @@ internal sealed class NodeTextPanel : UserControl
     {
         AcceptsReturn = true,
         TextWrapping = TextWrapping.Wrap,   // 超长自动换行；纵向滚动由 TextBox 内建，无横向滚动条
+        VerticalAlignment = VerticalAlignment.Stretch,   // 固定填满父容器分给的高度，不随内容增高
     };
 
     private static TextBlock MkLabel(string text) => new() { Text = text, Margin = new Thickness(0, 0, 0, 2) };

@@ -186,3 +186,107 @@
 ---
 
 *生成于 2026-10-19，对应 GUI v1.2（WPF + WPF-UI 4.3，commit ed12195）。*
+
+
+---
+
+## cnv参数 —— CNV 对话内置条件 / 动作全量参考
+
+适用范围：CNV 对话每个节点（台词/选项/通用等）都挂一组 **条件**（满足才显示/生效）与一组 **动作**（条件满足后执行）。CNV 与 QST 用的是**同一套** Scriptable 条件/动作系统，字段编码一致；差异只在挂载位置（见「qst参数」节）。
+
+**记录结构**（编辑器"条件/动作"弹窗与下表参数列的对应关系）：
+
+- 条件 = `type(u32) + body版本(u8) + 比较符(u32) + body`；动作 = `type(u32) + body版本(u8) + body`（**动作没有比较符**）。
+- 比较符（官方 ScriptableCondition+Comparison，作用同 SQL 运算符）：`0=<　1=<=　2==　3=>=　4=>　5=!=`。
+- 条件集合首字 logic：`0=AND（全部满足）　1=OR（满足任一）`；空集合只占计数字本身。
+- body 版本（编辑器里的 subType）：`HasFaction(6) / HasItem(9) / HasQuestObjective(11) / LuaScript(12) / CheckRandomValue(21) 恒为 1`，其余恒为 0——版本错会让官方编辑器按另一种布局读、直接错位。
+- 参数类型缩写：`S`=字符串　`I`=u32　`B`=u8　`i/b`=仅 body 版本=1 时存在　`P`=数量+字符串列表+尾字u32　`L`=Lua 调用（函数名+参数列表，条件形态另有固定尾部 5 字）。
+
+**置信度说明**：下表"名称"列全部经官方编辑器证实（2026-09-28 用探测文件在编辑器中逐类型辨认 + Common.dll 类型枚举直读），**仅动作 19 标注（推断）**；"用途"列按官方类名/参数名与语料观察归纳，除注明"真机核对"外未逐项在引擎内验证——按用途改数值前建议先用官方编辑器对照确认。
+
+### 条件（30 种，type 0–29）
+
+| type | 名称 | 参数（body） | 用途 |
+|---|---|---|---|
+| 0 | OnQuest | QuestFile(S) OnQuest(B) | 玩家是否正在进行指定任务；OnQuest 作开关：1=进行中才算、0=未在进行才算 |
+| 1 | QuestTaskComplete | QuestFile(S) Task(I) TaskComplete(B) | 指定任务的指定 task 是否已完成；TaskComplete 开关真/假 |
+| 2 | HasExperience | Experience(I) | 玩家当前经验值与比较符指定值比较 |
+| 3 | IsLevel | IsLevel(I) | 玩家等级与比较符指定值比较 |
+| 4 | IsDifficulty | IsDifficulty(I) | 当前游戏难度判定；语料实证 0/1/2 = Normal/Epic/Legendary（与 GiveExperience 350/22000/54000 同现，真机核对） |
+| 5 | IsHardcore | IsHardcore(B) | 是否专家（hardcore）模式 |
+| 6 | HasFaction | FactionName(S) Value(I)（v1） | 玩家与指定阵营的声望值与比较符指定值比较 |
+| 7 | HasToken | TokenName(S) HasToken(B) | 全局 token 是否已被设置；token 是任务/对话间传递状态的核心机制（条件 7/18/20、动作 9/10 配对使用） |
+| 8 | HasMoney | MoneyAmount(I) | 玩家金币数与比较符指定值比较 |
+| 9 | HasItem | ItemRecord(S) ItemCount(I) CompleteOnly(b)（v1） | 是否持有指定物品 ≥ ItemCount；CompleteOnly=1 时只统计任务物品栏 |
+| 10 | HasKilled | MonsterRecords 列表(P)，尾字=KillCount(u32) | 是否击杀过列表中怪物 ≥ KillCount 次 |
+| 11 | HasQuestObjective | QuestFile(S) Task(I) Objective(I) Satisfied(B)（v1） | 指定任务目标（objective）当前是否满足/完成 |
+| 12 | LuaScript | Function(S)+参数表(L)（v1） | 调用 Lua 函数，返回值作真值判断（引擎经 LuaManager 解析）；条件形态末尾带固定 5 字尾部 |
+| 13 | KnowsPlayer | KnowsPlayer(B) | NPC 是否已认识玩家（首次见面/熟客判定） |
+| 14 | OnQuestTask | QuestFile(S) Task(I) OnTask(B) | 玩家是否正处于指定任务的指定 task 阶段 |
+| 15 | UsedQuestItem | ItemRecord(S) NumUsed(I) | 指定任务物品是否已被使用 ≥ NumUsed 次 |
+| 16 | HasKilledProxy | ProxyRecords 列表(P)，尾字=KillCount(u32) | 经代理列表统计击杀（同 HasKilled，走 proxy 记录） |
+| 17 | WaitForCompletion | （无参数） | 等待完成（语料中作目标唯一条件；无 body，含义=等本目标/task 完成事件） |
+| 18 | ServerHasToken | TokenName(S) HasToken(B) | 服务器侧 token 判定（多人环境的状态，本地单机等同 HasToken） |
+| 19 | QuestBlocked | QuestFile(S) QuestBlocked(B) | 指定任务是否处于被封锁状态（未满足进入条件） |
+| 20 | AnyoneHasToken | TokenName(S) HasToken(B) | 队伍/服务器中任意玩家持有 token |
+| 21 | CheckRandomValue | Name(S) RandomValue(I)（v1） | 检查按 Name 存储的随机值（与动作 21 GenerateRandomValue 配对，做概率分支） |
+| 22 | OwnsDLC | DLC_ID(I) | 是否拥有指定 DLC（按 DLC 的数字 ID） |
+| 23 | HasTribute | TributeAmount(I) | 贡品（tribute）数量与比较符指定值比较 |
+| 24 | EarnedDevotion | DevotionAmount(I) | 虔诚（devotion）值与比较符指定值比较 |
+| 25 | HasMastery | MasteryName(S) HasMastery(B) | 是否拥有指定精通（mastery） |
+| 26 | IsChallenge | IsChallenge(I) | 挑战（challenge）模式/等级判定 |
+| 27 | HasBuff | BuffName(S) HasBuff(B) | 玩家是否带有指定 buff |
+| 28 | HasKilledMonsterClass | Faction1(I) Faction2(I) KillCount(I) | 击杀某怪物职业类（monster class）计数与比较符比较（字段名照录官方字段表） |
+| 29 | HasKilledFaction | Faction1(I) Faction2(I) KillCount(I) | 击杀某阵营成员计数与比较符比较 |
+
+### 动作（29 种，type 1–28；0 与 16 引擎工厂返回 null，正式文件不使用）
+
+| type | 名称 | 参数（body） | 用途 |
+|---|---|---|---|
+| 1 | BeginQuestTask | QuestFile(S) Task(I) | 开始（激活）指定任务的指定 task（推进任务阶段） |
+| 2 | CompleteQuest | QuestFile(S) | 完成整个任务（触发完成奖励与后续） |
+| 3 | CompleteQuestTask | QuestFile(S) Task(I) | 完成指定任务的指定 task（task 级推进） |
+| 4 | GiveMoney | MoneyAmount(I) | 给予金币 |
+| 5 | GiveFaction | FactionType(S) Amount(I) | 给予指定阵营声望（增减 Amount） |
+| 6 | GiveItem | ItemRecord(S) NumItems(I) | 给予物品 |
+| 7 | GiveLevel | NumLevels(I) | 提升玩家等级 |
+| 8 | GiveExperience | Experience(I) | 给予经验值 |
+| 9 | GiveToken | TokenName(S) | 设置全局 token（与条件 7/18/20 配对） |
+| 10 | RemoveToken | TokenName(S) | 清除全局 token |
+| 11 | LuaScript | Function(S)+参数表(L) | 调用 Lua 函数执行任意脚本逻辑（动作形态，无尾部 5 字） |
+| 12 | DebugPrint | Text(S) | 调试输出（控制台/日志） |
+| 13 | PlaySound | SoundRecord(S) | 播放声音 |
+| 14 | PlayAnimation | AnimationType(I) | 播放动画；语料实证 9 = Chat（真机核对），其余枚举值待查 |
+| 15 | GiveSkillPoint | NumSkillpoints(I) | 给予技能点 |
+| 17 | Notification | Tag(S) | 弹出 UI 通知（按 tag 定位文案，语料见 tagNotification_… 前缀） |
+| 18 | GiveAttribPoint | NumAttributePoints(I) | 给予属性点 |
+| 19 | ScriptEvent | ScriptEvent(S) **（推断）** | 触发脚本事件（语料全部 EV_… 前缀；编辑器截图该行被弹窗遮住，未亲眼确认） |
+| 20 | GiveRandomItem | ItemRecord(S) NumItems(I) | 按物品记录随机给予 |
+| 21 | GenerateRandomValue | Name(S) Min(I) Max(I) | 生成 [Min,Max] 随机值并以 Name 存储（与条件 21 CheckRandomValue 配对） |
+| 22 | CastSkill | SkillRecord(S) | 对玩家施放指定技能 |
+| 23 | UnlockFaction | FactionType(S) | 解锁阵营（声望面板可见） |
+| 24 | SetFaction | FactionType(S) Value(I) | 直接把阵营声望设为 Value（与 5 GiveFaction 增减式相对） |
+| 25 | GiveDevotion | NumDevotionPoints(I) | 给予虔诚点 |
+| 26 | GiveTribute | TributeAmount(I) | 给予贡品 |
+| 27 | UnlockTutorial | TutorialPage(I) | 解锁指定教学页 |
+| 28 | PlayVideo | VideoPath(S) AllowSkip(B) | 播放视频；AllowSkip=是否允许跳过 |
+
+---
+
+## qst参数 —— QST 任务内置条件 / 动作全量参考
+
+**与 CNV 的关系**：条件/动作与 CNV **完全同一套**（同表、同编码、同比较符），本节不再重复表格，查上一节「cnv参数」即可。QST 的差异在于**挂载位置**与**用途语境**：
+
+- **挂载位置**（本编辑器树形表中可直接右键添加）：
+  - task 的 **OnAccept（接受事件）**：玩家接受任务时执行的动作序列——典型组合 `BeginQuestTask(1)` 开阶段、`GiveToken(9)` 设状态、`GiveExperience(8)/GiveMoney(4)` 给预付奖励；
+  - task 的 **OnComplete（完成事件）**：task 完成时执行——典型组合 `CompleteQuest(2)` / `GiveExperience(8)` / `IsDifficulty(4)` 分难度给不同奖励（语料 mq_burrwitch 实证）；
+  - **Objective（目标）**：目标的 Conditions（何时完成目标，常配 WaitForCompletion(17) / HasToken(7)）与 Actions（完成目标时的附加效果）；
+  - 目标完成态可被对话侧引用：CNV 条件 `HasQuestObjective(11)`、`QuestTaskComplete(1)` 按 QuestFile+Task+Objective 定位——**Objective ID 列显示的 uid 就是官方编辑器供此引用的 ID**。
+- **QST 语料统计**（248 样本）：task/objective/event 的 flags 全 0、uid 全非 0；task/objective/event 的串表槽固定为 组名(0)+任务名(1)+每 task 依次 [标题, 描述]+事件/目标文本，总量遵守公式 `2+2T+O+I+E`（本编辑器保存三检查会强制校验）。
+- **QST 特有注意点**：
+  - 编辑器底部面板选中任意行可编辑其串表文本（组名/任务名/标题/描述/目标文本）；
+  - 结构增删（右键 ＋任务/＋目标/＋事件、－删除）会自动按公式重建本地化表，不破坏既有文本；
+  - 任务头部 flags（主线/支线/可重复）在右键"任务属性"里编辑；
+  - 对话侧引导玩家来接任务用 CNV 的 OnQuest(0)/BeginQuestTask 对（接任务动作一般挂在对话选项上，不在 QST 内）。
+
+---

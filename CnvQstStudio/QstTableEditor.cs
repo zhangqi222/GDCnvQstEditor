@@ -84,7 +84,12 @@ internal sealed class QstTableEditor : UserControl
                     new TemplateColumn<QstRow>(L.T("节点", "Node"),
                         CellBorder(b =>
                         {
-                            var stack = new StackPanel();
+                            var row = new StackPanel { Orientation = Orientation.Horizontal };
+                            var icon = new PathIcon { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+                            icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(QstRow.IconKey)) { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
+                            icon.Bind(PathIcon.DataProperty, new Binding(nameof(QstRow.IconKey)) { Converter = TreeGridShared.IconToGeometry });
+                            row.Children.Add(icon);
+                            var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                             var node = new TextBlock { TextWrapping = TextWrapping.Wrap };
                             node.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
                             node.Bind(TextBlock.ForegroundProperty, new Binding(nameof(QstRow.NodeBrush)));
@@ -93,7 +98,8 @@ internal sealed class QstTableEditor : UserControl
                             sub.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.SubText)));
                             sub.Bind(Visual.IsVisibleProperty, new Binding(nameof(QstRow.SubText)) { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
                             stack.Children.Add(sub);
-                            b.Child = stack;
+                            row.Children.Add(stack);
+                            b.Child = row;
                         }, OnCellDoubleTap, "0"),
                         width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),

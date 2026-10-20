@@ -32,7 +32,7 @@ internal sealed class DocView : UserControl
         VerticalAlignment = VerticalAlignment.Top,
     };
     private readonly Grid _host = new();
-    private readonly NodeTextPanel _panel = new() { IsVisible = false };
+    private readonly NodeTextPanel _panel = new() { IsVisible = false, ClipToBounds = true };
     private readonly GridSplitter _panelSplitter = new()
     {
         Height = 6,
