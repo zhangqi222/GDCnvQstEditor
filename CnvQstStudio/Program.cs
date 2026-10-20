@@ -21,23 +21,34 @@ internal static class Program
     private static int Main(string[] args)
     {
         // 无参数（或显式 gui）→ 图形界面；--smoke → 建窗即关（CI/回归用）；带参数 → CLI。
+        // 未捕获异常兜底最先挂载（启动早期崩溃也能落日志）。
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => ShowFatal(e.ExceptionObject as Exception);
+
         if (args.Length == 0 || (args.Length == 1 && args[0] == "gui"))
         {
-            L.Load();
-            CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
-
-            // 两层 UI：先启动界面（编辑器 / 批量转换），选择后进入对应窗口。
-            var app = BuildApp();
-            Dispatcher.UIThread.UnhandledException += (_, e) =>
+            try
             {
-                ShowFatal(e.Exception);
-                e.Handled = true;
-            };
-            AppDomain.CurrentDomain.UnhandledException += (_, e) => ShowFatal(e.ExceptionObject as Exception);
+                L.Load();
+                CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
 
-            var launcher = new LauncherWindow();
-            app.Run(launcher);
-            return 0;
+                // 直接进编辑器（v2.0.1 起取消启动器页）。
+                var app = BuildApp();
+                Dispatcher.UIThread.UnhandledException += (_, e) =>
+                {
+                    ShowFatal(e.Exception);
+                    e.Handled = true;
+                };
+
+                var main = new MainWindow();
+                app.Run(main);
+                return 0;
+            }
+            catch (Exception e)
+            {
+                WriteCrashLog(e);
+                Console.Error.WriteLine("UI 启动失败：" + e);
+                return 1;
+            }
         }
 
         if (args.Length == 1 && args[0] == "--smoke")
@@ -88,29 +99,27 @@ internal static class Program
             };
 
             // 冒烟：启动界面显示后，自动打开编辑器主窗（覆盖两窗口构建），1.2 秒后全部关闭。
-            var launcher = new LauncherWindow();
-            launcher.Activated += (_, _) =>
+            var main = new MainWindow();
+            main.Activated += (_, _) =>
             {
                 try
                 {
-                    var editor = new MainWindow();
-                    editor.Show();
                     // 冒烟增强：用内存新建文档各开一页，实际构建 CNV/QST 两个 TreeDataGrid 表格。
-                    editor.OpenSmokeTab(Creation.NewConversation("Smoke", "你好，冒烟测试。", "再见。"));
-                    editor.OpenSmokeTab(Creation.NewQuest("SmokeGroup", "SmokeQuest", "任务一", "这是冒烟测试任务。"));
+                    main.OpenSmokeTab(Creation.NewConversation("Smoke", "你好，冒烟测试。", "再见。"));
+                    main.OpenSmokeTab(Creation.NewQuest("SmokeGroup", "SmokeQuest", "任务一", "这是冒烟测试任务。"));
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
-                    timer.Tick += (_, _) => { timer.Stop(); editor.Close(); launcher.Close(); };
+                    timer.Tick += (_, _) => { timer.Stop(); main.Close(); };
                     timer.Start();
                 }
                 catch (Exception ex)
                 {
                     failure = ex;
                     Console.WriteLine("UI 冒烟失败：" + ex);
-                    launcher.Close();
+                    main.Close();
                 }
             };
 
-            app.Run(launcher);
+            app.Run(main);
 
             if (failure != null)
             {
@@ -130,19 +139,24 @@ internal static class Program
     }
 
     /// <summary>未捕获异常：落日志并弹框（避免整个程序静默闪退）。</summary>
-    private static void ShowFatal(Exception? ex)
+    private static string WriteCrashLog(Exception ex)
     {
-        if (ex == null) return;
-        string log = "";
         try
         {
-            log = Path.Combine(Path.GetTempPath(), "CnvQstStudio_crash.log");
+            string log = Path.Combine(Path.GetTempPath(), "CnvQstStudio_crash.log");
             File.AppendAllText(log, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
+            return log;
         }
         catch
         {
-            // 日志失败也不能再引发新的崩溃
+            return "(日志写入失败)";
         }
+    }
+
+    private static void ShowFatal(Exception? ex)
+    {
+        if (ex == null) return;
+        string log = WriteCrashLog(ex);
         try
         {
             string msg = ex.ToString();
