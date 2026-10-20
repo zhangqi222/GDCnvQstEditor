@@ -112,8 +112,8 @@ internal sealed class NodeTextPanel : UserControl
         if (doc == null || slot == null)
         {
             IsEnabled = false;
-            _main.Text = "";
-            _alt.Text = "";
+            SetBoxText(_main, "");
+            SetBoxText(_alt, "");
             _mainLabel.Text = L.T("任务文件文本");
             _altLabel.Text = L.T("本地化文本（无其它语言块）");
             _building = false;
@@ -122,13 +122,13 @@ internal sealed class NodeTextPanel : UserControl
 
         IsEnabled = true;
         _mainLabel.Text = L.T("任务文件文本") + $"（{doc.PrimaryLanguage.Tag.Text}）";
-        _main.Text = TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value));
+        SetBoxText(_main, TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value)));
 
         _altLang = doc.SecondaryLanguage;
         if (_altLang != null)
         {
             _altLabel.Text = L.T("本地化文本") + $"（{_altLang.Tag.Text}）";
-            _alt.Text = TableLayout.Display(GetText(_altLang, slot.Value));
+            SetBoxText(_alt, TableLayout.Display(GetText(_altLang, slot.Value)));
         }
         else
         {
@@ -140,6 +140,20 @@ internal sealed class NodeTextPanel : UserControl
 
     private static string GetText(LanguageBlock lang, int slot) =>
         slot >= 0 && slot < lang.Texts.Count ? lang.Texts[slot].Text : "";
+
+    /// <summary>
+    /// 程序化赋值不进撤销栈：临时关闭撤销并把 UndoLimit 归零（二者都会丢弃既有撤销历史），
+    /// 这样 Ctrl+Z 只撤销用户自己的输入，不会一路回退清空绑定进来的原文。
+    /// </summary>
+    private static void SetBoxText(TextBox box, string text)
+    {
+        bool undo = box.IsUndoEnabled;
+        box.IsUndoEnabled = false;
+        box.UndoLimit = 0;
+        box.Text = text;
+        box.UndoLimit = 200;
+        box.IsUndoEnabled = undo;
+    }
 
     private void OnEdited(TextBox box, LanguageBlock? lang)
     {

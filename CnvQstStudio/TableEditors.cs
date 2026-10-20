@@ -113,7 +113,9 @@ internal sealed class CnvRow : INotifyPropertyChanged
 
     public string Text
     {
-        get => TableLayout.Display(Doc.PrimaryLanguage.Texts[Math.Min(Step.Index, Doc.PrimaryLanguage.Texts.Count - 1)].Text);
+        // 表格"本地化文本"列暂不显示内容（该列待接入独立的本地化语言块数据源）；
+        // 节点文本请在底部编辑器修改（写回逻辑保持不变）。
+        get => "";
         set
         {
             var texts = Doc.PrimaryLanguage.Texts;
@@ -214,8 +216,13 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
 }
 
 /// <summary>OnAccept / Objectives / OnComplete 组行（仅折叠分组，无脚本内容）。</summary>
-internal sealed class QstGroupOwner(string label, IBrush brush) : QstRowOwner
+internal sealed class QstGroupOwner(string label, IBrush brush, string kind, QstTask? task) : QstRowOwner
 {
+    /// <summary>分组种类：Accept / Objectives / Complete（右键菜单据此提供对应添加项）。</summary>
+    public string Kind { get; } = kind;
+    /// <summary>分组所属的 task（其下添加事件/目标时定位）。</summary>
+    public QstTask? Task { get; } = task;
+
     public override object OwnerObject => this;
     public override string NodeLabel => label;
     public override bool HasScript => false;
@@ -363,14 +370,9 @@ internal sealed class QstRow : INotifyPropertyChanged
     /// <summary>本行串表文本（本地化文本列；可编辑，写回后同步主行标签）。</summary>
     public string Text
     {
-        get
-        {
-            int? slot = Owner.TextSlot;
-            if (slot == null) return "";
-            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
-            return lang != null && slot.Value >= 0 && slot.Value < lang.Texts.Count
-                ? TableLayout.Display(lang.Texts[slot.Value].Text) : "";
-        }
+        // 表格"本地化文本"列暂不显示内容（该列现复用主语言文本，待接入独立的本地化语言块数据源）；
+        // 任务文本请在底部编辑器修改（写回逻辑保持不变）。
+        get => "";
         set
         {
             int? slot = Owner.TextSlot;

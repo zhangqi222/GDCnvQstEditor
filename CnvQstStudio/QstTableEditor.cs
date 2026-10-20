@@ -24,7 +24,7 @@ internal sealed class QstTableEditor : UserControl
     private List<QstRow> _rows = new();
     private TreeDataGrid _tree = null!;
     private HierarchicalTreeDataGridSource<QstRow> _source = null!;
-    private (QstRow Row, int Col)? _lastCell;   // 右键命中的单元格（复制用）
+    private (QstRow Row, int Col)? _lastCell;   // 右键命中的单元格（菜单/复制用）
 
     public event Action? LocRequested { add => _locRequested += value; remove => _locRequested -= value; }
     public event Action? SelectedChanged;
@@ -36,14 +36,14 @@ internal sealed class QstTableEditor : UserControl
     {
         _tree = new TreeDataGrid { CanUserResizeColumns = true };
         _tree.AddHandler(InputElement.PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
-        _tree.ContextMenu = BuildContextMenu();
+        _tree.ContextMenu = BuildContextMenu(null, -1);
         Content = _tree;
     }
 
     private QstRow? SelectedRow => _source?.RowSelection.SelectedItem is QstRow r ? r : null;
 
     // ------------------------------------------------------------------
-    // 模板（单元格：网格线 = 右竖线 + 底横线；高亮底色随 Highlight）
+    // 模板：单元格单行高度（不自动换行增高），网格线 = 右竖线 + 底横线
     // ------------------------------------------------------------------
 
     private static FuncDataTemplate<QstRow> CellBorder(Action<Border> build, Action<string>? onDoubleTap = null, string? tapTag = null) => new((_, _) =>
@@ -65,9 +65,15 @@ internal sealed class QstTableEditor : UserControl
         return border;
     });
 
+    private static TextBlock OneLine() => new()
+    {
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
     private static FuncDataTemplate<ColoredLine> LineTemplate() => new((line, _) =>
     {
-        var tb = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var tb = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
         tb.Bind(TextBlock.TextProperty, new Binding(nameof(ColoredLine.Text)));
         tb.Bind(TextBlock.ForegroundProperty, new Binding(nameof(ColoredLine.Brush)));
         return tb;
@@ -75,7 +81,7 @@ internal sealed class QstTableEditor : UserControl
 
     private HierarchicalTreeDataGridSource<QstRow> BuildSource(List<QstRow> roots)
     {
-        // 列宽用 Star 权重（保持 300:140:280:230:230 比例），表格填满父容器宽度。
+        // 五列等宽（各 20%，Star 权重），表格填满父容器宽度。
         var s = new HierarchicalTreeDataGridSource<QstRow>(roots)
         {
             Columns =
@@ -89,56 +95,46 @@ internal sealed class QstTableEditor : UserControl
                             icon.Bind(Visual.IsVisibleProperty, new Binding(nameof(QstRow.IconKey)) { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
                             icon.Bind(PathIcon.DataProperty, new Binding(nameof(QstRow.IconKey)) { Converter = TreeGridShared.IconToGeometry });
                             row.Children.Add(icon);
-                            var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                            var node = new TextBlock { TextWrapping = TextWrapping.Wrap };
+                            var node = OneLine();
                             node.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.Node)));
                             node.Bind(TextBlock.ForegroundProperty, new Binding(nameof(QstRow.NodeBrush)));
-                            stack.Children.Add(node);
-                            var sub = new TextBlock { FontStyle = FontStyle.Italic, FontSize = 11, Foreground = UiTheme.MutedBrush, Margin = new Thickness(0, 1, 0, 0) };
-                            sub.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.SubText)));
-                            sub.Bind(Visual.IsVisibleProperty, new Binding(nameof(QstRow.SubText)) { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
-                            stack.Children.Add(sub);
-                            row.Children.Add(stack);
+                            row.Children.Add(node);
                             b.Child = row;
                         }, OnCellDoubleTap, "0"),
-                        width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
+                        width: new GridLength(1, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
                 new TemplateColumn<QstRow>("Objective ID",
                     CellBorder(b =>
                     {
-                        var tb = new TextBlock();
+                        var tb = OneLine();
                         tb.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.IdText)));
                         // 该 ID 的作用说明（按行所有者不同而不同；空则不弹）
                         tb.Bind(ToolTip.TipProperty, new Binding(nameof(QstRow.IdTip)) { Converter = TreeGridShared.EmptyToNull });
                         b.Child = tb;
                     }, OnCellDoubleTap, "1"),
-                    width: new GridLength(TreeGridShared.ColAttrs, GridUnitType.Star)),
+                    width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<QstRow>(L.T("本地化文本", "Localized Text"),
-                    CellBorder(b =>
-                    {
-                        var tb = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxHeight = 220 };
-                        tb.Bind(TextBlock.TextProperty, new Binding(nameof(QstRow.Text)));
-                        b.Child = tb;
-                    }, OnCellDoubleTap, "2"),
-                    width: new GridLength(TreeGridShared.ColText, GridUnitType.Star)),
+                    // 本地化列暂不显示内容（待接入独立的本地化语言块数据源）
+                    CellBorder(b => { }, OnCellDoubleTap, "2"),
+                    width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<QstRow>(L.T("条件", "Conditions"),
                     CellBorder(b =>
                     {
-                        var items = new ItemsControl();
+                        var items = new ItemsControl { MaxHeight = 18, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top };
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(QstRow.Cond)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
                     }, OnCellDoubleTap, "2b"),
-                    width: new GridLength(TreeGridShared.ColCond, GridUnitType.Star)),
+                    width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<QstRow>(L.T("动作", "Actions"),
                     CellBorder(b =>
                     {
-                        var items = new ItemsControl();
+                        var items = new ItemsControl { MaxHeight = 18, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top };
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(QstRow.Act)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
                     }, OnCellDoubleTap, "3"),
-                    width: new GridLength(TreeGridShared.ColAct, GridUnitType.Star)),
+                    width: new GridLength(1, GridUnitType.Star)),
             },
         };
         s.RowSelection.SingleSelect = true;
@@ -161,15 +157,10 @@ internal sealed class QstTableEditor : UserControl
             if (hit.Row == null && anc is Control c && _tree.TryGetRowModel(c, out QstRow? row) && row != null)
                 hit.Row = row;
         }
-        if (hit.Row != null)
-        {
-            _lastCell = (hit.Row, hit.Col);
-            SelectRow(hit.Row, bringIntoView: false);
-        }
-        else
-        {
-            _lastCell = null;
-        }
+        _lastCell = hit.Row != null ? (hit.Row, hit.Col) : null;
+        // 右键菜单按命中行/列动态生成（精确到单元格）
+        _tree.ContextMenu = BuildContextMenu(hit.Row, hit.Col);
+        if (hit.Row != null) SelectRow(hit.Row, bringIntoView: false);
     }
 
     private void SelectRow(QstRow target, bool bringIntoView)
@@ -211,82 +202,132 @@ internal sealed class QstTableEditor : UserControl
     }
 
     // ------------------------------------------------------------------
-    // 右键菜单 / 双击 / 复制
+    // 右键菜单（按行/列动态生成：根→任务属性|添加任务；task→添加目标|完成|接受|删除任务；以此类推）
     // ------------------------------------------------------------------
 
-    private ContextMenu BuildContextMenu()
+    private ContextMenu BuildContextMenu(QstRow? row, int col)
     {
         var cm = new ContextMenu();
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋任务"), () => AddTask()));
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋目标"), () => AddObjective()));
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋完成事件"), () => AddEvent()));
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋接受事件"), () => AddIncentive()));
-        cm.Items.Add(new Separator());
-        cm.Items.Add(TreeGridShared.Mi(L.T("－删除所选", "- Delete"), DeleteRow));
-        cm.Items.Add(new Separator());
-        cm.Items.Add(TreeGridShared.Mi(L.T("任务属性", "Quest Props"), () => _ = EditQuestProps()));
-        cm.Items.Add(TreeGridShared.Mi(L.T("复制单元格", "Copy Cell"), () => _ = CopyCell()));
+        if (row == null) return cm;   // 空白区域：无可用菜单
+
+        switch (row.Owner)
+        {
+            case QstRootOwner:
+                cm.Items.Add(TreeGridShared.Mi(L.T("任务属性", "Quest Props"), () => _ = EditQuestProps()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("＋任务"), () => AddTask()));
+                break;
+            case QstQuestOwner:
+                cm.Items.Add(TreeGridShared.Mi(L.T("任务属性", "Quest Props"), () => _ = EditQuestProps()));
+                break;
+            case QstTaskRow tr:
+                cm.Items.Add(TreeGridShared.Mi(L.T("＋目标"), () => AddObjective(tr.T)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("＋完成事件"), () => AddEvent(tr.T, incentive: false)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("＋接受事件"), () => AddEvent(tr.T, incentive: true)));
+                cm.Items.Add(new Separator());
+                cm.Items.Add(TreeGridShared.Mi(L.T("－删除任务", "- Delete Task"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("字段编辑", "Edit Fields"), () => _ = EditFields(row)));
+                break;
+            case QstGroupOwner g:
+                if (g.Kind == "Accept")
+                    cm.Items.Add(TreeGridShared.Mi(L.T("＋接受事件"), () => AddEvent(g.Task, incentive: true)));
+                else if (g.Kind == "Objectives")
+                    cm.Items.Add(TreeGridShared.Mi(L.T("＋目标"), () => AddObjective(g.Task)));
+                else if (g.Kind == "Complete")
+                    cm.Items.Add(TreeGridShared.Mi(L.T("＋完成事件"), () => AddEvent(g.Task, incentive: false)));
+                break;
+            case QstObjectiveRow or:
+                cm.Items.Add(TreeGridShared.Mi(L.T("－删除目标", "- Delete Objective"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("字段编辑", "Edit Fields"), () => _ = EditFields(row)));
+                break;
+            case QstEventRow er:
+                cm.Items.Add(TreeGridShared.Mi(L.T("－删除事件", "- Delete Event"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("字段编辑", "Edit Fields"), () => _ = EditFields(row)));
+                break;
+        }
+
+        // 列特定菜单项
+        if (col == 3 || col == 4)
+        {
+            if (row.Owner.HasScript)
+            {
+                cm.Items.Add(new Separator());
+                cm.Items.Add(TreeGridShared.Mi(col == 3 ? L.T("编辑条件", "Edit Conditions") : L.T("编辑动作", "Edit Actions"),
+                    () => _ = EditScript(row, col == 3)));
+            }
+        }
+
+        // 全局：有内容即可复制（含任务 ID 列）
+        string? cell = CellText(row, col);
+        if (cell != null)
+        {
+            cm.Items.Add(new Separator());
+            cm.Items.Add(TreeGridShared.Mi(L.T("复制单元格", "Copy Cell"), () => _ = CopyCell()));
+        }
         return cm;
     }
 
-    /// <summary>复制右键命中单元格的文本（先右键单元格，再选菜单复制）。</summary>
+    private static string? CellText(QstRow r, int col) => col switch
+    {
+        0 => r.Node,
+        1 => r.IdText.Length > 0 ? r.IdText : null,
+        2 => null,          // 本地化列暂不显示内容
+        3 => r.Cond.Count > 0 ? string.Join("\n", r.Cond.Select(l => l.Text)) : null,
+        4 => r.Act.Count > 0 ? string.Join("\n", r.Act.Select(l => l.Text)) : null,
+        _ => null,
+    };
+
     private async Task CopyCell()
     {
-        if (_lastCell == null)
-        {
-            Gui.Warn(TreeGridShared.OwnerOf(this), L.T("请先右键点击要复制的单元格，再选“复制单元格”。"), L.T("复制", "Copy"));
-            return;
-        }
-        string? text = _lastCell.Value.Col switch
-        {
-            0 => _lastCell.Value.Row.Node,
-            1 => _lastCell.Value.Row.IdText,
-            2 => _lastCell.Value.Row.Text,
-            3 => string.Join("\n", _lastCell.Value.Row.Cond.Select(l => l.Text)),
-            4 => string.Join("\n", _lastCell.Value.Row.Act.Select(l => l.Text)),
-            _ => null,
-        };
-        if (text == null) return;
+        if (_lastCell == null || CellText(_lastCell.Value.Row, _lastCell.Value.Col) is not string text) return;
         var tl = TopLevel.GetTopLevel(this);
         if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(text); } catch { } }
     }
 
-    private async void OnCellDoubleTap(string tag)
+    /// <summary>编辑指定行的条件/动作（右键菜单与双击共用）。</summary>
+    private async Task EditScript(QstRow row, bool isCondition)
     {
-        var sel = SelectedRow;
-        if (sel == null) return;
-
-        if (tag == "2b")
+        var list = isCondition ? row.Owner.Conditions : row.Owner.Actions;
+        if (list == null) return;
+        if (await ScriptListDialog.Show(_doc, list, isCondition, TreeGridShared.OwnerOf(this)))
         {
-            if (await ScriptListDialog.Show(_doc, sel.Owner.Conditions, true, TreeGridShared.OwnerOf(this))) sel.Reload();
-        }
-        else if (tag == "3")
-        {
-            if (await ScriptListDialog.Show(_doc, sel.Owner.Actions, false, TreeGridShared.OwnerOf(this))) sel.Reload();
-        }
-        else if (tag is "0" or "1" or "2")
-        {
-            await EditFields();
+            row.Reload();
+            _changed();
         }
     }
 
-    private async Task EditFields()
+    private async void OnCellDoubleTap(string tag)
     {
-        var sel = SelectedRow;
-        if (sel == null) return;
-        switch (sel.Owner)
+        if (_source?.RowSelection.SelectedItem is not QstRow sel) return;
+
+        if (tag == "2b")
         {
-            case QstRootOwner:
-            case QstQuestOwner:
-                await EditQuestProps();
-                break;
-            case QstTaskRow or QstEventRow or QstObjectiveRow:
-                if (await QstFieldsDialog.Show(sel.Owner, TreeGridShared.OwnerOf(this)))
-                {
-                    sel.Reload();
-                    _changed();
-                }
-                break;
+            if (sel.Owner.HasScript) await EditScript(sel, isCondition: true);
+        }
+        else if (tag == "3")
+        {
+            if (sel.Owner.HasScript) await EditScript(sel, isCondition: false);
+        }
+        else if (tag is "0" or "1" or "2")
+        {
+            switch (sel.Owner)
+            {
+                case QstRootOwner:
+                case QstQuestOwner:
+                    await EditQuestProps();
+                    break;
+                case QstTaskRow or QstEventRow or QstObjectiveRow:
+                    await EditFields(sel);
+                    break;
+            }
+        }
+    }
+
+    private async Task EditFields(QstRow row)
+    {
+        if (await QstFieldsDialog.Show(row.Owner, TreeGridShared.OwnerOf(this)))
+        {
+            row.Reload();
+            _changed();
         }
     }
 
@@ -331,7 +372,7 @@ internal sealed class QstTableEditor : UserControl
             descRow.Attach(taskRow);
 
             var acceptRow = new QstRow(this, new QstGroupOwner(
-                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), UiTheme.AccentBrush));
+                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), UiTheme.AccentBrush, "Accept", t));
             rows.Add(acceptRow);
             acceptRow.Attach(taskRow);
             for (int k = 0; k < t.Incentives.Count; k++)
@@ -342,7 +383,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var objRow = new QstRow(this, new QstGroupOwner(
-                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), UiTheme.OkBrush));
+                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), UiTheme.OkBrush, "Objectives", t));
             rows.Add(objRow);
             objRow.Attach(taskRow);
             for (int k = 0; k < t.Objectives.Count; k++)
@@ -354,7 +395,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var compRow = new QstRow(this, new QstGroupOwner(
-                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count), UiTheme.OkBrush));
+                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count), UiTheme.OkBrush, "Complete", t));
             rows.Add(compRow);
             compRow.Attach(taskRow);
             for (int k = 0; k < t.Events.Count; k++)
@@ -371,7 +412,7 @@ internal sealed class QstTableEditor : UserControl
         _source = BuildSource(roots);
         _tree.Source = _source;
         _source.ExpandAll();
-        // 默认不选定任何节点（用户指定）；子树高亮仅在真正选中后出现。
+        // 默认不选定任何节点；子树高亮仅在真正选中后出现。
         SelectedChanged?.Invoke();
     }
 
@@ -399,9 +440,9 @@ internal sealed class QstTableEditor : UserControl
         SelectOwner(t);     // 自动选定并滚动到新行
     }
 
-    private void AddObjective()
+    private void AddObjective(QstTask? task)
     {
-        var t = ActiveTask();
+        var t = task ?? ActiveTask();
         if (t == null) return;
         var o = _qst.AddObjective(t);
         _changed();
@@ -409,21 +450,11 @@ internal sealed class QstTableEditor : UserControl
         SelectOwner(o);
     }
 
-    private void AddEvent()
+    private void AddEvent(QstTask? task, bool incentive)
     {
-        var t = ActiveTask();
+        var t = task ?? ActiveTask();
         if (t == null) return;
-        var e = _qst.AddEvent(t, incentive: false);
-        _changed();
-        Bind(_doc, _changed);
-        SelectOwner(e);
-    }
-
-    private void AddIncentive()
-    {
-        var t = ActiveTask();
-        if (t == null) return;
-        var e = _qst.AddEvent(t, incentive: true);
+        var e = _qst.AddEvent(t, incentive);
         _changed();
         Bind(_doc, _changed);
         SelectOwner(e);
