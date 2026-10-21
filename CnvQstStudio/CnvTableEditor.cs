@@ -32,7 +32,7 @@ internal sealed class CnvTableEditor : UserControl
     public DocSession Doc => _doc;
     public int? SelectedTextSlot => SelectedStep?.Index;
 
-    private static readonly Dictionary<string, int> ColFromTag = new() { ["0"] = 0, ["1"] = 1, ["2"] = 2, ["3"] = 3, ["4"] = 4 };
+    private static readonly Dictionary<string, int> ColFromTag = new() { ["0"] = 0, ["1"] = 1, ["2"] = 2, ["3"] = 3, ["4"] = 4, ["5"] = 5 };
 
     public CnvTableEditor()
     {
@@ -93,11 +93,21 @@ internal sealed class CnvTableEditor : UserControl
 
     private HierarchicalTreeDataGridSource<CnvRow> BuildSource(List<CnvRow> roots)
     {
-        // 列宽：节点 30% / 属性 10% / 本地化·条件·动作各 20%（Star 权重），表格填满父容器宽度。
+        // 列宽：序号固定窄列 / 节点 30% / 属性 10% / 本地化·条件·动作各 20%（Star 权重），表格填满父容器宽度。
         var s = new HierarchicalTreeDataGridSource<CnvRow>(roots)
         {
             Columns =
             {
+                // 序号列（=Step.Index，与跳转节点 LinkId / 节点属性编号同一套编号）
+                new TemplateColumn<CnvRow>(L.T("序号", "No."),
+                    CellBorder(b =>
+                    {
+                        var tb = OneLine();
+                        tb.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Seq)));
+                        tb.Foreground = UiTheme.MutedBrush;
+                        b.Child = tb;
+                    }, OnCellDoubleTap, "0"),
+                    width: new GridLength(48)),
                 new HierarchicalExpanderColumn<CnvRow>(
                     new TemplateColumn<CnvRow>(L.T("节点", "Node"),
                         CellBorder(b =>
@@ -108,11 +118,11 @@ internal sealed class CnvTableEditor : UserControl
                             icon.Bind(PathIcon.DataProperty, new Binding(nameof(CnvRow.IconKey)) { Converter = TreeGridShared.IconToGeometry });
                             row.Children.Add(icon);
                             var node = OneLine();
-                            node.Foreground = UiTheme.TextBrush;
                             node.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Node)));
+                            node.Bind(TextBlock.ForegroundProperty, new Binding(nameof(CnvRow.NodeBrush)));
                             row.Children.Add(node);
                             b.Child = row;
-                        }, OnCellDoubleTap, "0"),
+                        }, OnCellDoubleTap, "1"),
                         width: new GridLength(3, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
                 new TemplateColumn<CnvRow>(L.T("属性", "Attrs"),
@@ -121,11 +131,11 @@ internal sealed class CnvTableEditor : UserControl
                         var tb = OneLine();
                         tb.Bind(TextBlock.TextProperty, new Binding(nameof(CnvRow.Attrs)));
                         b.Child = tb;
-                    }, OnCellDoubleTap, "1"),
+                    }, OnCellDoubleTap, "2"),
                     width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("本地化文本", "Localized Text"),
                     // 本地化列暂不显示内容（待接入独立的本地化语言块数据源）
-                    CellBorder(b => { }, OnCellDoubleTap, "2"),
+                    CellBorder(b => { }, OnCellDoubleTap, "3"),
                     width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("条件", "Conditions"),
                     CellBorder(b =>
@@ -134,7 +144,7 @@ internal sealed class CnvTableEditor : UserControl
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(CnvRow.Cond)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
-                    }, OnCellDoubleTap, "3"),
+                    }, OnCellDoubleTap, "4"),
                     width: new GridLength(1, GridUnitType.Star)),
                 new TemplateColumn<CnvRow>(L.T("动作", "Actions"),
                     CellBorder(b =>
@@ -143,7 +153,7 @@ internal sealed class CnvTableEditor : UserControl
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(CnvRow.Act)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
-                    }, OnCellDoubleTap, "4"),
+                    }, OnCellDoubleTap, "5"),
                     width: new GridLength(1, GridUnitType.Star)),
             },
         };
@@ -227,6 +237,7 @@ internal sealed class CnvTableEditor : UserControl
         var cm = new ContextMenu();
         if (row == null) return cm;   // 空白区域：无可用菜单
 
+        // 菜单以行为准（列只影响"复制单元格"）；编辑条件/编辑动作对可编辑行恒显。
         bool isRoot = ReferenceEquals(row.Step, _cnv.Root);
         cm.Items.Add(TreeGridShared.Mi(L.T("＋添加子节点", "+ Add Child"), () => _ = AddChild()));
         if (!isRoot)
@@ -239,15 +250,12 @@ internal sealed class CnvTableEditor : UserControl
         cm.Items.Add(new Separator());
         cm.Items.Add(TreeGridShared.Mi(L.T("节点属性", "Node Properties"), () => _ = EditNodeProps()));
 
-        // 列特定菜单项
-        if (col == 3 || col == 4)
-        {
-            cm.Items.Add(new Separator());
-            cm.Items.Add(TreeGridShared.Mi(col == 3 ? L.T("编辑条件", "Edit Conditions") : L.T("编辑动作", "Edit Actions"),
-                () => _ = EditScript(row, col == 3)));
-        }
+        // 编辑条件 / 编辑动作：同一组（分割线隔开），CNV 每个节点都有条件/动作列表
+        cm.Items.Add(new Separator());
+        cm.Items.Add(TreeGridShared.Mi(L.T("编辑条件", "Edit Conditions"), () => _ = EditScript(row, isCondition: true)));
+        cm.Items.Add(TreeGridShared.Mi(L.T("编辑动作", "Edit Actions"), () => _ = EditScript(row, isCondition: false)));
 
-        // 全局：有内容即可复制
+        // 全局：有内容即可复制（仍以右键命中的单元格为准）
         string? cell = CellText(row, col);
         if (cell != null)
         {
@@ -259,11 +267,12 @@ internal sealed class CnvTableEditor : UserControl
 
     private static string? CellText(CnvRow r, int col) => col switch
     {
-        0 => r.Node,
-        1 => r.Attrs,
-        2 => null,          // 本地化列暂不显示内容
-        3 => r.Cond.Count > 0 ? string.Join("\n", r.Cond.Select(l => l.Text)) : null,
-        4 => r.Act.Count > 0 ? string.Join("\n", r.Act.Select(l => l.Text)) : null,
+        0 => r.Seq,
+        1 => r.Node,
+        2 => r.Attrs,
+        3 => null,          // 本地化列暂不显示内容
+        4 => r.Cond.Count > 0 ? string.Join("\n", r.Cond.Select(l => l.Text)) : null,
+        5 => r.Act.Count > 0 ? string.Join("\n", r.Act.Select(l => l.Text)) : null,
         _ => null,
     };
 
@@ -288,9 +297,9 @@ internal sealed class CnvTableEditor : UserControl
     private async void OnCellDoubleTap(string tag)
     {
         if (_source?.RowSelection.SelectedItem is not CnvRow row) return;
-        if (tag == "3") await EditScript(row, isCondition: true);
-        else if (tag == "4") await EditScript(row, isCondition: false);
-        else if (tag is "0" or "1" or "2") await EditNodeProps();
+        if (tag == "4") await EditScript(row, isCondition: true);
+        else if (tag == "5") await EditScript(row, isCondition: false);
+        else if (tag is "0" or "1" or "2" or "3") await EditNodeProps();
     }
 
     private async Task EditNodeProps()

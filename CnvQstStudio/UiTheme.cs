@@ -19,6 +19,8 @@ internal static class UiTheme
     public static readonly IBrush TextBrush = new SolidColorBrush(Color.FromRgb(0x1F, 0x24, 0x30));
     public static readonly IBrush MutedBrush = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
     public static readonly IBrush AccentBrush = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xED));
+    /// <summary>Semi secondary 色（SemiColorSecondary = LightBlue5）。</summary>
+    public static readonly IBrush SecondaryBrush = new SolidColorBrush(Color.FromRgb(0x00, 0x95, 0xEE));
     public static readonly IBrush WarnBrush = new SolidColorBrush(Color.FromRgb(0xB4, 0x53, 0x09));
     public static readonly IBrush OkBrush = new SolidColorBrush(Color.FromRgb(0x0E, 0x7A, 0x4F));
     public static readonly IBrush DangerBrush = new SolidColorBrush(Color.FromRgb(0xB4, 0x23, 0x18));

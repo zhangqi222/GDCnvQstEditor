@@ -44,6 +44,26 @@ internal static class CnvNodeLabel
         5 => "通用", 6 => "结束对话", 7 => "跳转", 8 => "随机选项", _ => "未知类型",
     });
 
+    /// <summary>
+    /// 官方英文类型名 + 当前语言名括注："choice: accept（接受选项）"。
+    /// 括注与英文名相同时（英文界面）只显示英文。
+    /// </summary>
+    public static string KindEnZh(uint type)
+    {
+        string en = Names.CnvStepKind(type);
+        string loc = KindName(type);
+        return string.Equals(en, loc, StringComparison.OrdinalIgnoreCase) ? en : $"{en}（{loc}）";
+    }
+
+    /// <summary>节点类型着色（台词=primary，拒绝/结束=danger，跳转=success，其余默认正文色）。</summary>
+    public static IBrush KindBrush(uint type) => type switch
+    {
+        1 => UiTheme.AccentBrush,                        // 台词
+        4 or 6 => UiTheme.DangerBrush,                   // 拒绝选项 / 结束对话
+        7 => UiTheme.OkBrush,                            // 跳转
+        _ => UiTheme.TextBrush,
+    };
+
     /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
     public static string TreeLabel(CnvFile c, CnvStep s)
     {
@@ -90,7 +110,11 @@ internal sealed class CnvRow : INotifyPropertyChanged
         private set { if (_iconKey != value) { _iconKey = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconKey))); } }
     }
 
+    /// <summary>序号（=Step.Index，与跳转节点 LinkId / 节点属性对话框编号同一套编号）。</summary>
+    public string Seq => Step.Index.ToString();
+
     public string Node { get; private set; } = "";
+    public IBrush NodeBrush { get; private set; } = UiTheme.TextBrush;
     public string Attrs { get; private set; } = "";
     public List<ColoredLine> Cond { get; private set; } = new();
     public List<ColoredLine> Act { get; private set; } = new();
@@ -131,6 +155,7 @@ internal sealed class CnvRow : INotifyPropertyChanged
     {
         IconKey = Step.Type == Names.StepRoot && Step.Depth == 0 ? "SemiIconHome" : null;
         Node = CnvNodeLabel.TreeLabel(Doc.Cnv!, Step);
+        NodeBrush = CnvNodeLabel.KindBrush(Step.Type);
         var parts = new List<string>();
         if ((Step.Unknown & 1) != 0) parts.Add(L.T("仅一次"));
         if ((Step.Unknown & 2) != 0) parts.Add(L.T("总是显示"));
@@ -139,7 +164,7 @@ internal sealed class CnvRow : INotifyPropertyChanged
         Attrs = string.Join("　", parts);
         Cond = ScriptLines(Step.Conditions);
         Act = ScriptLines(Step.Actions);
-        foreach (string p in new[] { nameof(Node), nameof(IconKey), nameof(Attrs), nameof(Cond), nameof(Act) })
+        foreach (string p in new[] { nameof(Node), nameof(NodeBrush), nameof(IconKey), nameof(Attrs), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
 
@@ -197,7 +222,7 @@ internal sealed class QstRootOwner(QstFile q) : QstRowOwner
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override int? TextSlot => 0;
-    public override IBrush NodeBrush => UiTheme.DangerBrush;
+    // 组名根行：默认正文色（不再红色）
 }
 
 /// <summary>任务名行（官方黄旗；文本=串表槽 1；双击编辑 quest 头部与组名/任务名）。</summary>
@@ -212,7 +237,7 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
     public override string IdText => q.Id.ToString();
     public override string IdTip => L.T("Quest ID：任务在存档中的引用标识（官方 QuestEditor 底部显示的 Quest ID）。", "Quest ID: reference id shown at the bottom of the official QuestEditor.");
     public override int? TextSlot => 1;
-    public override IBrush NodeBrush => UiTheme.AccentBrush;
+    // 任务名行：默认正文色（不再蓝色）
 }
 
 /// <summary>OnAccept / Objectives / OnComplete 组行（仅折叠分组，无脚本内容）。</summary>
@@ -247,6 +272,7 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public override string IdText => t.UnknownA8.ToString();
     public override string IdTip => L.T("uid：task 的引用标识，引擎按此引用 task。", "uid: task reference id used by the engine.");
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
+    public override IBrush NodeBrush => UiTheme.AccentBrush;   // task 名：primary 色
 
     internal static int TitleSlotOf(QstFile q, int ti) { int s = 2; for (int i = 0; i < ti; i++) s += 2 + q.Tasks[i].Incentives.Count + q.Tasks[i].Objectives.Count + q.Tasks[i].Events.Count; return s; }
     internal static string Label(QstFile q, int ti, bool desc = false)
@@ -278,7 +304,9 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public QstTask OwnerTask => ownerTask;
     public QstObjective O => o;
     public override object OwnerObject => o;
-    public override string NodeLabel => "✅ " + (SlotText(q, slot).Length > 0 ? SlotText(q, slot) : L.T("（目标）"));
+    public override string NodeLabel => SlotText(q, slot).Length > 0 ? SlotText(q, slot) : L.T("（目标）");
+    // 目标节点：Semi 放大镜图标（文本不再重复 emoji 语义）
+    public override string? IconKey => "SemiIconSearch";
     public override bool HasScript => true;
     public override ScriptList? Conditions => o.Conditions;
     public override ScriptList? Actions => o.Actions;

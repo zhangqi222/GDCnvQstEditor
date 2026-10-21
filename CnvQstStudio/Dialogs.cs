@@ -516,7 +516,7 @@ internal sealed class CnvNodeDialog : Window
         for (int i = 0; i < c.Steps.Count; i++)
         {
             var t = c.TextFor(c.Steps[i]);
-            links.Add($"{i}: {c.Steps[i].Kind} {(t.Length > 20 ? t[..20] + "…" : t)}");
+            links.Add($"{i}: {CnvNodeLabel.KindName(c.Steps[i].Type)} {(t.Length > 20 ? t[..20] + "…" : t)}");
         }
         _link.ItemsSource = links;
         _link.SelectedIndex = s.LinkId < (uint)c.Steps.Count ? (int)s.LinkId : -1;
@@ -741,7 +741,7 @@ internal sealed class CnvTypePicker : Window
     {
         DialogChrome.Init(this, L.T("选择新节点类型", "Choose New Node Type"), 300, 0, SizeToContent.Height);
         var kinds = new List<string>();
-        for (uint t = 0; t <= 8; t++) kinds.Add($"{t} {Names.CnvStepKind(t)}");
+        for (uint t = 0; t <= 8; t++) kinds.Add($"{t} {CnvNodeLabel.KindEnZh(t)}");   // 英文（当前语言），与表格/属性对话框一致
         _box.ItemsSource = kinds;
         _box.SelectedIndex = 1;
 

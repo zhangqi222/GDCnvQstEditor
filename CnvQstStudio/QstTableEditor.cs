@@ -264,15 +264,12 @@ internal sealed class QstTableEditor : UserControl
                 break;
         }
 
-        // 列特定菜单项
-        if (col == 3 || col == 4)
+        // 可编辑行恒显：编辑条件 / 编辑动作（同一组，以分割线隔开；以行为准，不依赖右键命中的列）
+        if (row.Owner.HasScript)
         {
-            if (row.Owner.HasScript)
-            {
-                cm.Items.Add(new Separator());
-                cm.Items.Add(TreeGridShared.Mi(col == 3 ? L.T("编辑条件", "Edit Conditions") : L.T("编辑动作", "Edit Actions"),
-                    () => _ = EditScript(row, col == 3)));
-            }
+            cm.Items.Add(new Separator());
+            cm.Items.Add(TreeGridShared.Mi(L.T("编辑条件", "Edit Conditions"), () => _ = EditScript(row, isCondition: true)));
+            cm.Items.Add(TreeGridShared.Mi(L.T("编辑动作", "Edit Actions"), () => _ = EditScript(row, isCondition: false)));
         }
 
         // 全局：有内容即可复制（含任务 ID 列）
@@ -391,7 +388,7 @@ internal sealed class QstTableEditor : UserControl
             descRow.Attach(taskRow);
 
             var acceptRow = new QstRow(this, new QstGroupOwner(
-                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), UiTheme.AccentBrush, "Accept", t));
+                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), UiTheme.SecondaryBrush, "Accept", t));
             rows.Add(acceptRow);
             acceptRow.Attach(taskRow);
             for (int k = 0; k < t.Incentives.Count; k++)
@@ -402,7 +399,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var objRow = new QstRow(this, new QstGroupOwner(
-                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), UiTheme.OkBrush, "Objectives", t));
+                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), UiTheme.WarnBrush, "Objectives", t));
             rows.Add(objRow);
             objRow.Attach(taskRow);
             for (int k = 0; k < t.Objectives.Count; k++)
