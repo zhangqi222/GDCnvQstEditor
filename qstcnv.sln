@@ -5,9 +5,9 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstLib", "CnvQstLib\CnvQstLib.csproj", "{897E6C98-26E1-4D7A-AA76-17A2BCD0D504}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstTool", "CnvQstTool\CnvQstTool.csproj", "{2CA1ED9A-53E7-400D-B00A-7C47C618370D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstEditor-cli", "CnvQstEditor-cli\CnvQstEditor-cli.csproj", "{2CA1ED9A-53E7-400D-B00A-7C47C618370D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstStudio", "CnvQstStudio\CnvQstStudio.csproj", "{2A5C0876-FCCA-4322-A9F4-9BCBF6F10373}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstEditor", "CnvQstEditor\CnvQstEditor.csproj", "{2A5C0876-FCCA-4322-A9F4-9BCBF6F10373}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EditorProbe", "EditorProbe\EditorProbe.csproj", "{3D674BA9-FC96-49E4-9FDF-63946A1A3126}"
 EndProject

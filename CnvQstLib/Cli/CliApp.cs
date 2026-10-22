@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace CnvQst.Cli;
 
 /// <summary>
-/// CLI 命令实现（自 CnvQstTool 迁入；GUI 单 EXE 的参数模式也调用此处）。
+/// CLI 命令实现（自 CnvQstEditor-cli 迁入；GUI 单 EXE 的参数模式也调用此处）。
 /// Run(args, out, err) → 退出码：0=成功；1=存在失败项；2=用法错误。
 /// </summary>
 public static class CliApp
@@ -16,57 +16,142 @@ public static class CliApp
             err.WriteLine(Usage);
             return 2;
         }
+        if (args[0] is "help" or "--help" or "-h")
+            return CmdHelp(args, @out);
         return args[0] switch
         {
-            "dump" => CmdDump(args, @out),
-            "json" => CmdJson(args, @out),
+            "view" or "dump" => CmdView(args, @out),
+            "convert" or "json" or "make" => CmdConvert(args, @out),
             "txt" => CmdTxt(args, @out),
             "legacytxt" => CmdLegacyTxt(args, @out),
             "import-txt" => CmdImportTxt(args, @out),
-            "import-json" => CmdImportJson(args, @out),
             "verify" => CmdVerify(args, @out),
             "txt-diff" => CmdTxtDiff(args, @out),
             "anchors" => CmdAnchors(args, @out),
             "census" => CmdCensus(args, @out),
             "vocab" => CmdVocab(args, @out),
             "hash" => CmdHash(args, @out),
-            "make" => CmdMake(args, @out),
             "sample" => CmdSample(args, @out),
             "probe" => CmdProbe(args, @out),
             "selftest" => CmdSelfTest(args, @out),
-            "new" => CmdNew(args, @out),
+            "dev" => CmdDev(args, @out, err),
             _ => Unknown(args[0], err),
         };
     }
 
     static int Unknown(string cmd, TextWriter err)
     {
-        err.WriteLine($"未知命令：{cmd}");
+        err.WriteLine($"未知命令：{cmd}（运行 help 查看命令列表）");
         return 2;
     }
 
+    static int CmdHelp(string[] args, TextWriter @out)
+    {
+        if (args.Length < 2 || args[1].StartsWith('-'))
+        {
+            @out.WriteLine(Usage);
+            return 0;
+        }
+
+        string cmd = args[1];
+        if (cmd.Equals("dev", StringComparison.OrdinalIgnoreCase))
+        {
+            @out.WriteLine(DevUsage);
+            return 0;
+        }
+
+        string lookup = cmd.ToLowerInvariant() switch
+        {
+            "dump" => "view",
+            "json" or "make" => "convert",
+            _ => cmd,
+        };
+        if (!lookup.Equals(cmd, StringComparison.OrdinalIgnoreCase))
+            @out.WriteLine($"{cmd} 是 {lookup} 的兼容别名。");
+        if (lookup.Equals("convert", StringComparison.OrdinalIgnoreCase))
+        {
+            @out.WriteLine(ConvertHelp);
+            return 0;
+        }
+
+        string[] hits = (Usage + "\n" + DevUsage).Split('\n')
+            .Where(l =>
+            {
+                string t = l.TrimStart();
+                return t.StartsWith(lookup + " ", StringComparison.OrdinalIgnoreCase)
+                       || t.StartsWith("dev " + lookup + " ", StringComparison.OrdinalIgnoreCase);
+            })
+            .ToArray();
+        if (hits.Length == 0)
+        {
+            @out.WriteLine($"未知命令：{cmd}");
+            @out.WriteLine("运行 help 查看全部命令。");
+            return 2;
+        }
+
+        @out.WriteLine("用法：");
+        foreach (string line in hits)
+            @out.WriteLine("  " + line.Trim());
+        return 0;
+    }
+
+    static int CmdDev(string[] args, TextWriter @out, TextWriter err)
+    {
+        if (args.Length < 2 || args[1] is "help" or "--help" or "-h")
+        {
+            @out.WriteLine(DevUsage);
+            return 0;
+        }
+        if (args[1].Equals("dev", StringComparison.OrdinalIgnoreCase))
+        {
+            err.WriteLine("dev 不能嵌套。");
+            return 2;
+        }
+
+        string[] rest = new string[args.Length - 1];
+        rest[0] = args[1];
+        Array.Copy(args, 2, rest, 1, args.Length - 2);
+        return Run(rest, @out, err);
+    }
+
     public const string Usage = """
-        用法：CnvQstStudio <命令> …
-          dump        <file>                          编辑器风格树形文本
-          json        <file> [out.json]               结构化 JSON 导出
-          txt         <file|dir> [-o dir] [--flat]    官方本地化 TXT 导出
-          legacytxt   <file>                          v0.9 旧算法基线（比对用）
-          import-txt  <file> <txt> [-o out]           翻译行回填 → 重序列化
-          import-json <file> <json> [-o out]          JSON 模型 → 重序列化
-          verify      <file|dir>                      解析 + round-trip 校验
-          txt-diff    <dir>                           新 TXT 导出 vs v0.9 基线，全量比对
-          anchors     <file>                          条件/动作类型锚定工作台
-          census      <dir>                           全样本类型普查（命名证据表）
-          vocab                                       官方编辑器选项 ↔ 类型 ID 对照表
-          hash   <文本>                               FNV1 哈希 / 任务引用标识（官方算法）
-          make   <spec.json> [-o out]                 由编写用 spec 生成 .cnv/.qst
-          sample cnv|qst [-o spec.json]               输出 spec 模板
-          probe  cond|act|uid|sub|suball|flags|qst|all [-o 目录] [--type N] [--sub N] [--split]
-                                                      批量生成探测文件（交官方编辑器辨认）
-          selftest    <dir>                           结构编辑自检（增/删/移后 round-trip 三检）
-          new cnv     -o out.cnv [--speaker 名] [--text 首句] [--end 结束语]
-          new qst     -o out.qst [--group 组] [--name 任务名] [--task 标题] [--desc 描述]
-        无参数启动本程序则进入图形界面。
+        用法：CnvQstEditor-cli <命令> [参数]（CnvQstEditor 带参数时命令相同）
+        常用命令：
+          view      <文件.cnv|qst>                 查看：以树形文本显示对话/任务内容
+          convert   <文件> [-o 输出]                转换：.json → QST/CNV，或 QST/CNV → .json
+                                                   （省略 -o 时输出到输入同目录；help convert 看详情）
+          verify    <文件|目录>                    验证：检查结构、文本槽与读写字节一致（推荐先运行）
+          txt       <文件|目录> [-o 目录] [--flat]  导出官方本地化 TXT（供翻译/本地化使用）
+          sample    cnv|qst [-o 模板.json]         生成 JSON 模板，可照模板编写 convert 输入
+          help      [命令]                         显示帮助；help dev 查看开发工具
+          dev       <子命令>                       开发/分析工具（一般用户可忽略）
+        兼容别名：dump=view；json、make=convert（旧脚本仍可用）。
+        无参数启动 CnvQstEditor 进入图形界面；CnvQstEditor-cli 无参数显示本说明。
+        """;
+
+    public const string ConvertHelp = """
+        用法：convert <文件> [-o 输出]
+          输入 .cnv / .qst：导出全保真 JSON 模型；修改后再 convert 即可转回。
+          输入 .json     ：按 JSON 内的 format（手写 spec）或 kind（全保真模型）
+                           自动生成 .cnv 或 .qst。手写 JSON 需遵循规范，
+                           详见 JSON转CNV.md / JSON转QST.md，模板见 sample 命令。
+          省略 -o 时：输出到输入文件同目录，按目标格式生成同名文件。
+          转换方向由输入扩展名决定，输出格式由 JSON 声明决定，无需 --format。
+        兼容别名：json、make。
+        """;
+
+    public const string DevUsage = """
+        开发/分析工具（一般用户可忽略）：
+          dev anchors   <文件>                       条件/动作类型锚定工作台
+          dev census    <目录>                       样本类型普查（命名证据）
+          dev vocab                                  官方编辑器选项 ↔ 类型 ID 对照表
+          dev probe     cond|act|uid|sub|suball|flags|qst|all [-o 目录] [--type N] [--sub N] [--split]
+                                                    批量生成探测文件
+          dev selftest  <目录>                       结构编辑自检（增/删/移后 round-trip 三检）
+          dev hash      <文本>                       FNV1 哈希（对话 id / Copy Id）
+          dev legacytxt <文件>                       v0.9 TXT 算法基线（比对用）
+          dev txt-diff  <目录>                       新 TXT 导出 vs v0.9 基线，全量比对
+          dev import-txt <文件> <翻译.txt> [-o 输出]  翻译行回填（暂缓，后续按需启用）
         """;
 
     // ------------------------------------------------------------------
@@ -81,9 +166,9 @@ public static class CliApp
                 : throw new GdParseException($"无法按扩展名识别格式：{path}（仅支持 .cnv/.qst）");
     }
 
-    static int CmdDump(string[] args, TextWriter @out)
+    static int CmdView(string[] args, TextWriter @out)
     {
-        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
+        if (args.Length < 2) { @out.WriteLine("用法：view <文件.cnv|qst>"); return 2; }
         var (model, _) = Load(args[1]);
         string name = Path.GetFileName(args[1]);
         @out.Write(model switch
@@ -95,30 +180,168 @@ public static class CliApp
         return 0;
     }
 
-    static int CmdJson(string[] args, TextWriter @out)
+    static int CmdConvert(string[] args, TextWriter @out)
     {
-        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
-        var (model, _) = Load(args[1]);
-        string name = Path.GetFileName(args[1]);
+        if (args.Length < 2)
+        {
+            @out.WriteLine(ConvertHelp);
+            return 2;
+        }
+
+        string input = args[1];
+        if (!File.Exists(input))
+        {
+            @out.WriteLine($"找不到输入文件：{input}");
+            return 1;
+        }
+
+        string? outPath = OutPath(args);
+        if (outPath == null && args.Length > 2 && !args[2].StartsWith('-'))
+            outPath = args[2];
+        if (Arg(args, "--format") != null)
+            @out.WriteLine("提示：convert 已自动识别转换方向，--format 已忽略。");
+
+        string ext = Path.GetExtension(input);
+        if (ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".jsonc", StringComparison.OrdinalIgnoreCase))
+            return JsonToBinary(input, outPath, @out);
+        if (ext.Equals(".cnv", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".qst", StringComparison.OrdinalIgnoreCase))
+            return BinaryToJson(input, outPath, @out);
+
+        @out.WriteLine($"无法识别输入类型：{input}");
+        @out.WriteLine("支持：.json → QST/CNV，或 .cnv/.qst → JSON。");
+        return 2;
+    }
+
+    static int JsonToBinary(string input, string? outPath, TextWriter @out)
+    {
+        string text;
+        try { text = File.ReadAllText(input); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            @out.WriteLine($"读取失败：{e.Message}");
+            return 1;
+        }
+
+        string format;
+        byte[] data;
+        try
+        {
+            using var doc = JsonDocument.Parse(text, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip,
+            });
+            JsonElement kindEl = default;
+            bool isModel = doc.RootElement.ValueKind == JsonValueKind.Object
+                           && TryProp(doc.RootElement, "kind", out kindEl);
+            if (isModel)
+            {
+                // 全保真模型（json 命令导出）与手写 spec 都是 JSON，用 kind/format 区分。
+                format = kindEl.GetString()?.ToLowerInvariant() ?? "";
+                if (format is not ("cnv" or "qst"))
+                    throw new SpecException("JSON 模型的 kind 必须是 cnv 或 qst。");
+                data = JsonIO.ImportToBytes(text);
+            }
+            else
+            {
+                data = Spec.Build(text, out format);
+            }
+        }
+        catch (SpecException e) { @out.WriteLine($"JSON 规范有误：{e.Message}"); return 2; }
+        catch (JsonException e) { @out.WriteLine($"JSON 解析失败：{e.Message}"); return 2; }
+        catch (GdParseException e) { @out.WriteLine($"转换失败：{e.Message}"); return 2; }
+
+        outPath ??= DefaultBinaryPath(input, format);
+        string outExt = Path.GetExtension(outPath);
+        if ((outExt.Equals(".cnv", StringComparison.OrdinalIgnoreCase) && format != "cnv")
+            || (outExt.Equals(".qst", StringComparison.OrdinalIgnoreCase) && format != "qst"))
+        {
+            @out.WriteLine($"输出扩展名与 format={format} 不一致：{outPath}");
+            return 2;
+        }
+
+        try
+        {
+            string? dir = Path.GetDirectoryName(Path.GetFullPath(outPath));
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllBytes(outPath, data);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            @out.WriteLine($"写入失败：{e.Message}");
+            return 1;
+        }
+
+        string check = format == "qst" ? CheckQst(data) : CheckCnv(data);
+        @out.WriteLine($"已转换 {input} → {outPath}（format={format}，{data.Length} 字节）");
+        @out.WriteLine(check == "OK" ? "三检查通过：铺满 / locOffset / round-trip" : $"校验失败：{check}");
+        return check == "OK" ? 0 : 1;
+    }
+
+    static int BinaryToJson(string input, string? outPath, TextWriter @out)
+    {
+        object model;
+        try { (model, _) = Load(input); }
+        catch (Exception e) when (e is IOException or GdParseException)
+        {
+            @out.WriteLine($"读取失败：{e.Message}");
+            return 1;
+        }
+
         string json = model switch
         {
-            CnvFile c => JsonIO.Export(c, name),
-            QstFile q => JsonIO.Export(q, name),
+            CnvFile c => JsonIO.Export(c, Path.GetFileName(input)),
+            QstFile q => JsonIO.Export(q, Path.GetFileName(input)),
             _ => throw new InvalidOperationException(),
         };
-        if (args.Length > 2)
+        outPath ??= DefaultJsonPath(input);
+        try { File.WriteAllText(outPath, json, new UTF8Encoding(false)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            File.WriteAllText(args[2], json, new UTF8Encoding(false));
-            @out.WriteLine($"已写出 {args[2]}");
+            @out.WriteLine($"写入失败：{e.Message}");
+            return 1;
         }
-        else @out.WriteLine(json);
+        @out.WriteLine($"已转换 {input} → {outPath}（JSON 模型，可修改后用 convert 转回）");
         return 0;
+    }
+
+    static bool TryProp(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (JsonProperty p in obj.EnumerateObject())
+        {
+            if (p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = p.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
+    }
+
+    static string DefaultJsonPath(string input)
+    {
+        string dir = Path.GetDirectoryName(input) ?? ".";
+        string name = Path.GetFileNameWithoutExtension(input);
+        return Path.Combine(dir, name + ".json");
+    }
+
+    static string DefaultBinaryPath(string input, string format)
+    {
+        string dir = Path.GetDirectoryName(input) ?? ".";
+        string name = Path.GetFileNameWithoutExtension(input);
+        if (name.EndsWith(".qst", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith(".cnv", StringComparison.OrdinalIgnoreCase))
+            name = name[..^4];
+        return Path.Combine(dir, name + "." + format);
     }
 
     static int CmdTxt(string[] args, TextWriter @out)
     {
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
-        string? outDir = Opt(args, "-o");
+        string? outDir = OutPath(args);
         bool flat = args.Contains("--flat");
         var results = BatchOps.ExportTxt(args[1], outDir, flat);
         foreach (var (_, target, error) in results)
@@ -139,20 +362,9 @@ public static class CliApp
     {
         if (args.Length < 3) { @out.WriteLine(Usage); return 2; }
         string file = args[1], txtPath = args[2];
-        string? outPath = Opt(args, "-o") ?? Path.ChangeExtension(file, ".imported" + Path.GetExtension(file));
+        string? outPath = OutPath(args) ?? Path.ChangeExtension(file, ".imported" + Path.GetExtension(file));
         BatchOps.ImportTxtOne(file, txtPath, outPath);
         @out.WriteLine($"已写出 {outPath}（重解析通过）");
-        return 0;
-    }
-
-    static int CmdImportJson(string[] args, TextWriter @out)
-    {
-        if (args.Length < 3) { @out.WriteLine(Usage); return 2; }
-        string file = args[1], jsonPath = args[2];
-        string? outPath = Opt(args, "-o") ?? Path.ChangeExtension(file, ".imported" + Path.GetExtension(file));
-        byte[] rewritten = JsonIO.ImportToBytes(File.ReadAllText(jsonPath));
-        File.WriteAllBytes(outPath, rewritten);
-        @out.WriteLine($"已写出 {outPath}（{rewritten.Length} B）");
         return 0;
     }
 
@@ -277,7 +489,7 @@ public static class CliApp
         return 0;
     }
 
-    /// <summary>FNV1 哈希 / 任务引用标识（官方编辑器的 Copy Id 与引用参数同款算法）。</summary>
+    /// <summary>FNV1 哈希（官方编辑器 Copy Id；对话 id = FNV1(根文本)）。</summary>
     static int CmdHash(string[] args, TextWriter @out)
     {
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
@@ -285,37 +497,13 @@ public static class CliApp
         @out.WriteLine($"输入：{text}");
         @out.WriteLine($"FNV1(UTF-16LE) = 0x{Fnv1.Hash(text):X8}");
         @out.WriteLine($"FNV1(ASCII)    = 0x{Fnv1.Hash(text, false):X8}");
-        @out.WriteLine($"引用标识(hash<<8, 条件/动作参数里编辑器显示 \"?\" 的那种) = 0x{Fnv1.Reference(text):X8}");
         return 0;
     }
 
-    // ---- spec → 二进制 ----
-    //   make   <spec.json> [-o out.cnv|out.qst]   由编写用 spec 生成文件
-    //   sample cnv|qst [-o spec.json]             输出 spec 模板
-    //   probe  <cond|act|cmp|flags|qst|all> [-o 目录] [--type N]
+    // ---- JSON 模板 / 开发探针 ----
+    //   sample cnv|qst [-o spec.json]             输出编写用 spec 模板
+    //   dev probe <cond|act|cmp|flags|qst|all> [-o 目录] [--type N]
     //       批量生成最小文件，交给官方编辑器"自报"类型名/比较符/开关/文本槽位
-
-    static int CmdMake(string[] args, TextWriter @out)
-    {
-        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
-        string specPath = args[1];
-        string? outPath = Arg(args, "-o") ?? Arg(args, "--out");
-        try
-        {
-            byte[] data = Spec.Build(File.ReadAllText(specPath), out string format);
-            outPath ??= Path.ChangeExtension(specPath, format == "qst" ? ".qst" : ".cnv");
-            File.WriteAllBytes(outPath, data);
-
-            // 生成物同样过三检查（与保存/导入同一条守卫）
-            string check = format == "qst" ? CheckQst(data) : CheckCnv(data);
-            @out.WriteLine($"已生成 {outPath}（{data.Length} 字节，format={format}）");
-            @out.WriteLine(check == "OK" ? "三检查通过：铺满 / locOffset / round-trip" : $"校验失败：{check}");
-            return check == "OK" ? 0 : 1;
-        }
-        catch (SpecException e) { @out.WriteLine($"spec 有误：{e.Message}"); return 2; }
-        catch (JsonException e) { @out.WriteLine($"JSON 解析失败：{e.Message}"); return 2; }
-        catch (IOException e) { @out.WriteLine($"IO 失败：{e.Message}"); return 2; }
-    }
 
     static int CmdSample(string[] args, TextWriter @out)
     {
@@ -523,61 +711,9 @@ public static class CliApp
         }
     }
 
-    static int CmdNew(string[] args, TextWriter @out)
-    {
-        if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
-        string? outPath = Opt(args, "-o");
-        if (outPath == null) { @out.WriteLine("缺少 -o 输出路径。"); return 2; }
-
-        object model;
-        switch (args[1])
-        {
-            case "cnv":
-                model = Creation.NewConversation(
-                    Opt(args, "--speaker") ?? "New Speaker",
-                    Opt(args, "--text") ?? "",
-                    Opt(args, "--end") ?? "");
-                break;
-            case "qst":
-                model = Creation.NewQuest(
-                    Opt(args, "--group") ?? "New Group",
-                    Opt(args, "--name") ?? "New Quest",
-                    Opt(args, "--task") ?? "New Task",
-                    Opt(args, "--desc") ?? "");
-                break;
-            default:
-                @out.WriteLine("未知类型：" + args[1] + "（应为 cnv 或 qst）");
-                return 2;
-        }
-
-        byte[] data = model switch
-        {
-            CnvFile c => c.Write(),
-            QstFile q => q.Write(),
-            _ => throw new InvalidOperationException(),
-        };
-        // 新建文件同样必须通过三检查
-        var re = model is CnvFile ? CnvFile.Parse(data) : (object)QstFile.Parse(data);
-        bool ok = re switch
-        {
-            CnvFile c => c.Valid && c.Tiled && c.LocOffsetMatches,
-            QstFile q => q.Valid && q.Tiled && q.LocOffsetMatches,
-            _ => false,
-        };
-        if (!ok) { @out.WriteLine("新建文件未通过完整性检查（内部错误）。"); return 1; }
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        File.WriteAllBytes(outPath, data);
-        @out.WriteLine($"已写出 {outPath}（{data.Length} B，三检查通过）");
-        return 0;
-    }
-
     // ------------------------------------------------------------------
 
-    static string? Opt(string[] args, string flag)
-    {
-        int i = Array.IndexOf(args, flag);
-        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
-    }
+    static string? OutPath(string[] args) => Arg(args, "-o") ?? Arg(args, "--out");
 
     static string Trunc(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 }

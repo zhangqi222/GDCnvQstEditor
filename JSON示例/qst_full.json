@@ -1,0 +1,173 @@
+// ============================================================================
+// JSON → QST 完整示例（JSONC：允许 // 与 /* */ 注释、允许尾逗号）
+//
+// 生成命令（在仓库根目录执行，二选一）：
+//   dotnet CnvQstTool/bin/Debug/net8.0/CnvQstTool.dll make JSON示例/qst_full.jsonc -o 输出.qst
+//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll make JSON示例/qst_full.jsonc -o 输出.qst
+//
+// 本文件演示：头部 flags、多 task、incentives（OnAccept）、objectives、events（OnComplete）、
+// 持久化 task/objective uid、条件/动作、版本尾字节。
+// 条件/动作的 30/27 种类型全表见 JSON示例/qst_all_conditions_actions.jsonc 与文档 JSON转QST.md。
+//
+// 本地化槽由工具自动生成，顺序固定为：
+//   [组名, 任务名] + 每个 task [标题, 描述, incentive 槽…, objective 文本…, event 槽…]
+// 所以 JSON 里不需要、也不能指定槽号；title/desc/text 会自动落到正确位置。
+//
+// 每个设置项的注释格式为：选项1（中文）:用途。选项2（中文）:用途。
+// ============================================================================
+{
+  // 格式："qst"（任务）:生成 .qst 文件。"cnv"（对话）:生成 .cnv 文件（另一个文档）。
+  "format": "qst",
+
+  // 版本：7（旧版）:task 无尾部字节。8:每个 task 带 flag8（u8）。9（推荐）:再带 flag9（u8）；语料全为 9。
+  "version": 9,
+
+  // 头部 +0x10 的任务 flags（位掩码）：0（None）:无标记。1（Primary）:主任务。
+  // 2（Secondary）:支线任务。4（Repeatable）:可重复。可相加（如 5 = 主任务 + 可重复）。
+  "flags": 1,
+
+  // 文件 id（头部 +0x0C，u32）：0:未指定/默认。其它:按需指定；与 task uid 无关。
+  "id": 0,
+
+  // 任务组名（本地化槽 0）：任意字符串，游戏内任务列表的分组标题。
+  "group": "EXAMPLE_GROUP",
+
+  // 任务名（本地化槽 1）：任意字符串，游戏内显示的任务名。
+  "name": "EXAMPLE_QUEST",
+
+  // 语言标签："enUS"（英文，默认）:官方语料使用的标签。其它:如 zhCN、deDE；生成的单语言块标签。
+  "lang": "enUS",
+
+  // 任务数组：[]（空任务文件，合法但不实用）:无 task。数组:按文件顺序排列。
+  "tasks": [
+    // ------------------------------------------------------------------------
+    // Task 1：完整演示 OnAccept / 目标 / OnComplete。
+    // ------------------------------------------------------------------------
+    {
+      // task uid（落盘 u32）：其它 CNV/QST 的 Task 引用填这个值；省略/0:工具自动生成非 0 随机 uid。
+      // 建议显式指定并全项目唯一；它不是数组下标，也不由任务名哈希得到。
+      "uid": 305419896,
+
+      // task 的 unknownAC（落盘 u32）：0:官方语料常见默认值。其它:研究用途，保持 0 即可。
+      "unknownAC": 0,
+
+      // flag8（version>=8 才写入）：false（0）:默认。true（1）:保留/未解码语义。
+      "flag8": false,
+
+      // flag9（version>=9 才写入）：false（0）:默认。true（1）:保留/未解码语义。
+      "flag9": false,
+
+      // 任务标题（本地化槽）：任意字符串。
+      "title": "任务标题",
+
+      // 任务描述（本地化槽）：任意字符串，可含 \n。
+      "desc": "这是任务描述。",
+
+      // incentives（编辑器 OnAccept 事件）：[]（无）:接任务时不触发。数组:每个元素是一组条件+动作。
+      // 每个 incentive 会占用一个本地化槽（官方文件该槽为空，工具自动补空行）。
+      "incentives": [
+        {
+          // unknown（事件头 u32）：0:默认。其它:研究用途。
+          "unknown": 0,
+
+          // 条件关系："AND"（全部满足）:默认/0。"OR"（任一满足）:1。
+          "logic": "AND",
+
+          // 条件列表：[]（无条件）:事件必定触发。写法与 CNV 完全相同。
+          "cond": [],
+
+          // 动作列表：按顺序执行，无 AND/OR、无 cmp。
+          "act": [
+            // Notification：字符串 Tag（本地化标签），游戏内弹出通知。
+            { "Notification": ["tagQuestAccepted"] }
+          ]
+        }
+      ],
+
+      // objectives（任务目标）：[]（无目标）:任务没有可见目标。数组:每个目标有文本、条件、动作。
+      "objectives": [
+        {
+          // objective uid（落盘 u32）：被 HasQuestObjective / CNV 的 Objective 引用；省略/0 自动生成随机 uid。
+          "uid": 2271560481,
+
+          // objective 的 unknown1（落盘 u32）：0:默认。
+          "unknown1": 0,
+
+          // 目标文本（本地化槽）：任意字符串。
+          "text": "收集 5 个物品",
+
+          // 条件关系与条件列表：目标"完成/可交互"的判定条件。
+          "logic": "AND",
+          "cond": [
+            // HasItem：ItemRecord（.dbr 路径）+ ItemCount（数量）+ CompleteOnly（布尔，bodyVersion=1 才有）。
+            // 该条件默认 bodyVersion=1；工具会自动写入 CompleteOnly 字段。
+            { "HasItem": ["records/items/quest/example.dbr", 5, false], "cmp": ">=" }
+          ],
+
+          // 目标动作：条件满足/目标完成时执行；[]（无动作）。
+          "act": [
+            { "Notification": ["tagObjectiveComplete"] }
+          ]
+        },
+        {
+          "uid": 286331170,
+          "text": "返回交任务",
+
+          // WaitForCompletion：无字段的条件（body 为空）；{} 表示不给参数。
+          "cond": [
+            { "WaitForCompletion": {} }
+          ],
+          "act": []
+        }
+      ],
+
+      // events（编辑器 OnComplete 事件）：[]（无）:交任务时不触发。数组:每个元素是一组条件+动作。
+      // 每个 event 同样占一个本地化槽（官方文件为空，工具自动补空行）。
+      "events": [
+        {
+          "unknown": 0,
+          "logic": "AND",
+          "cond": [
+            // HasQuestObjective：Quest 文件 + Task uid + Objective uid + Satisfied（布尔）。
+            // 引用值必须是本文件里真实存在的持久化 uid；否则游戏任务链会找不到目标。
+            {
+              "HasQuestObjective": {
+                "Quest": "quests/example.qst",
+                "Task": 305419896,
+                "Objective": 2271560481,
+                "Satisfied": true
+              }
+            }
+          ],
+          "act": [
+            // CompleteQuestTask：QuestFile + Task（task uid）。
+            { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+            // 奖励：经验与金币。
+            { "GiveExperience": [2500] },
+            { "GiveMoney": [1000] }
+          ]
+        }
+      ]
+    },
+
+    // ------------------------------------------------------------------------
+    // Task 2：最小 task；演示省略 incentives/events（数组可省略，等价于 []）。
+    // ------------------------------------------------------------------------
+    {
+      // 省略 uid:工具会生成非 0 随机值。若要被其它文件引用，建议显式填写。
+      "title": "第二个任务",
+      "desc": "没有 OnAccept / OnComplete 事件。",
+      "objectives": [
+        {
+          "text": "达到 10 级",
+          "cond": [
+            // IsLevel：数值等级；cmp ">=" 表示达到或超过。
+            { "IsLevel": [10], "cmp": ">=" }
+          ],
+          "act": []
+        }
+      ]
+    }
+  ]
+}

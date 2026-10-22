@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -139,6 +140,8 @@ public static class JsonIO
         WriteIndented = true,
         IncludeFields = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        // 导出给人工编辑的本地 JSON：中文、单引号、<>& 等按原字符输出，不写成 \uXXXX
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
     // ---- 导出 ----

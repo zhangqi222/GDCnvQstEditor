@@ -4,20 +4,28 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
-/// 应用配置，持久化到 %USERPROFILE%\.CnvQstStudio\CnvQstStudio.json
+/// 应用配置，持久化到 %USERPROFILE%\.CnvQstEditor\CnvQstEditor.json
 /// （行业惯用的"用户目录\.软件名\软件名.json"位置；JSONC 格式——文件内带说明注释，手工编辑友好）。
 /// </summary>
 internal static class AppSettings
 {
-    private static readonly string Dir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".CnvQstStudio");
-    private static readonly string FilePath = Path.Combine(Dir, "CnvQstStudio.json");
+    private static readonly string UserProfile =
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    private static readonly string Dir = Path.Combine(UserProfile, ".CnvQstEditor");
+    private static readonly string FilePath = Path.Combine(Dir, "CnvQstEditor.json");
+    // 改名前的旧位置：仅首次读取时回退，避免丢失游戏根目录与最近文件
+    private static readonly string LegacyFilePath = Path.Combine(UserProfile, ".CnvQstStudio", "CnvQstStudio.json");
 
     /// <summary>游戏根目录（如 G:\GRIM DAWN）。资源读取基准见 ResolveResource。</summary>
     public static string GameRoot { get; set; } = "";
+
+    /// <summary>最近打开的文件（新的在前，最多 <see cref="MaxRecentFiles"/> 条）。</summary>
+    public static List<string> RecentFiles { get; private set; } = new();
+
+    public const int MaxRecentFiles = 10;
 
     static AppSettings() => Load();
 
@@ -25,9 +33,23 @@ internal static class AppSettings
     {
         try
         {
-            if (!File.Exists(FilePath)) return;
-            string json = StripJsonc(File.ReadAllText(FilePath));
-            GameRoot = JsonNode.Parse(json)?["GameRoot"]?.GetValue<string>() ?? "";
+            if (!File.Exists(FilePath) && !File.Exists(LegacyFilePath)) return;
+            string json = StripJsonc(File.ReadAllText(File.Exists(FilePath) ? FilePath : LegacyFilePath));
+            var root = JsonNode.Parse(json);
+            GameRoot = root?["GameRoot"]?.GetValue<string>() ?? "";
+            RecentFiles = new List<string>();
+            if (root?["RecentFiles"] is JsonArray recent)
+            {
+                foreach (var item in recent)
+                {
+                    string? path = item?.GetValue<string>();
+                    if (!string.IsNullOrWhiteSpace(path) &&
+                        !RecentFiles.Contains(path, StringComparer.OrdinalIgnoreCase))
+                        RecentFiles.Add(path);
+                }
+            }
+            if (RecentFiles.Count > MaxRecentFiles)
+                RecentFiles.RemoveRange(MaxRecentFiles, RecentFiles.Count - MaxRecentFiles);
         }
         catch { /* 配置损坏时忽略，用默认值 */ }
     }
@@ -39,16 +61,43 @@ internal static class AppSettings
             Directory.CreateDirectory(Dir);
             // 手写 JSONC 模板（注释落盘，方便用户手工改）；值用 JsonSerializer 转义
             string esc = JsonSerializer.Serialize(GameRoot);
-            string text = "// CnvQstStudio 配置（JSONC：允许 // 与 /* */ 注释，允许尾逗号）\n" +
+            string recent = JsonSerializer.Serialize(RecentFiles);
+            string text = "// CnvQstEditor 配置（JSONC：允许 // 与 /* */ 注释，允许尾逗号）\n" +
                 "{\n" +
                 "  /* 游戏根目录：用于条件/动作中\"资源路径\"类字段的 打开 / 浏览 功能。\n" +
                 "     非 dbr 串（如 quest\\xxx.qst）按 <游戏根目录>\\resources\\<值> 读取；\n" +
                 "     .dbr 串按 <游戏根目录>\\database\\<值> 读取（Grim Dawn 固定规则）。 */\n" +
-                "  \"GameRoot\": " + esc + "\n" +
+                "  \"GameRoot\": " + esc + ",\n" +
+                "  /* 最近打开的文件：新的在前，最多 10 条。 */\n" +
+                "  \"RecentFiles\": " + recent + "\n" +
                 "}\n";
             File.WriteAllText(FilePath, text);
         }
         catch { /* 写失败不影响使用 */ }
+    }
+
+    /// <summary>记录一次成功打开 / 保存的文件（去重、置顶、截断）。</summary>
+    public static void AddRecent(string path)
+    {
+        try { path = Path.GetFullPath(path); } catch { return; }
+        RecentFiles.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase));
+        RecentFiles.Insert(0, path);
+        if (RecentFiles.Count > MaxRecentFiles)
+            RecentFiles.RemoveRange(MaxRecentFiles, RecentFiles.Count - MaxRecentFiles);
+        Save();
+    }
+
+    public static void RemoveRecent(string path)
+    {
+        if (RecentFiles.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)) > 0)
+            Save();
+    }
+
+    public static void ClearRecent()
+    {
+        if (RecentFiles.Count == 0) return;
+        RecentFiles.Clear();
+        Save();
     }
 
     /// <summary>

@@ -30,7 +30,7 @@ public static class Creation
     /// <summary>新建任务（QST2 v9）：单 task（无目标、无事件）；本地化表 = [组名, 任务名, 标题, 描述]。</summary>
     public static QstFile NewQuest(string group, string name, string taskTitle, string taskDesc)
     {
-        var q = new QstFile { Version = 9, Id = 0, Unknown10 = 0, Valid = true };
+        var q = new QstFile { Version = 9, Id = QstFile.RandomUid(), Unknown10 = 0, Valid = true };
         q.Tasks.Add(new QstTask { Uid = 1, Uid2 = 2, UnknownA8 = QstFile.RandomUid() });   // uid 官方为随机值
 
         var lang = new LanguageBlock { Tag = new GdString("enUS") };

@@ -1,12 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>数值框显示模式（按官方保存方式二选一，不再提供双框联动）：
 /// DecOnly = 十进制单框（默认，计数/数值类字段）；HexOnly = 十六进制单框（ID/引用标识类字段）。</summary>
@@ -139,7 +141,8 @@ internal sealed class ScriptListEditor : UserControl
     private readonly bool _isCondition;
     private Changed _changed;
 
-    private readonly ListBox _records = new() { MinHeight = 150, MinWidth = 560 };
+    // 列表限高：条目多时在框内滚动，避免把弹窗撑满导致按钮/底部内容被挤出屏幕。
+    private readonly ListBox _records = new() { MinHeight = 150, MaxHeight = 420, MinWidth = 560 };
     private readonly Border _existingBox = new();
     private readonly TextBlock _existingHeader = new() { FontWeight = FontWeight.Medium, Margin = new Thickness(0, 0, 0, 6) };
     private readonly ComboBox _logic = new() { MinWidth = 170 };
@@ -170,6 +173,16 @@ internal sealed class ScriptListEditor : UserControl
         _logicLabel.IsVisible = _logic.IsVisible = _isCondition;
 
         _records.SelectionChanged += (_, _) => UpdateButtons();
+        ScrollViewer.SetVerticalScrollBarVisibility(_records, ScrollBarVisibility.Auto);
+        // 双击条目 = 编辑（点在条目上才触发；列表空白处双击不弹窗）。
+        _records.DoubleTapped += (_, e) =>
+        {
+            if (e.Source is Visual v && v.FindAncestorOfType<ListBoxItem>() != null)
+            {
+                e.Handled = true;
+                _ = EditRecord();
+            }
+        };
 
         Content = BuildLayout();
         Rebuild();
@@ -267,7 +280,7 @@ internal sealed class ScriptListEditor : UserControl
         };
         rec.Fields = FieldFactory.Resync(rec.BodySpec, rec.SubType, null, _isCondition, defType);
         string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn);
+        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn, _doc);
         if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
 
         int at = _records.SelectedIndex >= 0 ? _records.SelectedIndex + 1 : _list.Records.Count;
@@ -288,7 +301,7 @@ internal sealed class ScriptListEditor : UserControl
         if (sel < 0 || sel >= _list.Records.Count) return;
         var copy = ScriptRecordCloner.Clone(_list.Records[sel]);
         string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn);
+        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn, _doc);
         if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
         _list.Records[sel] = copy;
         Rebuild();
@@ -368,7 +381,7 @@ internal sealed class ScriptRecordDialog : Window
 
     private sealed record ComboType(uint Id, string Text);
 
-    public ScriptRecordDialog(ScriptRecord rec, bool isCondition, string title)
+    public ScriptRecordDialog(ScriptRecord rec, bool isCondition, string title, DocSession? doc = null)
     {
         _rec = rec;
         _isCondition = isCondition;
@@ -390,7 +403,7 @@ internal sealed class ScriptRecordDialog : Window
         };
         _cmp.IsVisible = isCondition;
 
-        _fields = new FieldsPanel(() => { });
+        _fields = new FieldsPanel(doc, () => { });
         SyncTypeCombo();
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
@@ -506,7 +519,8 @@ internal static class FieldFactory
 
     private static ScriptField NewStr() => new() { Kind = FieldKind.Str, S = new GdString("") };
     private static ScriptField NewU32() => new() { Kind = FieldKind.U32 };
-    private static ScriptField NewU8() => new() { Kind = FieldKind.U8 };
+    // 布尔字段新建默认 TRUE（官方编辑器新建条目亦为勾选态）；编辑既有记录时 Take() 保留原值。
+    private static ScriptField NewU8() => new() { Kind = FieldKind.U8, B = 1 };
     private static ScriptField NewP() => new() { Kind = FieldKind.P, Paths = new List<GdString>(), Trailing = 0, Note = "trailing meaning unknown" };
     private static ScriptField NewLua(bool isCondition) => new()
     {
@@ -535,6 +549,7 @@ internal static class FieldFactory
 /// <summary>按字段种类生成编辑行（S/I/B 内联；P/Lua 用对话框）。</summary>
 internal sealed class FieldsPanel : ScrollViewer
 {
+    private readonly DocSession? _doc;
     private readonly Changed _changed;
     private ScriptRecord? _rec;
     private bool _building;
@@ -542,10 +557,13 @@ internal sealed class FieldsPanel : ScrollViewer
     // 引用标识（Task/Objective）下拉：串字段（Quest）变化时按文件内容重新填充
     private readonly List<(ComboBox Combo, ScriptField Field)> _uidCombos = new();
 
-    public FieldsPanel(Changed changed)
+    public FieldsPanel(DocSession? doc, Changed changed)
     {
+        _doc = doc;
         _changed = changed;
         MaxHeight = 380;
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
     }
 
     /// <summary>Task/Objective 引用标识字段（445 样本实测：官方保存为十六进制引用标识）：
@@ -620,7 +638,12 @@ internal sealed class FieldsPanel : ScrollViewer
                     // 引用标识字段：下拉直接选任务文件里的 task / objective（值 = 文件中落盘的 uid，
                     // 已实测与 cnv 引用一致）；默认禁止手工编辑，"强制编辑"解锁为十六进制单框。
                     var combo = new ComboBox { MinWidth = 300, MaxWidth = 430 };
-                    combo.ItemTemplate = new FuncDataTemplate<UidItem>((it, _) => new TextBlock { Text = it?.Text ?? "" });
+                    // 当前 ID 不在任务文件中时，条目（含收起后的选中项）用红色文字提示。
+                    combo.ItemTemplate = new FuncDataTemplate<UidItem>((it, _) => new TextBlock
+                    {
+                        Text = it?.Text ?? "",
+                        Foreground = it?.Missing == true ? UiTheme.DangerBrush : UiTheme.TextBrush,
+                    });
                     combo.SelectionChanged += (_, _) =>
                     {
                         if (_building || _refilling) return;
@@ -729,7 +752,8 @@ internal sealed class FieldsPanel : ScrollViewer
     // task（UnknownA8）/ objective（Unknown0）uid——与 cnv 引用值逐字节一致（官方样本实测）。
     // ------------------------------------------------------------------
 
-    private sealed record UidItem(uint Hash, string Text);
+    /// <summary>下拉项：Missing = 当前值不在该任务文件中（红色提示）。</summary>
+    private sealed record UidItem(uint Hash, string Text, bool Missing = false);
 
     /// <summary>Quest 文件路径变化后重填全部引用标识下拉（保持当前选中值不变）。</summary>
     private void RefreshUidCombos()
@@ -742,45 +766,58 @@ internal sealed class FieldsPanel : ScrollViewer
         if (_rec == null) return;
         bool objective = f.Param == "Objective";
         var items = new List<UidItem>();
-        string? questPath = _rec.Fields.FirstOrDefault(x => x.Kind == FieldKind.Str)?.S.Text?.Trim();
-        string? abs = questPath is { Length: > 0 }
-            ? AppSettings.ResolveResource(questPath, AppSettings.FieldDir(_rec.ClassName))
-            : null;
-        if (abs != null && File.Exists(abs))
+        QstFile? q = null;
+        string? abs = null;
+        // QST 文档中的条件/动作引用的是当前任务文件本身；CNV 则按 Quest 串字段指向的 .qst 读取。
+        if (_doc?.Qst != null)
         {
-            try
+            q = _doc.Qst;
+        }
+        else
+        {
+            string? questPath = _rec.Fields.FirstOrDefault(x => x.Kind == FieldKind.Str)?.S.Text?.Trim();
+            abs = questPath is { Length: > 0 }
+                ? AppSettings.ResolveResource(questPath, AppSettings.FieldDir(_rec.ClassName))
+                : null;
+            if (abs != null && File.Exists(abs))
             {
-                var q = QstFile.Parse(File.ReadAllBytes(abs));
-                if (q.Valid)
+                try
                 {
-                    var texts = q.PrimaryLanguage.Texts;
-                    for (int ti = 0; ti < q.Tasks.Count; ti++)
-                    {
-                        var t = q.Tasks[ti];
-                        int titleSlot = q.TaskTitleSlot(ti);
-                        if (!objective)
-                            items.Add(new UidItem(t.UnknownA8, UidItemText($"T{ti + 1}", t.UnknownA8, SlotText(texts, titleSlot))));
-                        int objBase = titleSlot + 2 + t.Incentives.Count;
-                        for (int k = 0; k < t.Objectives.Count; k++)
-                        {
-                            if (!objective) continue;
-                            items.Add(new UidItem(t.Objectives[k].Unknown0,
-                                UidItemText($"T{ti + 1}·" + L.T("目标", "Objective") + (k + 1), t.Objectives[k].Unknown0, SlotText(texts, objBase + k))));
-                        }
-                    }
+                    var parsed = QstFile.Parse(File.ReadAllBytes(abs));
+                    if (parsed.Valid) q = parsed;
+                }
+                catch { /* 任务文件不可用时下拉只显示当前值 */ }
+            }
+        }
+
+        if (q != null)
+        {
+            var texts = q.PrimaryLanguage.Texts;
+            for (int ti = 0; ti < q.Tasks.Count; ti++)
+            {
+                var t = q.Tasks[ti];
+                int titleSlot = q.TaskTitleSlot(ti);
+                if (!objective)
+                    items.Add(new UidItem(t.UnknownA8, UidItemText($"T{ti + 1}", t.UnknownA8, SlotText(texts, titleSlot))));
+                int objBase = titleSlot + 2 + t.Incentives.Count;
+                for (int k = 0; k < t.Objectives.Count; k++)
+                {
+                    if (!objective) continue;
+                    items.Add(new UidItem(t.Objectives[k].Unknown0,
+                        UidItemText($"T{ti + 1}·" + L.T("目标", "Objective") + (k + 1), t.Objectives[k].Unknown0, SlotText(texts, objBase + k))));
                 }
             }
-            catch { /* 任务文件不可用时下拉只显示当前值 */ }
         }
-        // 当前值不在文件列表中（或文件不可用）时保留一个兜底项，避免丢失原值
+
+        // 当前值不在任务中（或任务文件不可用）时保留一个红色兜底项，避免丢失原值
         if (items.All(it => it.Hash != f.U))
         {
-            string tail = items.Count == 0
-                ? abs == null
+            string tail = q != null
+                ? L.T("（不在该任务文件中）", "(not in this quest file)")
+                : abs == null && _doc?.Qst == null
                     ? L.T("（未找到任务文件，请先设置 Quest 文件）", "(quest file not found — set the Quest field first)")
-                    : L.T("（任务文件无法解析）", "(quest file cannot be parsed)")
-                : L.T("（不在该任务文件中）", "(not in this quest file)");
-            items.Insert(0, new UidItem(f.U, "0x" + f.U.ToString("X8") + tail));
+                    : L.T("（任务文件无法解析）", "(quest file cannot be parsed)");
+            items.Insert(0, new UidItem(f.U, "0x" + f.U.ToString("X8") + tail, Missing: true));
         }
         _refilling = true;
         combo.ItemsSource = items;
@@ -801,62 +838,16 @@ internal sealed class FieldsPanel : ScrollViewer
     // 资源路径字段辅助（串字段"浏览"按钮）
     // ------------------------------------------------------------------
 
-    /// <summary>文件选择器（起点 = 串值解析出的目录，值为空时落在字典导向目录/资源根；
-    /// 字典命中时按扩展名过滤），选中后换算回相对路径写回输入框。</summary>
+    /// <summary>内置文件浏览器（根目录固定：.dbr → database\，其余 → resources\），
+    /// 字典命中时按扩展名过滤；选中后返回相对路径写回输入框。</summary>
     private async Task BrowseResource(Window? owner, TextBox box, string? dirOverride, string[]? exts, Action<string> apply)
     {
-        // 浏览只需要游戏根目录，不依赖当前值——值为空也可直接浏览
-        if (AppSettings.GameRoot.Length == 0)
-        {
-            Gui.Warn(owner!, L.T("未设置游戏根目录，请先在 工具→设置… 中配置。", "Game root folder is not set. Configure it in Tools → Settings… first."), L.T("浏览…", "Browse…"));
-            return;
-        }
-        var tl = TopLevel.GetTopLevel(this);
-        if (tl?.StorageProvider == null) return;
-        var opts = new FilePickerOpenOptions { AllowMultiple = false, Title = L.T("选择资源文件", "Select resource file") };
-        if (exts != null)
-        {
-            // 字段类型约定扩展名（如 PlaySound → wav/ogg、PlayVideo → vid/bik）
-            opts.FileTypeFilter = new List<FilePickerFileType>
-            {
-                new(string.Join(" / ", exts.Select(e => "*." + e))) { Patterns = exts.Select(e => "*." + e).ToArray() },
-                FilePickerFileTypes.All,
-            };
-        }
-        else if (dirOverride != null)
-        {
-            // 字典导向：按该目录约定的扩展名过滤（resources → .qst/.cnv，database → .dbr）
-            string[] stdExts = dirOverride == "database" ? new[] { "dbr" } : new[] { "qst", "cnv" };
-            opts.FileTypeFilter = new List<FilePickerFileType>
-            {
-                new(string.Join(" / ", stdExts.Select(e => "*." + e))) { Patterns = stdExts.Select(e => "*." + e).ToArray() },
-                FilePickerFileTypes.All,
-            };
-        }
-        // 起始目录：值非空时按值所在目录，否则按字典导向子目录 / resources 兜底
-        string startDir = Path.Combine(AppSettings.GameRoot, dirOverride ?? "resources");
-        if ((box.Text ?? "").Trim().Length > 0)
-        {
-            string? abs = AppSettings.ResolveResource(box.Text, dirOverride);
-            string? vdir = abs == null ? null : Path.GetDirectoryName(abs);
-            if (vdir != null && Directory.Exists(vdir)) startDir = vdir;
-        }
-        if (Directory.Exists(startDir))
-        {
-            try { opts.SuggestedStartLocation = await tl.StorageProvider.TryGetFolderFromPathAsync(startDir); }
-            catch { }
-        }
-        var files = await tl.StorageProvider.OpenFilePickerAsync(opts);
-        if (files.Count == 0) return;
-        string picked = files[0].TryGetLocalPath() ?? "";
-        string? relPath = picked.Length > 0 ? AppSettings.ToRelative(picked) : null;
-        if (relPath == null)
-        {
-            Gui.Warn(owner!, L.T("所选文件不在游戏目录的 resources\\ 或 database\\ 下，无法换算为相对路径。",
-                "The selected file is not under the game's resources\\ or database\\; cannot convert to a relative path."), L.T("浏览…", "Browse…"));
-            return;
-        }
-        apply(relPath);
+        string value = (box.Text ?? "").Trim();
+        string subDir = dirOverride
+            ?? (value.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ? "database" : "resources");
+        string? rel = await FileBrowserDialog.Pick(owner, subDir,
+            L.T("选择资源文件", "Select resource file"), exts, value);
+        if (rel != null) apply(rel);
     }
 
     /// <summary>字段行标签：官方参数名按"原文（本地化）"显示（如 ItemRecord（物品记录））；

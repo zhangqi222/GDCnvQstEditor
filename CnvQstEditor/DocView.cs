@@ -4,7 +4,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
 /// 单个文档视图：100% 宽度的树形表格（结构与数据结合展示）+ 页内状态行。
@@ -93,7 +93,7 @@ internal sealed class DocView : UserControl
         _qstTable.LocRequested += ToggleView;
         _cnvTable.SelectedChanged += OnSelectedChanged;
         _qstTable.SelectedChanged += OnSelectedChanged;
-        _panel.TextEdited += () => { Doc.Dirty = true; DirtyChanged?.Invoke(); UpdateStatus(); };
+        _panel.TextEdited += () => { try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "cnvqst_dirty.log"), "[docview] TextEdited -> Dirty\n"); } catch { } Doc.Dirty = true; DirtyChanged?.Invoke(); UpdateStatus(); };
 
         ShowCurrent();
         UpdateStatus();
@@ -181,6 +181,7 @@ internal sealed class DocView : UserControl
 
     private void OnEdited()
     {
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "cnvqst_dirty.log"), "[docview] table OnEdited -> Dirty\n"); } catch { }
         Doc.Dirty = true;
         DirtyChanged?.Invoke();
         UpdateStatus();

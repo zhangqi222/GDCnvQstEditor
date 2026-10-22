@@ -87,7 +87,7 @@ public static class Names
         /*10*/ "HasKilled",        /*11*/ "HasQuestObjective",
         /*12*/ "LuaScript",        /*13*/ null,
         /*14*/ "OnQuestTask",      /*15*/ null,
-        /*16*/ "HasKilledVariant", /*17*/ null,
+        /*16*/ "HasKilledProxy",   /*17*/ null,
         /*18*/ null,               /*19*/ "QuestBlocked",
         /*20*/ null,               /*21*/ "CheckRandomValue",
         /*22*/ null, /*23*/ null,  /*24*/ null,  /*25*/ null,
@@ -165,25 +165,22 @@ public static class Names
         [13] = "PlaySound",
         [23] = "UnlockFaction",
         [24] = "SetFaction",
+        // 2026-10-21 详情弹窗截图确认（此前因该行被弹窗遮挡而暂列推断层）
+        [19] = "ScriptEvent",
     };
 
-    // ---- 推断层（现仅剩一项）----
-    // 动作 19：body S，串全部 "EV_…" 前缀 → ScriptEvent（推断；编辑器截图该行被弹窗遮住未确认）。
-    //
-    // 2026-09-28：原先靠"body 形状唯一匹配"推断的 12 项，已全部由官方编辑器用探测文件
-    // （`probe cond` / `probe act`，见 反馈截图/）直接显示确认，上移到 ConditionEditorNames /
-    // ActionEditorNames。两处修正：
+    // ---- 推断层（当前为空：官方条件下拉 30 项、动作 28 项均已逐项落位）----
+    // 2026-09-28：原先靠"body 形状唯一匹配"推断的条件已全部由官方编辑器用探测文件
+    // （`probe cond` / `probe act`，见 反馈截图/）直接显示确认，上移到
+    // ConditionEditorNames / ActionEditorNames。两处修正：
     //   · 条件 22 确为 OwnsDLC（"哈希条件"的旧称作废）；
     //   · 动作 9/10 确为 GiveToken / RemoveToken——与原先推断**相反**，已改正。
-    // 官方条件下拉仍有 4 项未定位：IsChallenge、Hasbuff、HasKilledFaction、HasKilledMonsterClass
-    // （二进制槽位已排满，只能是某个 type 的 subType 变体，见 `probe sub`）。
     public static readonly Dictionary<uint, string> ConditionInferredNames = new()
     {
     };
 
     public static readonly Dictionary<uint, string> ActionInferredNames = new()
     {
-        [19] = "ScriptEvent",   // 编辑器截图里该行被弹窗遮住，未亲眼确认
     };
 
     /// <summary>有实例但仍无法命名的类型（样本 0 或编辑器无对应词）的短提示，UI 下拉/列表用。</summary>

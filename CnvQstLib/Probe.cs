@@ -137,7 +137,7 @@ public static class Probe
         return items;
     }
 
-    /// <summary>把 26 个条件类型的 subType 0..5 全扫一遍（一类型一文件）。</summary>
+    /// <summary>把 30 个条件类型的 subType 0..5 全扫一遍（一类型一文件）。</summary>
     public static List<Item> SubVariantsAll(bool split)
     {
         var items = new List<Item>();

@@ -1,0 +1,222 @@
+// ============================================================================
+// JSON → CNV 完整示例（JSONC：允许 // 与 /* */ 注释、允许尾逗号）
+//
+// 生成命令（在仓库根目录执行，二选一）：
+//   dotnet CnvQstTool/bin/Debug/net8.0/CnvQstTool.dll make JSON示例/cnv_full.jsonc -o 输出.cnv
+//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll make JSON示例/cnv_full.jsonc -o 输出.cnv
+//
+// 本文件演示：根节点、层级、全部节点类型（speech/continue/accept/decline/end/link/random）、
+// 条件（AND/OR、比较符、官方字段名/位置参数）、动作、配音路径、flags。
+// 条件/动作的 30/27 种类型全表见 JSON示例/cnv_all_conditions_actions.jsonc 与文档 JSON转CNV.md。
+//
+// 每个设置项的注释格式为：选项1（中文）:用途。选项2（中文）:用途。
+// ============================================================================
+{
+  // 格式："cnv"（对话）:生成 .cnv 文件。"qst"（任务）:生成 .qst 文件（另一个文档）。
+  "format": "cnv",
+
+  // 版本：5（旧版）:无 vo 配音路径字段。6（推荐）:支持 vo 配音路径；语料主流为 6。
+  "version": 6,
+
+  // 对话 id（u32）：省略:由工具按 FNV1(speaker) 自动计算。0..4294967295:显式指定。
+  // 同一说话人的多段对话建议显式给不同 id，避免工具/运行时按 id 去重。
+  "id": 0,
+
+  // 根节点文本（本地化槽 0，通常是说话人名）：任意字符串。
+  "speaker": "Alex",
+
+  // 根节点 flags（u32）：0:无。1（OnceOnly）:仅一次。2（AlwaysShow）:总是显示。4（Unimportant）:不重要。
+  // 1/2/4 可相加；高位保留，未知时保持 0。
+  "flags": 0,
+
+  // 根节点配音文件（version>=6 才写入）：""（无配音）:留空。其它:相对 resources 的音频路径，如 conversations/alex_01.ogg。
+  "vo": "",
+
+  // 根节点条件关系："AND"（全部满足）:所有条件都成立才通过。0:同 AND。
+  //               "OR"（任一满足）:任意一个条件成立即通过。1:同 OR。根节点没有条件时可省略。
+  "logic": "AND",
+
+  // 根节点条件列表：[]（无条件）:对话入口不设门槛。数组:每个元素是一条条件（写法见下方 rows[].cond）。
+  "cond": [],
+
+  // 根节点动作列表：[]（无动作）:进入对话时不执行效果。数组:每个元素是一个动作，按顺序执行。
+  "act": [],
+
+  // 对话节点。数组顺序 = 文件中的深度前序顺序 = 本地化文本槽顺序。
+  // 根节点由 speaker/text 单独给出，不在 rows 中。
+  "rows": [
+    // ------------------------------------------------------------------------
+    // 第 1 行：根的直接子节点，普通台词；演示条件 AND、比较符、动作、配音。
+    // ------------------------------------------------------------------------
+    {
+      // level（层级）：1:根的直接子节点。2:上一行 level=1 的子节点。3:上一行 level=2 的子节点，依此类推。
+      // 父节点 = 本行之前最近一个 level 小 1 的行；层级不能跳级（level=2 前必须有 level=1）。
+      "level": 1,
+
+      // kind（节点类型）：speech（台词）:普通对话节点。continue（继续选项）:玩家选择"继续"。
+      //                  accept（接受选项）:玩家选择"接受"。decline（拒绝选项）:玩家选择"拒绝"。
+      //                  end（结束）:结束对话。link（跳转）:跳到同一文件的另一节点。
+      //                  selector（选择器）:随机/选择节点，官方枚举名 Random。random（随机）:同 selector。
+      //                  generic（通用）:类型 5，官方未命名。也可直接写数字 0–8。
+      "kind": "speech",
+
+      // text（节点文本）：任意字符串，会占用一条本地化槽。""（空文本）:允许，link 节点可留空。
+      "text": "你终于来了。",
+
+      // flags（节点标志）：0:无。1（OnceOnly）:仅显示一次。2（AlwaysShow）:总是显示。
+      //                    4（Unimportant）:不重要。可相加（如 3 = 仅一次 + 总是显示）。高位保留，未知时写 0。
+      "flags": 0,
+
+      // vo（配音路径，version>=6）：""（无配音）:不写路径。其它:相对 resources 的音频路径。
+      "vo": "conversations/alex_01.ogg",
+
+      // logic（条件关系，仅本节点条件有效）："AND"（全部满足）:默认。0:同 AND。"OR"（任一满足）:1:同 OR。
+      "logic": "AND",
+
+      // cond（条件列表）：[]（无条件）:本节点始终可用。数组:每条条件见下方示例。
+      "cond": [
+        // 具名 + 位置参数写法：{"官方类型名": [字段1, 字段2, ...], "cmp": 比较符}
+        // HasToken：body = 字符串 TokenName + 布尔 HasToken。
+        // cmp 对该类布尔条件无实际语义，官方固定存 "="（2）；显式写出便于阅读。
+        { "HasToken": ["MY_TOKEN", true], "cmp": "=" },
+
+        // HasFaction：字符串 FactionName + 数值 Value；cmp 决定数值比较方向。
+        // cmp 可用："<"（小于）:0。"<="（小于等于）:1。"="（等于）:2（默认）。">="（大于等于）:3。
+        //          ">"（大于）:4。"!="（不等于）:5。也可直接写数字 0–5。
+        { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+        // 具名 + 具名参数写法（字段名按官方弹窗）：任务/目标引用用文件内落盘的 uid（u32）。
+        // HasQuestObjective：Quest（.qst 相对路径）+ Task（task uid）+ Objective（objective uid）+ Satisfied（布尔）。
+        // 该类型默认 bodyVersion=1，会多出 Task/Objective 两个字段；不要手工写 subType=0。
+        {
+          "HasQuestObjective": {
+            "Quest": "quests/example.qst",
+            "Task": 305419896,
+            "Objective": 2271560481,
+            "Satisfied": true
+          },
+          "cmp": "="
+        }
+
+        // 原始类型号写法（探测未知类型/需要精确控制时）：
+        // { "type": 6, "subType": 1, "args": ["SURVIVORS", 5000], "cmp": ">=" }
+        // subType 可省略；省略时按官方默认（HasFaction/HasItem/HasQuestObjective/LuaScript/CheckRandomValue = 1，其余 0）。
+      ],
+
+      // act（动作列表）：[]（无动作）:本节点不产生效果。数组:按顺序执行；动作没有 AND/OR，也没有 cmp。
+      "act": [
+        // GiveMoney：数值 MoneyAmount（金币数量）。
+        { "GiveMoney": [500] },
+
+        // GiveExperience：数值 Experience（经验值）。
+        { "GiveExperience": [1200] }
+      ]
+    },
+
+    // 第 2 行：第 1 行的子节点（level=2），玩家"继续"选项。
+    {
+      "level": 2,
+      "kind": "continue",
+      "text": "继续",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 3 行：第 2 行的子节点（level=3），玩家"接受"选项；演示任务动作与物品动作。
+    {
+      "level": 3,
+      "kind": "accept",
+      "text": "我接受。",
+      "flags": 0,
+      "cond": [],
+      "act": [
+        // BeginQuestTask：QuestFile（.qst 相对路径）+ Task（文件内 task uid）。
+        { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+        // GiveItem：ItemRecord（.dbr 相对路径）+ NumItems（数量，u32）。
+        { "GiveItem": ["records/items/gear/example.dbr", 1] }
+      ]
+    },
+
+    // 第 4 行：第 2 行的另一个子节点（level=3），"拒绝"选项。
+    {
+      "level": 3,
+      "kind": "decline",
+      "text": "以后再说。",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 5 行：第 2 行的子节点（level=3），结束节点。
+    {
+      "level": 3,
+      "kind": "end",
+      "text": "结束",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 6 行：根的直接子节点（level=1），link 跳转；link=5 表示跳到 rows 的第 5 行。
+    // link（目标行号）：1..rows.Length:rows 的 1 起序号。0:根节点。省略:自指（本行）。
+    // 注意：这里的目标是"本地化槽/展平节点"的序号，不是数组下标；工具会自动换算。
+    {
+      "level": 1,
+      "kind": "link",
+      "text": "",
+      "flags": 0,
+      "link": 5,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 7 行：根的直接子节点（level=1），random/selector 节点；其子节点为随机分支。
+    {
+      "level": 1,
+      "kind": "random",
+      "text": "随机问候",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 8 行：第 7 行的子节点（level=2），演示条件 OR 与"具名参数 + 数值比较"。
+    {
+      "level": 2,
+      "kind": "speech",
+      "text": "随机结果 A",
+      "flags": 0,
+      "logic": "OR",
+      "cond": [
+        // IsDifficulty：数值 0（Normal）:普通难度。1（Epic）:精英难度。2（Legendary）:终极难度。
+        { "IsDifficulty": [2], "cmp": "=" },
+
+        // HasMoney：数值 MoneyAmount。
+        { "HasMoney": [1000], "cmp": ">" }
+      ],
+      "act": []
+    },
+
+    // 第 9 行：第 7 行的另一个子节点（level=2）。
+    {
+      "level": 2,
+      "kind": "speech",
+      "text": "随机结果 B",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // 第 10 行：第 7 行的子节点（level=2），结束随机分支。
+    {
+      "level": 2,
+      "kind": "end",
+      "text": "随机结束",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    }
+  ]
+}

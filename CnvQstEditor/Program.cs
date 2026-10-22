@@ -6,7 +6,7 @@ using Avalonia.Threading;
 using CnvQst;
 using CnvQst.Cli;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 internal static class Program
 {
@@ -55,21 +55,16 @@ internal static class Program
         if (args.Length == 1 && args[0] == "--smoke")
             return RunSmoke();
 
-        if (args.Length == 1 && args[0] is "--help" or "-h" or "help")
-        {
-            args = ["help"];
-        }
-
         return RunCli(args);
     }
 
     /// <summary>构建 Avalonia 应用（Semi.Avalonia 主题），不启动生命周期。</summary>
     private static Application BuildApp()
     {
-        var builder = AppBuilder.Configure<StudioApp>().UsePlatformDetect();
+        var builder = AppBuilder.Configure<EditorApp>().UsePlatformDetect();
         builder.SetupWithoutStarting();
         var app = builder.Instance!;
-        app.Name = "CnvQstStudio";
+        app.Name = "CnvQstEditor";
         return app;
     }
 
@@ -145,7 +140,7 @@ internal static class Program
     {
         try
         {
-            string log = Path.Combine(Path.GetTempPath(), "CnvQstStudio_crash.log");
+            string log = Path.Combine(Path.GetTempPath(), "CnvQstEditor_crash.log");
             File.AppendAllText(log, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}]{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}");
             return log;
         }
@@ -164,7 +159,7 @@ internal static class Program
             string msg = ex.ToString();
             _ = MsgBox.Show(null,
                 "程序遇到未预期的错误：\n\n" + (msg.Length > 1200 ? msg[..1200] + "…（详见 " + log + "）" : msg) + "\n\n" + log,
-                "CnvQstStudio 错误", MsgButtons.Ok, warning: true);
+                "CnvQstEditor 错误", MsgButtons.Ok, warning: true);
         }
         catch
         {
@@ -188,16 +183,7 @@ internal static class Program
         }
         try { Console.OutputEncoding = Encoding.UTF8; } catch { }
 
-        int code;
-        if (args[0] == "help")
-        {
-            Console.Error.WriteLine(CliApp.Usage);
-            code = 2;
-        }
-        else
-        {
-            code = CliApp.Run(args, Console.Out, Console.Error);
-        }
+        int code = CliApp.Run(args, Console.Out, Console.Error);
 
         if (attached)
         {

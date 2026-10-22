@@ -12,9 +12,9 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
-/// <summary>QST 树型表格（Semi TreeDataGrid）：节点(树) | Objective ID | 本地化文本 | 条件 | 动作。</summary>
+/// <summary>QST 树型表格（Semi TreeDataGrid）：节点(树) | Objective ID | 条件 | 动作。</summary>
 internal sealed class QstTableEditor : UserControl
 {
     private DocSession _doc = null!;
@@ -32,7 +32,7 @@ internal sealed class QstTableEditor : UserControl
     public DocSession Doc => _doc;
     public int? SelectedTextSlot => SelectedRow?.Owner.TextSlot;
 
-    private static readonly Dictionary<string, int> ColFromTag = new() { ["0"] = 0, ["1"] = 1, ["2"] = 2, ["3"] = 3, ["4"] = 4, ["5"] = 5 };
+    private static readonly Dictionary<string, int> ColFromTag = new() { ["0"] = 0, ["1"] = 1, ["2"] = 2, ["3"] = 3, ["4"] = 4 };
 
     public QstTableEditor()
     {
@@ -93,7 +93,7 @@ internal sealed class QstTableEditor : UserControl
 
     private HierarchicalTreeDataGridSource<QstRow> BuildSource(List<QstRow> roots)
     {
-        // 列宽：序号 Auto 按内容自适应；节点 30% / uid 8% / 本地化 8% / 条件 27% / 动作 27%（Star 权重）。
+        // 列宽：序号 Auto 按内容自适应；节点 30% / uid 8% / 条件 31% / 动作 31%（Star 权重）。
         var s = new HierarchicalTreeDataGridSource<QstRow>(roots)
         {
             Columns =
@@ -123,10 +123,6 @@ internal sealed class QstTableEditor : UserControl
                         b.Child = tb;
                     }, OnCellDoubleTap, "2"),
                     width: new GridLength(TreeGridShared.ColAttrs, GridUnitType.Star)),
-                new TemplateColumn<QstRow>(L.T("本地化文本", "Localized Text"),
-                    // 本地化列暂不显示内容（待接入独立的本地化语言块数据源）
-                    CellBorder(b => { }, OnCellDoubleTap, "3"),
-                    width: new GridLength(TreeGridShared.ColText, GridUnitType.Star)),
                 new TemplateColumn<QstRow>(L.T("条件", "Conditions"),
                     CellBorder(b =>
                     {
@@ -136,7 +132,7 @@ internal sealed class QstTableEditor : UserControl
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(QstRow.Cond)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
-                    }, OnCellDoubleTap, "4"),
+                    }, OnCellDoubleTap, "3"),
                     width: new GridLength(TreeGridShared.ColCond, GridUnitType.Star)),
                 new TemplateColumn<QstRow>(L.T("动作", "Actions"),
                     CellBorder(b =>
@@ -146,7 +142,7 @@ internal sealed class QstTableEditor : UserControl
                         items.Bind(ItemsControl.ItemsSourceProperty, new Binding(nameof(QstRow.Act)));
                         items.ItemTemplate = LineTemplate();
                         b.Child = items;
-                    }, OnCellDoubleTap, "5"),
+                    }, OnCellDoubleTap, "4"),
                     width: new GridLength(TreeGridShared.ColAct, GridUnitType.Star)),
             },
         };
@@ -292,9 +288,8 @@ internal sealed class QstTableEditor : UserControl
         0 => r.Seq,
         1 => r.Node,
         2 => r.IdText.Length > 0 ? r.IdText : null,
-        3 => null,          // 本地化列暂不显示内容
-        4 => r.Cond.Count > 0 ? string.Join(" | ", r.Cond.Select(l => l.Text)) : null,
-        5 => r.Act.Count > 0 ? string.Join(" | ", r.Act.Select(l => l.Text)) : null,
+        3 => r.Cond.Count > 0 ? string.Join(" | ", r.Cond.Select(l => l.Text)) : null,
+        4 => r.Act.Count > 0 ? string.Join(" | ", r.Act.Select(l => l.Text)) : null,
         _ => null,
     };
 
@@ -320,15 +315,15 @@ internal sealed class QstTableEditor : UserControl
     {
         if (_source?.RowSelection.SelectedItem is not QstRow sel) return;
 
-        if (tag == "4")
+        if (tag == "3")
         {
             if (sel.Owner.HasScript) await EditScript(sel, isCondition: true);
         }
-        else if (tag == "5")
+        else if (tag == "4")
         {
             if (sel.Owner.HasScript) await EditScript(sel, isCondition: false);
         }
-        else if (tag is "0" or "1" or "2" or "3")
+        else if (tag is "0" or "1" or "2")
         {
             switch (sel.Owner)
             {

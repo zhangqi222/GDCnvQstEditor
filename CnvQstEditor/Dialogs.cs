@@ -8,7 +8,7 @@ using Avalonia.Platform.Storage;
 using CnvQst;
 using CnvQst.Cli;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>对话框通用骨架：统一尺寸、居中与右下角按钮区。</summary>
 internal static class DialogChrome
@@ -482,16 +482,17 @@ internal sealed class ScriptListDialog : Window
 
         _editor = new ScriptListEditor(_doc, _work, isCondition, () => { });
 
-        var root = new DockPanel();
+        var root = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(banner, Dock.Top);
         root.Children.Add(banner);
+        // 取消/确定固定底部；内容区最后添加以填满剩余空间（LastChildFill）。
+        var footer = DialogChrome.Footer(cancel, ok);
+        DockPanel.SetDock(footer, Dock.Bottom);
+        root.Children.Add(footer);
         var topStack = new StackPanel { Margin = new Thickness(10, 4, 10, 0) };
         topStack.Children.Add(logicRow);
         topStack.Children.Add(_editor);
         root.Children.Add(topStack);
-        var footer = DialogChrome.Footer(cancel, ok);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        root.Children.Add(footer);
         Content = root;
     }
 
@@ -585,7 +586,20 @@ internal sealed class CnvNodeDialog : Window
         flagsRow.Children.Add(_always);
         flagsRow.Children.Add(_unimportant);
         stack.Children.Add(flagsRow);
-        stack.Children.Add(DialogChrome.FieldRow(L.T("配音文件") + ":", _voPath));
+        var voBrowse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false, minWidth: 88);
+        voBrowse.Margin = new Thickness(6, 0, 0, 0);
+        voBrowse.IsEnabled = c.Version >= 6;
+        voBrowse.Click += async (_, _) =>
+        {
+            string? rel = await FileBrowserDialog.Pick(this, "resources",
+                L.T("选择配音文件", "Select voice file"), new[] { "wav", "ogg" }, _voPath.Text);
+            if (rel != null) _voPath.Text = rel.Replace('\\', '/');
+        };
+        var voRow = new DockPanel();
+        DockPanel.SetDock(voBrowse, Dock.Right);
+        voRow.Children.Add(voBrowse);
+        voRow.Children.Add(_voPath);
+        stack.Children.Add(DialogChrome.FieldRow(L.T("配音文件") + ":", voRow));
         stack.Children.Add(DialogChrome.FieldRow(L.T("跳转到") + ":", _link));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
@@ -717,7 +731,7 @@ internal sealed class QstFieldsDialog : Window
         foreach (var (lab, cb) in _flags) { cb.Content = lab; stack.Children.Add(cb); }
         stack.Children.Add(new TextBlock
         {
-            Text = L.T("文本内容请在主界面底部编辑器中修改（选中行后编辑，支持双语）。"),
+            Text = L.T("文本内容请在主界面底部编辑器中修改（选中行后编辑）。"),
             Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0),
@@ -753,7 +767,7 @@ internal sealed class QstFieldsDialog : Window
 }
 
 /// <summary>
-/// 设置弹窗：游戏根目录等。配置持久化到 %USERPROFILE%\.CnvQstStudio\CnvQstStudio.json（JSONC）。
+/// 设置弹窗：游戏根目录等。配置持久化到 %USERPROFILE%\.CnvQstEditor\CnvQstEditor.json（JSONC）。
 /// 游戏根目录用于串字段"资源路径"的 打开 / 浏览：非 dbr → root\resources\，.dbr → root\database\。
 /// </summary>
 internal sealed class SettingsDialog : Window
@@ -794,10 +808,57 @@ internal sealed class SettingsDialog : Window
         };
         var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
 
+        var resStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var dbStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
+
+        void UpdateStatus()
+        {
+            string root = _root.Text?.Trim() ?? "";
+            if (root.Length == 0)
+            {
+                resStatus.Text = dbStatus.Text = L.T("（尚未选择游戏根目录）", "(No game root folder selected)");
+                resStatus.Foreground = dbStatus.Foreground = UiTheme.MutedBrush;
+                return;
+            }
+            SetDirStatus(resStatus, root, "resources", L.T("非 dbr 资源（qst/cnv/wav/ogg/tex/fx/anm/lua…）", "non-dbr resources (qst/cnv/wav/ogg/tex/fx/anm/lua…)"));
+            SetDirStatus(dbStatus, root, "database", L.T("dbr 资源（.dbr）", ".dbr resources"));
+        }
+
+        void SetDirStatus(TextBlock block, string root, string sub, string what)
+        {
+            string dir = Path.Combine(root, sub);
+            bool exists = Directory.Exists(dir);
+            block.Text = (exists ? "✔ " : "✘ ") + dir + "  " + (exists
+                ? L.T("已找到", "found")
+                : L.T("不存在，请设置正确的目录并解包相应资源", "missing — set the correct folder and unpack the corresponding resources"));
+            block.Foreground = exists ? UiTheme.OkBrush : UiTheme.DangerBrush;
+        }
+
+        _root.TextChanged += (_, _) => UpdateStatus();
+        UpdateStatus();
+
         var stack = new StackPanel { Margin = new Thickness(16) };
         stack.Children.Add(DialogChrome.FieldRow(L.T("游戏根目录", "Game root folder"), rootHost));
+        stack.Children.Add(new TextBlock
+        {
+            Text = L.T("dbr 文件应在：设置目录\\database\\", "dbr files must be under: <setting>\\database\\"),
+            Foreground = UiTheme.TextBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 2),
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = L.T("非 dbr 文件应在：设置目录\\resources\\（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
+                "non-dbr files must be under: <setting>\\resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)"),
+            Foreground = UiTheme.TextBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 4),
+        });
+        stack.Children.Add(resStatus);
+        stack.Children.Add(dbStatus);
         stack.Children.Add(DialogChrome.Caption(L.T(
-            "说明：用于条件/动作中“资源路径”类字段的 打开 / 浏览。非 dbr 串（如 quest\\xxx.qst）将以 <游戏根目录>\\resources\\ 为基础目录读取；.dbr 串将以 <游戏根目录>\\database\\ 为基础目录读取。配置保存于 %USERPROFILE%\\.CnvQstStudio\\CnvQstStudio.json。")));
+            "说明：浏览资源时只显示上述目录下的文件（内置文件浏览器），不符合目录规则的文件不会出现。配置保存于 %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json。",
+            "Resource browsing only lists files under the folders above (built-in browser); files outside these roots are never shown. Settings are stored in %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json.")));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }

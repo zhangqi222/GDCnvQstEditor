@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
@@ -5,7 +6,22 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
+
+/// <summary>程序集版本（csproj &lt;Version&gt;）：关于对话框与状态栏共用。</summary>
+internal static class AppInfo
+{
+    public static string Version { get; } = Resolve();
+
+    private static string Resolve()
+    {
+        var asm = typeof(AppInfo).Assembly;
+        string? info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(info))
+            return info.Split('+')[0];
+        return asm.GetName().Version?.ToString(3) ?? "?";
+    }
+}
 
 /// <summary>GUI 小工具（Avalonia 版）。</summary>
 internal static class Gui

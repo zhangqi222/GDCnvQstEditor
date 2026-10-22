@@ -8,8 +8,8 @@ namespace CnvQst;
 /// 实测用途（2026-09-28 反汇编 ConversationEditor 得到）：
 ///   · CNV 头部 +0x0C 的"对话 id" = `Hash(根节点文本, unicode: true)`——即 NPC 名的哈希；
 ///     编辑器"Copy Id"菜单复制的正是这个值。三个样本已逐值核对通过。
-///   · 任务的引用标识（条件 QuestTaskComplete / 动作 BeginQuestTask 等参数里那些
-///     编辑器显示为 "?" 的大数）= 同一个哈希再左移 8 位（mod 2^32）。
+/// 任务引用（条件/动作参数里的 Task/Objective）不是哈希，而是目标 task/objective
+/// 记录中落盘的持久化 uid；旧文档的"hash<<8"说法已作废。
 /// </summary>
 public static class Fnv1
 {
@@ -25,6 +25,4 @@ public static class Fnv1
         return h;
     }
 
-    /// <summary>任务引用标识形态：哈希左移 8 位（低 8 位恒为 0，与语料观测一致）。</summary>
-    public static uint Reference(string text, bool unicode = true) => Hash(text, unicode) << 8;
 }

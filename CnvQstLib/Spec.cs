@@ -21,34 +21,35 @@ public sealed class SpecException : Exception
 ///   "format": "cnv", "version": 6, "id": 0, "speaker": "Alex",
 ///   "rows": [
 ///     { "level": 1, "kind": "speech", "text": "第一句", "flags": 0,
-///       "cond": [ {"HasToken": ["MY_TOKEN", 1]} ],
+///       "cond": [ {"HasToken": ["MY_TOKEN", 1], "cmp": "="} ],
 ///       "act":  [ {"GiveMoney": [500]} ] }
 ///   ]
 /// }
 ///   level：缩进层级（1 = 根的直接子节点，2 = 子节点……）；父 = 最近一个 level-1 的行。
-///   kind：root/speech/continue/accept/decline/end/link/selector（也可直接写数字类型）。
-///   flags：step 的 unknown 字原值（编辑器的 Once Only/Always Show/Unimportant 位尚未定位，
-///          探测时直接写数值，如 8）。
+///   kind：root/speech/continue/accept/decline/end/link/selector/random（也可直接写数字类型）。
+///   flags：step 的 unknown 字原值（低 3 位为 OnceOnly/AlwaysShow/Unimportant）。
 ///   link：kind=link 时给目标行号（rows 的 1 起序号），不给则自指。
+///   根级也可写 flags/vo/cond/act/logic。
 ///
 /// QST spec：
 /// {
-///   "format": "qst", "version": 9, "group": "组名", "name": "任务名",
+///   "format": "qst", "version": 9, "flags": 0, "id": 0, "group": "组名", "name": "任务名",
 ///   "tasks": [
-///     { "title": "任务标题", "desc": "描述",
-///       "incentives": [ {"cond": [...], "act": [...]} ],   // 编辑器 OnAccept（待验证）
-///       "objectives": [ {"text": "目标文本", "cond": [...], "act": [...]} ],
-///       "events":     [ {"cond": [...], "act": [...]} ] }  // 编辑器 OnComplete（待验证）
+///     { "uid": 123, "title": "任务标题", "desc": "描述",
+///       "incentives": [ {"cond": [...], "act": [...]} ],   // 编辑器 OnAccept
+///       "objectives": [ {"uid": 456, "text": "目标文本", "cond": [...], "act": [...]} ],
+///       "events":     [ {"cond": [...], "act": [...]} ] }  // 编辑器 OnComplete
 ///   ]
 /// }
 ///
 /// 条件/动作写法（两种）：
-///   具名 + 位置参数：{"HasFaction": ["SURVIVORS", 10000]}
-///   具名 + 具名参数：{"HasFaction": {"FactionName": "SURVIVORS", "Value": 10000}}
-///   原始类型号写法：{"type": 6, "subType": 1, "args": ["SURVIVORS", 10000]}
+///   具名 + 位置参数：{"HasFaction": ["SURVIVORS", 10000], "cmp": ">="}
+///   具名 + 具名参数：{"HasFaction": {"FactionName": "SURVIVORS", "Value": 10000}, "cmp": 3}
+///   原始类型号写法：{"type": 6, "subType": 1, "args": ["SURVIVORS", 10000], "cmp": ">="}
 ///   原始类型号 + 具名：{"type": 6, "subType": 1, "args": {"FactionName": "SURVIVORS"}}
-/// P 形态（路径集）写 {"paths": ["a.dbr"], "trailing": 3}；L（Lua）写函数名字符串或
-/// {"call": "gd.x.y()", "args": [...]}。
+/// P 形态（路径集）写 {"paths": ["a.dbr"], "trailing": 3}，或
+/// {"MonsterRecords": ["a.dbr"], "KillCount": 3}；L（Lua）写函数名字符串或
+/// {"call": "gd.x.y()", "args": [...], "tail": {"t0":0,"t1":0,"t2":0,"t3":0,"text":""}}。
 /// </summary>
 public static class Spec
 {
@@ -59,7 +60,7 @@ public static class Spec
     private static Dictionary<string, uint> BuildNameMap(bool condition)
     {
         var map = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
-        int n = condition ? 26 : 29;
+        int n = condition ? 30 : 29;
         for (uint t = 0; t < n; t++)
         {
             if (!condition && (t == 0 || t == 16)) continue;
@@ -115,8 +116,15 @@ public static class Spec
             ? r.EnumerateArray().ToList()
             : throw new SpecException("cnv spec 缺少 \"rows\" 数组");
 
-        // 根
-        var rootStep = new CnvStep { Type = Names.StepRoot };
+        // 根：文本来自 speaker；也可带 flags/vo/cond/act（与普通节点同构）
+        var rootStep = new CnvStep
+        {
+            Type = Names.StepRoot,
+            Unknown = (uint)(Int(root, "flags") ?? 0),
+            VoPath = new GdString(Str(root, "vo") ?? ""),
+            Conditions = ParseList(root, "cond", true, ParseLogic(root, 0), 0),
+            Actions = ParseList(root, "act", false, 0, 0),
+        };
         c.Steps.Add(rootStep);
         var byLevel = new Dictionary<int, CnvStep> { [0] = rootStep };
 
@@ -169,7 +177,7 @@ public static class Spec
         foreach (var (step, target) in links)
             step.LinkId = (uint)Math.Clamp(target, 0, flat.Count - 1);
 
-        var lang = new LanguageBlock { Tag = new GdString("enUS") };
+        var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
         foreach (var t in texts) lang.Texts.Add(new GdString(t));
         while (lang.Texts.Count < flat.Count) lang.Texts.Add(new GdString(""));
         c.Languages.Add(lang);
@@ -178,11 +186,15 @@ public static class Spec
 
     public static QstFile BuildQst(JsonElement root)
     {
+        // 本文件自有 ID：显式写入（含 0）原样保留，缺省才随机；旧任务改 JSON 时必须照抄原值
+        long? explicitId = Int(root, "id");
+        uint fileUid = explicitId.HasValue ? (uint)explicitId.Value : QstFile.RandomUid();
         var q = new QstFile
         {
             Version = (uint)(Int(root, "version") ?? 9),
-            Id = (uint)(Int(root, "id") ?? 0),
-            Unknown10 = (uint)(Int(root, "unknown10") ?? 0),
+            Id = fileUid,
+            // +0x10：任务 flags（None/Primary/Secondary/Repeatable）；兼容旧字段名 unknown10
+            Unknown10 = (uint)(Int(root, "flags") ?? Int(root, "unknown10") ?? 0),
         };
         if (q.Version < 7) throw new SpecException("QST 版本必须 ≥7");
 
@@ -194,34 +206,57 @@ public static class Spec
         var tasks = root.TryGetProperty("tasks", out var t) && t.ValueKind == JsonValueKind.Array
             ? t.EnumerateArray().ToList()
             : throw new SpecException("qst spec 缺少 \"tasks\" 数组");
+        if (tasks.Count > 4096) throw new SpecException($"task 数量 {tasks.Count} 超过上限 4096");
 
         for (int i = 0; i < tasks.Count; i++)
         {
             var tj = tasks[i];
-            var task = new QstTask { Uid = 1, Uid2 = 2 };
+            uint taskUid = (uint)(Int(tj, "uid") ?? 0);
+            if (taskUid == 0) taskUid = QstFile.RandomUid();
+            var task = new QstTask
+            {
+                Uid = 1,
+                Uid2 = 2,                       // 运行时计数器，不落盘
+                UnknownA8 = taskUid,            // 持久化 task uid（CNV 的任务引用就是它）
+                UnknownAC = (uint)(Int(tj, "unknownAC") ?? 0),
+                Flag8 = Bool(tj, "flag8"),
+                Flag9 = Bool(tj, "flag9"),
+            };
             texts.Add(Str(tj, "title") ?? "");
             texts.Add(Str(tj, "desc") ?? "");
 
-            foreach (var e in Array(tj, "incentives")) task.Incentives.Add(ParseEvent(e, i));   // 编辑器 OnAccept
+            // 槽序（官方 QuestEditor 实测）：标题、描述、OnAccept…、目标…、OnComplete…
+            foreach (var e in Array(tj, "incentives"))
+            {
+                task.Incentives.Add(ParseEvent(e, i));
+                texts.Add("");                  // incentive 的本地化槽（官方文件为空）
+            }
             foreach (var o in Array(tj, "objectives"))
             {
-                var obj = new QstObjective();
+                uint objUid = (uint)(Int(o, "uid") ?? 0);
+                if (objUid == 0) objUid = QstFile.RandomUid();
+                var obj = new QstObjective
+                {
+                    Unknown0 = objUid,          // 持久化 objective uid
+                    Unknown1 = (uint)(Int(o, "unknown1") ?? 0),
+                };
                 obj.Conditions = ParseList(o, "cond", true, ParseLogic(o, i), i);
                 obj.Actions = ParseList(o, "act", false, 0, i);
                 texts.Add(Str(o, "text") ?? "");
                 task.Objectives.Add(obj);
             }
-            foreach (var e in Array(tj, "events")) task.Events.Add(ParseEvent(e, i));           // 编辑器 OnComplete
-            // 每个 incentive / event 各占一条本地化槽（公式里的 I、E）；槽位顺序待 probe qst 确认，
-            // 这里按"排在各自 task 块末尾"摆放，条数则严格等于公式值。
-            for (int k = 0; k < task.Incentives.Count + task.Events.Count; k++) texts.Add("");
+            foreach (var e in Array(tj, "events"))
+            {
+                task.Events.Add(ParseEvent(e, i));
+                texts.Add("");                  // event 的本地化槽（官方文件为空）
+            }
             q.Tasks.Add(task);
         }
 
         int want = QstFile.LocalizedTextCount(q.Tasks.Count, q.ObjectiveCount, q.IncentiveCount, q.EventCount);
         while (texts.Count < want) texts.Add("");
 
-        var lang = new LanguageBlock { Tag = new GdString("enUS") };
+        var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
         foreach (var s in texts) lang.Texts.Add(new GdString(s));
         q.Languages.Add(lang);
         return q;
@@ -229,7 +264,7 @@ public static class Spec
 
     private static QstEvent ParseEvent(JsonElement e, int taskIndex)
     {
-        var ev = new QstEvent();
+        var ev = new QstEvent { Unknown = (uint)(Int(e, "unknown") ?? 0) };
         ev.Conditions = ParseList(e, "cond", true, ParseLogic(e, taskIndex), taskIndex);
         ev.Actions = ParseList(e, "act", false, 0, taskIndex);
         return ev;
@@ -246,13 +281,8 @@ public static class Spec
         if (arr.ValueKind != JsonValueKind.Array)
             throw new SpecException($"第 {rowIndex + 1} 行的 \"{key}\" 必须是数组");
 
-        int uid = 1;
         foreach (var item in arr.EnumerateArray())
-        {
-            var rec = ParseEntry(item, isCondition, rowIndex, key);
-            if (isCondition) rec.Uid = (uint)uid++;
-            list.Records.Add(rec);
-        }
+            list.Records.Add(ParseEntry(item, isCondition, rowIndex, key));
         list.Present = list.Records.Count > 0;
         list.Count = list.Records.Count;
         return list;
@@ -264,18 +294,19 @@ public static class Spec
             throw new SpecException($"第 {rowIndex + 1} 行 {key} 的每一项必须是对象");
 
         uint type;
-        byte subType = 0;
+        byte? subTypeArg = null;
         JsonElement args = default;
         bool hasArgs = false;
 
         if (item.TryGetProperty("type", out var tv))
         {
             type = (uint)Num(tv, "type");
-            if (item.TryGetProperty("subType", out var sv)) subType = (byte)Num(sv, "subType");
+            if (item.TryGetProperty("subType", out var sv)) subTypeArg = (byte)Num(sv, "subType");
         }
         else
         {
-            var prop = item.EnumerateObject().FirstOrDefault(p => p.Name != "subType" && p.Name != "uid" && p.Name != "args");
+            var prop = item.EnumerateObject().FirstOrDefault(p => p.Name != "subType" && p.Name != "cmp"
+                && p.Name != "comparator" && p.Name != "comparison" && p.Name != "uid" && p.Name != "args");
             if (prop.NameEquals("args") || prop.Value.ValueKind == JsonValueKind.Undefined)
                 throw new SpecException($"第 {rowIndex + 1} 行 {key}：既没有 \"type\" 也没有具名类型");
             var map = isCondition ? CondByName : ActByName;
@@ -284,9 +315,10 @@ public static class Spec
                     (isCondition ? "条件" : "动作") + "可用名：" + string.Join(", ", KnownNames(isCondition)));
             args = prop.Value;
             hasArgs = true;
-            if (item.TryGetProperty("subType", out var sv2)) subType = (byte)Num(sv2, "subType");
+            if (item.TryGetProperty("subType", out var sv2)) subTypeArg = (byte)Num(sv2, "subType");
         }
         if (!hasArgs && item.TryGetProperty("args", out var av)) { args = av; hasArgs = true; }
+        byte subType = subTypeArg ?? Scriptable.DefaultBodyVersion(type);
 
         var rec = new ScriptRecord
         {
@@ -299,11 +331,11 @@ public static class Spec
         // 动作的 0/16 工厂返回 null（"(unused)"）；条件的空 body 是合法的（如 17 WaitForCompletion 无参数）
         if (!isCondition && rec.BodySpec == "(unused)")
             throw new SpecException($"第 {rowIndex + 1} 行：动作类型 {type} 未实现（工厂返回 null）");
-        if (isCondition && type >= 26)
-            throw new SpecException($"第 {rowIndex + 1} 行：条件类型 {type} 越界（有效范围 0–25）");
+        if (isCondition && type >= 30)
+            throw new SpecException($"第 {rowIndex + 1} 行：条件类型 {type} 越界（有效范围 0–29）");
+        if (isCondition) rec.Uid = ParseComparison(item, rowIndex, key);
 
         rec.Fields = BuildFields(isCondition, type, subType, hasArgs ? args : default, hasArgs, rowIndex);
-        if (item.TryGetProperty("uid", out var uv)) rec.Uid = (uint)Num(uv, "uid");
         return rec;
     }
 
@@ -373,13 +405,26 @@ public static class Spec
                 case 'P':
                 {
                     var f = new ScriptField { Kind = FieldKind.P, Paths = new List<GdString>(), Trailing = 0, Param = name ?? "paths" };
-                    if (v.ValueKind == JsonValueKind.Array)
-                        foreach (var p in v.EnumerateArray()) f.Paths.Add(new GdString(p.GetString() ?? ""));
-                    else if (v.ValueKind == JsonValueKind.Object && v.TryGetProperty("paths", out var pv))
+                    void ReadPaths(JsonElement pv)
                     {
-                        foreach (var p in pv.EnumerateArray()) f.Paths.Add(new GdString(p.GetString() ?? ""));
-                        if (v.TryGetProperty("trailing", out var tv2)) f.Trailing = (uint)tv2.GetInt64();
+                        if (pv.ValueKind != JsonValueKind.Array) return;
+                        foreach (var p in pv.EnumerateArray())
+                            f.Paths.Add(new GdString(p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : ""));
                     }
+                    // 具名写法的 P 字段是"整个值对象"（paths/MonsterRecords/ProxyRecords + KillCount/trailing）；
+                    // 位置写法直接给数组或 {paths,trailing} 对象。
+                    JsonElement pobj = named ? args : v;
+                    if (pobj.ValueKind == JsonValueKind.Object)
+                    {
+                        if (TryProp(pobj, "paths", out var pv)) ReadPaths(pv);
+                        else if (name != null && TryProp(pobj, name, out pv)) ReadPaths(pv);
+                        // 尾字（HasKilled / HasKilledProxy 为 KillCount）
+                        if (TryProp(pobj, "trailing", out var tv2) ||
+                            TryProp(pobj, "KillCount", out tv2) ||
+                            TryProp(pobj, "count", out tv2))
+                            f.Trailing = tv2.ValueKind == JsonValueKind.Number ? (uint)tv2.GetInt64() : 0u;
+                    }
+                    else if (v.ValueKind == JsonValueKind.Array) ReadPaths(v);
                     f.Count = f.Paths.Count;
                     fields.Add(f);
                     break;
@@ -387,16 +432,42 @@ public static class Spec
                 case 'L':
                 {
                     var f = new ScriptField { Kind = FieldKind.Lua, Params = new List<LuaParam>(), Param = name ?? "Function" };
-                    if (v.ValueKind == JsonValueKind.String) f.S = new GdString(v.GetString() ?? "");
-                    else if (v.ValueKind == JsonValueKind.Object)
+                    // 具名写法：若给了 Function 键则取其值；否则把整个对象当作 Lua 专用写法
+                    // （{"call": "...", "args": [...], "tail": {...}}）。
+                    JsonElement lua = v;
+                    if (named)
                     {
-                        f.S = new GdString(Str(v, "call") ?? "");
-                        if (v.TryGetProperty("args", out var av2))
+                        if (name != null && TryProp(args, name, out var fv)) lua = fv;
+                        else if (TryProp(args, "call", out _) || TryProp(args, "function", out _) ||
+                                 TryProp(args, "tail", out _) || TryProp(args, "args", out _))
+                            lua = args;
+                    }
+                    // 具名写法的值直接是字符串（{"LuaScript": "gd.x()"}）时 args 不是数组/对象，
+                    // ValueAt 取不到值，这里退回整串参数。
+                    else if (hasArgs && args.ValueKind == JsonValueKind.String)
+                        lua = args;
+                    if (lua.ValueKind == JsonValueKind.String) f.S = new GdString(lua.GetString() ?? "");
+                    else if (lua.ValueKind == JsonValueKind.Object)
+                    {
+                        f.S = new GdString(Str(lua, "call") ?? Str(lua, "function") ?? "");
+                        if (lua.TryGetProperty("args", out var av2) && av2.ValueKind == JsonValueKind.Array)
                             foreach (var p in av2.EnumerateArray())
-                                f.Params.Add(new LuaParam { S = new GdString(p.GetString() ?? "") });
+                                f.Params.Add(new LuaParam { S = new GdString(p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "") });
                     }
                     f.Count = f.Params.Count;
-                    if (isCondition) f.Tail = new LuaTail();
+                    if (isCondition)
+                    {
+                        var tail = new LuaTail();
+                        if (lua.ValueKind == JsonValueKind.Object && TryProp(lua, "tail", out var tv) && tv.ValueKind == JsonValueKind.Object)
+                        {
+                            tail.T0 = (uint)(Int(tv, "t0") ?? 0);
+                            tail.T1 = (uint)(Int(tv, "t1") ?? 0);
+                            tail.T2 = (byte)(Int(tv, "t2") ?? 0);
+                            tail.T3 = (uint)(Int(tv, "t3") ?? 0);
+                            tail.S = new GdString(Str(tv, "text") ?? Str(tv, "s") ?? "");
+                        }
+                        f.Tail = tail;
+                    }
                     fields.Add(f);
                     break;
                 }
@@ -411,6 +482,60 @@ public static class Spec
     // ------------------------------------------------------------------
     // 小工具
     // ------------------------------------------------------------------
+
+    /// <summary>条件比较符：cmp / comparator / comparison，接受 0–5 或符号/枚举名；默认 2（=）。</summary>
+    private static uint ParseComparison(JsonElement item, int rowIndex, string key)
+    {
+        JsonElement v;
+        if (!item.TryGetProperty("cmp", out v) &&
+            !item.TryGetProperty("comparator", out v) &&
+            !item.TryGetProperty("comparison", out v))
+            return 2;
+
+        if (v.ValueKind == JsonValueKind.Number)
+        {
+            long n = v.GetInt64();
+            if (n is < 0 or > 5)
+                throw new SpecException($"第 {rowIndex + 1} 行 {key}：比较符 {n} 越界（0..5）");
+            return (uint)n;
+        }
+        if (v.ValueKind == JsonValueKind.String)
+        {
+            string s = (v.GetString() ?? "").Trim();
+            return s.ToLowerInvariant() switch
+            {
+                "<" or "lt" or "less" => 0,
+                "<=" or "le" or "lessequal" => 1,
+                "=" or "==" or "eq" or "equal" => 2,
+                ">=" or "ge" or "greaterequal" => 3,
+                ">" or "gt" or "greater" => 4,
+                "!=" or "<>" or "ne" or "notequal" => 5,
+                _ => throw new SpecException(
+                    $"第 {rowIndex + 1} 行 {key}：未知比较符 \"{s}\"（可用 <, <=, =, >=, >, !=）"),
+            };
+        }
+        throw new SpecException($"第 {rowIndex + 1} 行 {key}：cmp 必须是数字 0–5 或比较符字符串");
+    }
+
+    private static bool TryProp(JsonElement o, string name, out JsonElement value)
+    {
+        if (o.TryGetProperty(name, out value)) return true;
+        foreach (var p in o.EnumerateObject())
+        {
+            if (!string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = p.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static bool Bool(JsonElement o, string key)
+    {
+        if (!TryProp(o, key, out var v)) return false;
+        return v.ValueKind == JsonValueKind.True
+               || (v.ValueKind == JsonValueKind.Number && v.GetInt64() != 0);
+    }
 
     private static uint ParseLogic(JsonElement owner, int rowIndex)
     {
@@ -438,7 +563,8 @@ public static class Spec
             "decline" => Names.StepDecline,
             "end" => Names.StepEnd,
             "link" => Names.StepLink,
-            "selector" => Names.StepSelector,
+            "selector" or "random" => Names.StepRandom,
+            "generic" => 5,
             _ => throw new SpecException($"第 {rowIndex + 1} 行未知 kind：{s}"),
         };
     }
@@ -483,6 +609,8 @@ public static class Spec
   // 生成一个任务：组名/任务名 + 每 task 的标题、描述、目标
   "format": "qst",
   "version": 9,
+  // 本文件自有 ID：显式写就保留（含 0），完全省略才随机；改旧任务时照抄原值。
+  // "id": 123456789,
   "group": "PROBE_GROUP",
   "name": "PROBE_QUEST",
   "tasks": [

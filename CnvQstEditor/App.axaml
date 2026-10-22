@@ -1,10 +1,14 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="CnvQstStudio.StudioApp">
+             x:Class="CnvQstEditor.EditorApp">
   <Application.Styles>
     <!-- Semi.Avalonia 主题系（控件 / DataGrid / TreeDataGrid） -->
     <StyleInclude Source="avares://Semi.Avalonia/Index.axaml" />
     <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
     <StyleInclude Source="avares://Semi.Avalonia.TreeDataGrid/Index.axaml" />
+    <!-- 所有窗口统一图标（主窗、批量面板与各对话框） -->
+    <Style Selector="Window">
+      <Setter Property="Icon" Value="avares://CnvQstEditor/app.ico" />
+    </Style>
   </Application.Styles>
 </Application>

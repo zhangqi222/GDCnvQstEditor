@@ -2,7 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
 /// Semi.Avalonia 主题引导：挂载 Semi 控件主题、DataGrid 主题与 TreeDataGrid 主题，

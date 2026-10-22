@@ -4,7 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
 /// Win32 同步剪贴板（CF_UNICODETEXT）。

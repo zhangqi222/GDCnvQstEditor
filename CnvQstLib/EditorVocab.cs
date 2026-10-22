@@ -26,9 +26,8 @@ public sealed class OfficialOption
 ///   ② `vocab` 命令输出"官方选项 ↔ type id"对照表，供在官方编辑器里逐项核对。
 ///
 /// 抄录来源：cnv示例/cnv字段选项.txt（用户在官方编辑器中逐项展开抄录）。
-/// 官方条件下拉 30 项、动作下拉 28 项；二进制只有 26 个条件槽（0–25）与
-/// 27 个可用动作槽（0–28，其中 0/16 工厂返回 null），因此：
-///   · 部分官方选项只能是同一 type 的 subType 变体（如 HasKilled 系列）；
+/// 官方条件下拉 30 项、动作下拉 28 项；二进制为 30 个条件槽（0–29）与
+/// 29 个动作槽（0–28，其中 0/16 工厂返回 null），一一对应：
 ///   · OperMerchantWindow 在编辑器里点击即报错，与"工厂返回 null 的 0/16"吻合。
 /// </summary>
 public static class EditorVocab
@@ -38,7 +37,7 @@ public static class EditorVocab
         new() { Name = "AnyoneHasToken",      Params = "TokenName str / HasToken TRUE-FALSE" },
         new() { Name = "CheckRandomValue",    Params = "Name str / Value num / Comparaior" },
         new() { Name = "EarnedDevotion",      Params = "DevotionAmount num / Comparaior" },
-        new() { Name = "Hasbuff",             Params = "BuffName file / HasBuff TRUE-FALSE" },
+        new() { Name = "HasBuff",             Params = "BuffName file / HasBuff TRUE-FALSE" },
         new() { Name = "HasExperience",       Params = "Experience num / Comparaior" },
         new() { Name = "HasFaction",          Params = "FactionName str / Value num / Comparaior" },
         new() { Name = "HasItem",             Params = "ItemRecord file / ItemCount num / CompleteOnly TRUE-FALSE / Comparaior" },
@@ -155,7 +154,7 @@ public static class EditorVocab
         [15] = ("GiveSkillPoint", Evidence.Engine),
         [17] = ("Notification", Evidence.Anchored),
         [18] = ("GiveAttribPoint", Evidence.Engine),
-        [19] = ("ScriptEvent", Evidence.Inferred),
+        [19] = ("ScriptEvent", Evidence.Anchored),
         [20] = ("GiveRandomItem", Evidence.Engine),
         [21] = ("GenerateRandomValue", Evidence.Engine),
         [22] = ("CastSkill", Evidence.Engine),

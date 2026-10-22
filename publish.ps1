@@ -1,43 +1,75 @@
-# publish.ps1 — 一键打包 CnvQstStudio 为单文件 EXE（配置 B：依靠运行库的瘦单文件，约 2 MB）
+﻿# publish.ps1 — 一键打包两个单文件 EXE
 # 用法:  .\publish.ps1
-# 产物: dist/CnvQstStudio.exe   （需目标机装有 .NET 8 Desktop Runtime x64）
+# 产物:  dist/CnvQstEditor.exe   GUI（带参数时也支持 CLI；需 .NET 8 Desktop Runtime x64）
+#        dist/CnvQstEditor-cli.exe     纯 CLI（需 .NET 8 Runtime x64）
+#        dist/lang/*.json              语言包（缺了只剩中文）
+# 两者均为配置 B / lite：框架依赖单文件。
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$proj = Join-Path $root "CnvQstStudio\CnvQstStudio.csproj"
+$guiProj = Join-Path $root "CnvQstEditor\CnvQstEditor.csproj"
+$cliProj = Join-Path $root "CnvQstEditor-cli\CnvQstEditor-cli.csproj"
 $dist = Join-Path $root "dist"
+$tmp = Join-Path $root ".publish-tmp"
 
-Write-Host "==> 打包 CnvQstStudio（配置 B：lite，依赖 .NET 8 Desktop Runtime）"
+Write-Host "==> 打包 CnvQstEditor（GUI+CLI）与 CnvQstEditor-cli（纯 CLI）"
+Write-Host "    配置 B：框架依赖单文件，需目标机安装 .NET 8 运行时"
 
-# 清理旧产物
-if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
-New-Item -ItemType Directory -Path $dist | Out-Null
+# dist 可同时存放测试样本，发布时只覆盖两个 EXE 和 lang 目录，不清理其他文件
+New-Item -ItemType Directory -Path $dist -Force | Out-Null
+if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 
-# 单文件发布（框架依赖，故 TargetFramework 是 net8.0-windows）
-dotnet publish $proj -c Release -r win-x64 `
-  -p:PublishSingleFile=true `
-  -p:SelfContained=false `
-  -p:IncludeNativeLibrariesForSelfExtract=true `
-  -o $dist
+try {
+  dotnet publish $guiProj -c Release -r win-x64 `
+    -p:PublishSingleFile=true `
+    -p:SelfContained=false `
+    -p:IncludeNativeLibrariesForSelfExtract=true `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o (Join-Path $tmp "gui")
+  if ($LASTEXITCODE -ne 0) { throw "CnvQstEditor 发布失败 (exit=$LASTEXITCODE)" }
 
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败 (exit=$LASTEXITCODE)" }
+  dotnet publish $cliProj -c Release -r win-x64 `
+    -p:PublishSingleFile=true `
+    -p:SelfContained=false `
+    -p:DebugType=None `
+    -p:DebugSymbols=false `
+    -o (Join-Path $tmp "cli")
+  if ($LASTEXITCODE -ne 0) { throw "CnvQstEditor-cli 发布失败 (exit=$LASTEXITCODE)" }
 
-$exe = Join-Path $dist "CnvQstStudio.exe"
-if (-not (Test-Path $exe)) { throw "未找到产物 $exe" }
+  Copy-Item (Join-Path $tmp "gui\CnvQstEditor.exe") (Join-Path $dist "CnvQstEditor.exe") -Force
+  Copy-Item (Join-Path $tmp "cli\CnvQstEditor-cli.exe") (Join-Path $dist "CnvQstEditor-cli.exe") -Force
 
-$info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
-$hash = Get-FileHash $exe -Algorithm SHA256
-$size = (Get-Item $exe).Length
+  $langSrc = Join-Path $root "CnvQstEditor\lang"
+  $langDst = Join-Path $dist "lang"
+  New-Item -ItemType Directory -Path $langDst -Force | Out-Null
+  Copy-Item (Join-Path $langSrc "*.json") $langDst -Force
+}
+finally {
+  if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+}
+
+$guiExe = Join-Path $dist "CnvQstEditor.exe"
+$cliExe = Join-Path $dist "CnvQstEditor-cli.exe"
+foreach ($p in @($guiExe, $cliExe)) {
+  if (-not (Test-Path $p)) { throw "未找到产物 $p" }
+}
 
 Write-Host ""
 Write-Host "生成完成。"
-Write-Host ("  文件   : {0}" -f $exe)
-Write-Host ("  版本   : {0}" -f $info.FileVersion)
-Write-Host ("  大小   : {0:N0} B ({1:N2} MB)" -f $size, ($size / 1MB))
-Write-Host ("  SHA256 : {0}" -f $hash.Hash)
+foreach ($p in @($guiExe, $cliExe)) {
+  $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($p)
+  $hash = Get-FileHash $p -Algorithm SHA256
+  $size = (Get-Item $p).Length
+  Write-Host ("  {0}" -f (Split-Path $p -Leaf))
+  Write-Host ("    版本   : {0}" -f $info.FileVersion)
+  Write-Host ("    大小   : {0:N0} B ({1:N2} MB)" -f $size, ($size / 1MB))
+  Write-Host ("    SHA256 : {0}" -f $hash.Hash)
+}
 Write-Host ""
 Write-Host "使用:"
-Write-Host "  dist\CnvQstStudio.exe                  # 无参数 -> 图形界面"
-Write-Host "  dist\CnvQstStudio.exe gui              # 强制图形界面"
-Write-Host "  dist\CnvQstStudio.exe verify <目录>    # 带参数 -> CLI"
-Write-Host "（配置 B 需要目标机安装 .NET 8 Desktop Runtime x64：https://dotnet.microsoft.com/download/dotnet/8.0）"
+Write-Host "  dist\CnvQstEditor.exe                    # 无参数 -> 图形界面"
+Write-Host "  dist\CnvQstEditor.exe verify <目录>      # 带参数 -> CLI（与 CnvQstEditor-cli 相同）"
+Write-Host "  dist\CnvQstEditor-cli.exe help                 # CLI 帮助"
+Write-Host "  dist\CnvQstEditor-cli.exe verify <目录>        # 示例：批量校验"
+Write-Host "（GUI 需 .NET 8 Desktop Runtime x64；纯 CLI 需 .NET 8 Runtime x64：https://dotnet.microsoft.com/download/dotnet/8.0）"

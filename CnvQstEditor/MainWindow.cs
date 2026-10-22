@@ -7,7 +7,7 @@ using Avalonia.Platform.Storage;
 using CnvQst;
 using CnvQst.Cli;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
 /// 编辑器主窗口（Semi.Avalonia）。布局：
@@ -23,6 +23,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _statusVer = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Grid _root = new();
     private Menu? _menu;
+    private MenuItem? _recentMenu;
     private Control? _toolbar;
     private bool _forceClose;
 
@@ -132,6 +133,8 @@ internal sealed class MainWindow : Window
         var file = MkMenu(L.MFile);
         file.Items.Add(MkItem(L.OpenTitle, new KeyGesture(Key.O, KeyModifiers.Control), () => _ = OpenViaDialog()));
         file.Items.Add(MkItem(L.OpenDirBatch, new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null)));
+        _recentMenu = MkMenu(L.T("最近打开", "Recent Files"));
+        file.Items.Add(_recentMenu);
         file.Items.Add(new Separator());
         file.Items.Add(MkItem(L.Save, new KeyGesture(Key.S, KeyModifiers.Control), () => _ = SaveActive()));
         file.Items.Add(MkItem(L.SaveAs, new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift), () => _ = SaveActiveAs()));
@@ -162,9 +165,6 @@ internal sealed class MainWindow : Window
         tools.Items.Add(new Separator());
         tools.Items.Add(MkItem(L.T("设置…", "Settings…"), null, () => _ = ShowSettings()));
 
-        var view = MkMenu(L.MView);
-        view.Items.Add(MkItem(L.LocStringTable, new KeyGesture(Key.L, KeyModifiers.Control), SelectLocTab));
-
         var lang = MkMenu(L.MenuLanguage);
         foreach (var info in L.Languages)
         {
@@ -180,7 +180,7 @@ internal sealed class MainWindow : Window
         var help = MkMenu(L.MHelp);
         help.Items.Add(MkItem(L.About, new KeyGesture(Key.F1), ShowAbout));
 
-        foreach (var m in new[] { file, newMenu, import, export, batch, tools, view, lang, help }) menu.Items.Add(m);
+        foreach (var m in new[] { file, newMenu, import, export, batch, tools, lang, help }) menu.Items.Add(m);
         Grid.SetRow(menu, 0);
         _root.Children.Add(menu);
         _menu = menu;
@@ -193,6 +193,7 @@ internal sealed class MainWindow : Window
             (L.Save, () => _ = SaveActive()),
             (L.SaveAs, () => _ = SaveActiveAs()),
             (L.VerifyCurrent, VerifyActive),
+            (L.BatchPanel, () => ShowBatch(null)),
             (L.ReloadCurrent, () => _ = ReloadActive()),
             (L.T("设置…", "Settings…"), () => _ = ShowSettings()),
         })
@@ -200,6 +201,42 @@ internal sealed class MainWindow : Window
         Grid.SetRow(toolbar, 1);
         _root.Children.Add(toolbar);
         _toolbar = toolbar;
+        RefreshRecentMenu();
+    }
+
+    /// <summary>“最近打开”子菜单：按配置顺序列出现存文件，附“清除历史记录”。</summary>
+    private void RefreshRecentMenu()
+    {
+        if (_recentMenu == null) return;
+        _recentMenu.Items.Clear();
+        var paths = AppSettings.RecentFiles
+            .Where(File.Exists)
+            .Take(AppSettings.MaxRecentFiles)
+            .ToList();
+        if (paths.Count == 0)
+        {
+            var empty = MkItem(L.T("（无最近打开的文件）", "(No recent files)"), null, () => { });
+            empty.IsEnabled = false;
+            _recentMenu.Items.Add(empty);
+        }
+        else
+        {
+            for (int i = 0; i < paths.Count; i++)
+            {
+                string path = paths[i];
+                var item = MkItem($"{i + 1}. {Path.GetFileName(path)}", null, () => _ = OpenFile(path));
+                ToolTip.SetTip(item, path);
+                _recentMenu.Items.Add(item);
+            }
+        }
+        _recentMenu.Items.Add(new Separator());
+        var clear = MkItem(L.T("清除历史记录", "Clear History"), null, () =>
+        {
+            AppSettings.ClearRecent();
+            RefreshRecentMenu();
+        });
+        clear.IsEnabled = AppSettings.RecentFiles.Count > 0;
+        _recentMenu.Items.Add(clear);
     }
 
     /// <summary>工具条按钮：Semi Light 主题 secondary 样式（浅色底、主题色文字，与菜单主色呼应）。
@@ -242,14 +279,15 @@ internal sealed class MainWindow : Window
         catch (Exception e) { Gui.Warn(this, L.F("无法打开语言包目录：{0}", e.Message), L.Warning); }
     }
 
-    private void ShowAbout() => Gui.Info(this, L.AboutBody, L.AboutTitle);
+    private void ShowAbout() =>
+        Gui.Info(this, L.AboutBody + "\n\n" + L.F("版本：{0}", AppInfo.Version) + "\n\n" + L.AboutLicense, L.AboutTitle);
 
     private void UpdateStatus()
     {
         _statusDoc.Text = Active?.Doc.Summary ?? L.StatusReady;
         _statusDoc.Foreground = Active?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
         _statusLang.Text = L.DisplayName;
-        _statusVer.Text = "CnvQstStudio 1.3";
+        _statusVer.Text = "CnvQstEditor " + AppInfo.Version;
     }
 
     // ------------------------------------------------------------------
@@ -274,6 +312,13 @@ internal sealed class MainWindow : Window
 
     private async Task OpenFile(string path)
     {
+        if (!File.Exists(path))
+        {
+            AppSettings.RemoveRecent(path);
+            RefreshRecentMenu();
+            Gui.Warn(this, L.F("文件不存在：{0}", path), L.T("打开"));
+            return;
+        }
         foreach (TabItem page in _tabs.Items)
         {
             var existing = (DocView)page.Content!;
@@ -287,6 +332,8 @@ internal sealed class MainWindow : Window
         try
         {
             AddTab(DocSession.Open(path));
+            AppSettings.AddRecent(path);
+            RefreshRecentMenu();
         }
         catch (Exception e)
         {
@@ -391,6 +438,11 @@ internal sealed class MainWindow : Window
             return false;
         }
         view.AfterSaved();
+        if (path != null)
+        {
+            AppSettings.AddRecent(path);
+            RefreshRecentMenu();
+        }
         Gui.Info(this, L.F("已保存 {0}（三检查通过，原文件已备份为 .bak）。", path), L.Save);
         return true;
     }
@@ -524,28 +576,42 @@ internal sealed class MainWindow : Window
 
     private async Task ReloadActive()
     {
-        var view = Active;
-        if (view?.Doc.FilePath == null) return;
+        if (_tabs.SelectedItem is not TabItem page || page.Content is not DocView view) return;
+        string? path = view.Doc.FilePath;
+        if (path == null) return;
         if (view.Doc.Dirty &&
             await MsgBox.Show(this, L.T("放弃未保存修改并重新加载？"), L.ReloadCurrent,
                 MsgButtons.OkCancel, warning: true) != MsgResult.Ok)
             return;
-        string path = view.Doc.FilePath;
-        if (_tabs.SelectedItem is TabItem page) _tabs.Items.Remove(page);
-        await OpenFile(path);
+
+        DocSession doc;
+        try
+        {
+            doc = DocSession.Open(path);
+        }
+        catch (Exception e)
+        {
+            Gui.Warn(this, L.F("打开失败：{0}", e.Message), L.ReloadCurrent);
+            return;
+        }
+
+        // 原地替换页签内容：不删除/重加页签，避免 TabControl 在移除选中项后残留不可点击状态。
+        var newView = new DocView(doc);
+        newView.DirtyChanged += () =>
+        {
+            SetTabHeader(page, newView);
+            UpdateStatus();
+        };
+        page.Content = newView;
+        SetTabHeader(page, newView);
+        UpdateStatus();
     }
 
     private void ShowBatch(string? path)
     {
         var win = new BatchWindow();
         if (path != null) win.PresetDirectory(path);
-        win.Show();
-    }
-
-    /// <summary>切换当前文档的 本地化字符串表 / 结构表 视图。</summary>
-    private void SelectLocTab()
-    {
-        if (Active != null) Active.ToggleView();
+        win.Show(this);
     }
 
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)

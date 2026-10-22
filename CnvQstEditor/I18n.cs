@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>一种可用语言（来自 lang/*.json）。</summary>
 internal sealed class LangInfo
@@ -27,16 +27,21 @@ internal sealed class LangInfo
 ///
 /// · 缺 key 时回退中文原文，因此语言包可以逐步补全，不会出现空标签；
 /// · 新增语言只需复制一份 json 改 code/name/strings；中文包（zh-CN）作为键清单模板；
-/// · 选择持久化到 %APPDATA%\CnvQstStudio\lang.txt（存语言 code）。
+/// · 选择持久化到 %APPDATA%\CnvQstEditor\lang.txt（存语言 code）。
 /// </summary>
 internal static class L
 {
     public const string BaselineCode = "zh-CN";
 
-    private static readonly string ConfigDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CnvQstStudio");
+    private static readonly string AppData =
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+    private static readonly string ConfigDir = Path.Combine(AppData, "CnvQstEditor");
 
     private static readonly string ConfigFile = Path.Combine(ConfigDir, "lang.txt");
+
+    // 改名前的旧语言选择：新位置不存在时回退
+    private static readonly string LegacyConfigFile = Path.Combine(AppData, "CnvQstStudio", "lang.txt");
 
     private static readonly List<LangInfo> _languages = new();
 
@@ -87,7 +92,11 @@ internal static class L
         catch { /* 语言包目录不可读时只用中文基准 */ }
 
         string want = BaselineCode;
-        try { if (File.Exists(ConfigFile)) want = File.ReadAllText(ConfigFile).Trim(); }
+        try
+        {
+            string cfg = File.Exists(ConfigFile) ? ConfigFile : LegacyConfigFile;
+            if (File.Exists(cfg)) want = File.ReadAllText(cfg).Trim();
+        }
         catch { }
         _current = _languages.FirstOrDefault(l => l.Code == want) ?? baseline;
     }
@@ -194,7 +203,7 @@ internal static class L
     /// <summary>语言切换菜单文案。</summary>
     public static string MenuLanguage => T("语言(&L)", "&Language");
 
-    public static string WindowTitle => T("CnvQstStudio — Grim Dawn 对话 / 任务编辑器");
+    public static string WindowTitle => T("CnvQstEditor — Grim Dawn 对话 / 任务编辑器");
 
     // 主菜单（键即中文原文，英文取自语言包）
     public static string MFile => T("文件(&F)");
@@ -242,10 +251,17 @@ internal static class L
 
     public static string AboutTitle => T("关于");
     public static string AboutBody => T(
-        "CnvQstStudio —— Grim Dawn .cnv / .qst 编辑器\n\n" +
-        "查看、编辑、新建、导入导出与批量处理；格式依据 Game.dll 加载器逆向与 446+ 样本验证。\n\n" +
+        "CnvQstEditor —— Grim Dawn .cnv / .qst 编辑器\n\n" +
+        "查看、编辑、新建、导入导出与批量处理；格式依据 Game.dll 加载器逆向与 447 个样本验证。\n\n" +
         "保存前自动执行三检查（记录铺满 / 本地化偏移 / round-trip 字节一致），结构合法不等于语义正确，\n" +
         "标黄的未知语义字段改完请在游戏或官方编辑器中验证。");
+
+    /// <summary>关于对话框的许可证摘要（只列名称与许可证类型，不展示全文）。</summary>
+    public static string AboutLicense => T(
+        "许可证：MIT —— 本项目及所用 Avalonia、Avalonia.Controls.DataGrid、Avalonia.Controls.TreeDataGrid、Semi.Avalonia 第三方组件均为 MIT。\n" +
+        "完整许可文本见程序目录或仓库根目录的 LICENSE 文件。",
+        "License: MIT — this project and its third-party components (Avalonia, Avalonia.Controls.DataGrid, Avalonia.Controls.TreeDataGrid, Semi.Avalonia) are all MIT.\n" +
+        "See LICENSE in the program directory or repository root for the full text.");
 
     // 新建向导
     public static string NewConversationTitle => T("新建对话（CNV v6）");

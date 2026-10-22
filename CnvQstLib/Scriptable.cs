@@ -71,8 +71,8 @@ public sealed class ScriptRecord
     ///
     /// 2026-09-28 由探测文件 + 官方编辑器比照发现：**它就是比较符**（不是 gd-utility 所说的 uid）——
     /// 同一条件（HasFaction / SURVIVORS / 10000）只改这一个字，编辑器显示的比较符跟着变：
-    /// 1 → "&lt;="、3 → "&gt;="（jailor_01 真机显示 &gt;=）。动作没有这个字；QST 条件也不落盘此字
-    /// （所以 QST 侧条件无从表达比较符——与语料相符）。完整编码由 `probe uid` 探测。
+    /// 1 → "&lt;="、3 → "&gt;="（jailor_01 真机显示 &gt;=）。CNV/QST 条件都落盘此字；
+    /// 动作没有。完整编码由 `probe uid` 探测（0..5）。
     /// </summary>
     public uint Uid;
     public int Offset;
@@ -211,28 +211,28 @@ public static class Scriptable
         /* 0*/ null,
         /* 1*/ ["QuestFile", "Task"],                           // BeginQuestTask
         /* 2*/ ["QuestFile"],                                   // CompleteQuest
-        /* 3*/ ["QuestFile", "Task"],                           // CompleteQuestTask（推断）
+        /* 3*/ ["QuestFile", "Task"],                           // CompleteQuestTask
         /* 4*/ ["MoneyAmount"],                                 // GiveMoney
-        /* 5*/ ["FactionType", "Amount"],                       // GiveFaction（推断）
+        /* 5*/ ["FactionType", "Amount"],                       // GiveFaction
         /* 6*/ ["ItemRecord", "NumItems"],                      // GiveItem
         /* 7*/ ["NumLevels"],                                   // GiveLevel
         /* 8*/ ["Experience"],                                  // GiveExperience
-        /* 9*/ ["TokenName"],                                   // RemoveToken（推断）
-        /*10*/ ["TokenName"],                                   // GiveToken（推断）
+        /* 9*/ ["TokenName"],                                   // GiveToken
+        /*10*/ ["TokenName"],                                   // RemoveToken
         /*11*/ ["Function"],                                    // Lua 动作
-        /*12*/ ["Text"],                                        // DebugPrint（推断）
-        /*13*/ ["SoundRecord"],                                 // PlaySound（推断；gd-utility 记作 SoundPakPreload）
+        /*12*/ ["Text"],                                        // DebugPrint
+        /*13*/ ["SoundRecord"],                                 // PlaySound
         /*14*/ ["AnimationType"],                               // PlayAnimation
         /*15*/ ["NumSkillpoints"],                              // GiveSkillPoint
         /*16*/ null,
         /*17*/ ["Tag"],                                         // Notification
         /*18*/ ["NumAttributePoints"],                          // GiveAttribPoint
-        /*19*/ ["ScriptEvent"],                                 // ScriptEvent（推断）
+        /*19*/ ["ScriptEvent"],                                 // ScriptEvent
         /*20*/ ["ItemRecord", "NumItems"],                      // GiveRandomItem
         /*21*/ ["Name", "Min", "Max"],                          // GenerateRandomValue
         /*22*/ ["SkillRecord"],                                 // CastSkill
-        /*23*/ ["FactionType"],                                 // UnlockFaction（推断）
-        /*24*/ ["FactionType", "Value"],                        // SetFaction（推断；与 5 GiveFaction 可能互换）
+        /*23*/ ["FactionType"],                                 // UnlockFaction
+        /*24*/ ["FactionType", "Value"],                        // SetFaction
         /*25*/ ["NumDevotionPoints"],                           // GiveDevotion
         /*26*/ ["TributeAmount"],                               // GiveTribute
         /*27*/ ["TutorialPage"],                                // UnlockTutorial

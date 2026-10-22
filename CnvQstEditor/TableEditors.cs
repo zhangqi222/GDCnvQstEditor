@@ -7,7 +7,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>把 {^n} 译成真实换行（单元格显示），提交时反译回去。</summary>
 internal static class TableLayout
@@ -153,22 +153,6 @@ internal sealed class CnvRow : INotifyPropertyChanged
     {
         Parent = parent;
         parent.Children.Add(this);
-    }
-
-    public string Text
-    {
-        // 表格"本地化文本"列暂不显示内容（该列待接入独立的本地化语言块数据源）；
-        // 节点文本请在底部编辑器修改（写回逻辑保持不变）。
-        get => "";
-        set
-        {
-            var texts = Doc.PrimaryLanguage.Texts;
-            if (Step.Index < texts.Count)
-            {
-                texts[Step.Index].SetText(TableLayout.Stored(value));
-                _editor.NotifyEdited();
-            }
-        }
     }
 
     public void Reload()
@@ -404,27 +388,6 @@ internal sealed class QstRow : INotifyPropertyChanged
         foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(IdTip), nameof(IconKey), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
-
-    /// <summary>本行串表文本（本地化文本列；可编辑，写回后同步主行标签）。</summary>
-    public string Text
-    {
-        // 表格"本地化文本"列暂不显示内容（该列现复用主语言文本，待接入独立的本地化语言块数据源）；
-        // 任务文本请在底部编辑器修改（写回逻辑保持不变）。
-        get => "";
-        set
-        {
-            int? slot = Owner.TextSlot;
-            if (slot == null) return;
-            var lang = _editor.Doc.Qst!.Languages.Count > 0 ? _editor.Doc.Qst!.Languages[0] : null;
-            if (lang == null || slot.Value >= lang.Texts.Count) return;
-            lang.Texts[slot.Value].SetText(TableLayout.Stored(value));
-            Node = Owner.NodeLabel;
-            SubText = Owner.SubText;
-            foreach (string p in new[] { nameof(Node), nameof(SubText) })
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
-            _editor.NotifyEdited();
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -473,12 +436,11 @@ internal static class TreeGridShared
     public static readonly HighlightToBrushConverter HighlightToBrush = new();
 
     // 列宽（供 Cnv/Qst 两表共用，保证两文档视图布局一致）：
-    // 序号列 Auto 按内容自适应；其余五列 Star 权重 = 30% / 8% / 8% / 27% / 27%。
+    // 序号列 Auto 按内容自适应；其余四列 Star 权重 = 30% / 8% / 31% / 31%。
     public const double ColNode = 30;
     public const double ColAttrs = 8;
-    public const double ColText = 8;
-    public const double ColCond = 27;
-    public const double ColAct = 27;
+    public const double ColCond = 31;
+    public const double ColAct = 31;
 
     /// <summary>
     /// 节点列单元格内容：Semi 图标 + 单行文本。用 Grid（Auto 图标列 + Star 文本列）而非

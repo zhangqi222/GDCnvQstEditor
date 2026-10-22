@@ -1,0 +1,241 @@
+// ============================================================================
+// JSON → CNV 全类型目录（JSONC）
+//
+// 目的：把 30 种条件（type 0–29）与 27 个可用动作（type 1–28，0/16 无工厂）各写一次，
+// 作为"任意 JSON 都能生成"的回归样例与字段查表。生成命令：
+//   dotnet CnvQstTool/bin/Debug/net8.0/CnvQstTool.dll make JSON示例/cnv_all_conditions_actions.jsonc -o 输出.cnv
+//
+// 说明：
+//   · 所有条目挂在同一个 speech 节点上；条件 logic=OR、动作按书写顺序执行，仅为演示。
+//   · 具名写法 {"类型名": 参数} 可直接用官方类型名；参数可以是位置数组或具名对象。
+//   · 每个条件可写 "cmp"（比较符）："<"=0、"<="=1、"="=2（默认）、">="=3、">"=4、"!="=5。
+//     布尔/任务步骤类条件没有数值比较语义，官方固定存 "="，可省略。
+//   · 条件/动作字段的完整含义见文档 JSON转CNV.md 的"条件全表 / 动作全表"。
+// ============================================================================
+{
+  "format": "cnv",       // "cnv"（对话）:生成 .cnv。"qst"（任务）:生成 .qst。
+  "version": 6,          // 5（旧版，无 vo）:兼容旧文件。6（推荐）:支持 vo 配音路径。
+  "id": 0,               // 对话 id：省略按 FNV1(speaker) 计算；0..u32 可显式指定。
+  "speaker": "Catalog",  // 根节点文本（说话人名）。
+  "flags": 0,            // 根 flags：0 无；1 仅一次；2 总是显示；4 不重要；可相加。
+  "vo": "",              // 根配音路径（version>=6）；"" 表示无。
+  "logic": "AND",        // 根条件关系："AND" 全部满足；"OR" 任一满足。
+  "cond": [],            // 根条件列表。
+  "act": [],             // 根动作列表。
+
+  "rows": [
+    {
+      "level": 1,        // 1:根的直接子节点；2:上一 level=1 行的子节点；依此类推。
+      "kind": "speech",  // speech 台词 / continue 继续 / accept 接受 / decline 拒绝 / end 结束 /
+                         // link 跳转 / random（selector）随机 / generic 通用 / 或数字 0–8。
+      "text": "全类型条件/动作目录", // 本地化文本；会占用一条本地化槽。
+      "flags": 0,        // 1 仅一次；2 总是显示；4 不重要；可相加。
+      "vo": "",          // 本节点配音路径（version>=6）。
+
+      "logic": "OR",     // 条件关系："AND" 全部满足（默认）；"OR" 任一满足。
+
+      // ======================================================================
+      // 条件全表（30 种）：每条写 { "官方类型名": 参数, "cmp": 可选比较符 }
+      // ======================================================================
+      "cond": [
+        // type 0 OnQuest：QuestFile（任务文件串）+ OnQuest（布尔）。body=S B。
+        { "OnQuest": ["quests/example.qst", true] },
+
+        // type 1 QuestTaskComplete：QuestFile + Task（task uid，u32）+ TaskComplete（布尔）。body=S I B。
+        { "QuestTaskComplete": ["quests/example.qst", 305419896, true] },
+
+        // type 2 HasExperience：Experience（u32）。body=I。
+        { "HasExperience": [10000], "cmp": ">=" },
+
+        // type 3 IsLevel：IsLevel（u32）。body=I。
+        { "IsLevel": [10], "cmp": ">=" },
+
+        // type 4 IsDifficulty：0 Normal（普通）/ 1 Epic（精英）/ 2 Legendary（终极）。body=I。
+        { "IsDifficulty": [2], "cmp": "=" },
+
+        // type 5 IsHardcore：布尔。body=B。
+        { "IsHardcore": [false] },
+
+        // type 6 HasFaction：FactionName（字符串）+ Value（u32）。body=S I；默认 bodyVersion=1。
+        { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+        // type 7 HasToken：TokenName（字符串）+ HasToken（布尔）。body=S B。
+        { "HasToken": ["TOKEN_A", true] },
+
+        // type 8 HasMoney：MoneyAmount（u32）。body=I。
+        { "HasMoney": [1000], "cmp": ">=" },
+
+        // type 9 HasItem：ItemRecord（.dbr）+ ItemCount（u32）+ CompleteOnly（布尔）。body=S I b；
+        // 默认 bodyVersion=1，CompleteOnly 才会落盘。
+        { "HasItem": ["records/items/gear/example.dbr", 1, false], "cmp": ">=" },
+
+        // type 10 HasKilled：MonsterRecords（路径列表）+ KillCount（尾字 u32）。body=P。
+        // P 的具名对象可用 {"MonsterRecords": [...], "KillCount": n}，也可用通用 {"paths": [...], "trailing": n}。
+        { "HasKilled": { "MonsterRecords": ["records/monsters/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 11 HasQuestObjective：Quest（首字段名 Quest）+ Task（u32）+ Objective（u32）+ Satisfied（布尔）。
+        // body=S I i B；默认 bodyVersion=1，Task/Objective 才会落盘。
+        {
+          "HasQuestObjective": {
+            "Quest": "quests/example.qst",
+            "Task": 305419896,
+            "Objective": 2271560481,
+            "Satisfied": true
+          }
+        },
+
+        // type 12 LuaScript（条件形态）：Function（Lua 调用名）+ Args（参数串数组）+ 固定尾部 Evaluate。
+        // 尾部字段为原始 u32/u32/u8/u32/字符串，映射未完全解码：{ "tail": {"t0":0,"t1":0,"t2":0,"t3":0,"text":"TRUE"} }。
+        {
+          "LuaScript": {
+            "call": "gd.example.check()",
+            "args": ["arg1", "arg2"],
+            "tail": { "t0": 0, "t1": 0, "t2": 0, "t3": 0, "text": "TRUE" }
+          }
+        },
+
+        // type 13 KnowsPlayer：布尔。body=B。
+        { "KnowsPlayer": [true] },
+
+        // type 14 OnQuestTask：QuestFile + Task（u32）+ OnTask（布尔）。body=S I B。
+        { "OnQuestTask": ["quests/example.qst", 305419896, true] },
+
+        // type 15 UsedQuestItem：ItemRecord（.dbr）+ NumUsed（u32）。body=S I。
+        { "UsedQuestItem": ["records/items/quest/example.dbr", 1], "cmp": ">=" },
+
+        // type 16 HasKilledProxy：ProxyRecords（路径列表）+ KillCount（尾字 u32）。body=P。
+        { "HasKilledProxy": { "ProxyRecords": ["records/proxies/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 17 WaitForCompletion：无字段。body 为空；{} 表示不给参数。
+        { "WaitForCompletion": {} },
+
+        // type 18 ServerHasToken：TokenName + HasToken（布尔）。body=S B。
+        { "ServerHasToken": ["TOKEN_B", true] },
+
+        // type 19 QuestBlocked：文件串 + 布尔。body=S B；官方弹窗两个字段都显示 QuestBlocked，
+        // JSON 具名写法用 QuestFile 区分首字段，位置写法更直观。
+        { "QuestBlocked": ["quests/example.qst", false] },
+
+        // type 20 AnyoneHasToken：TokenName + HasToken（布尔）。body=S B。
+        { "AnyoneHasToken": ["TOKEN_C", false] },
+
+        // type 21 CheckRandomValue：Name（字符串）+ Value（u32）。body=S I；默认 bodyVersion=1。
+        { "CheckRandomValue": ["roll", 50], "cmp": "<=" },
+
+        // type 22 OwnsDLC：DLC_ID（u32）。body=I。
+        { "OwnsDLC": [1], "cmp": "=" },
+
+        // type 23 HasTribute：TributeAmount（u32）。body=I。
+        { "HasTribute": [10], "cmp": ">=" },
+
+        // type 24 EarnedDevotion：DevotionAmount（u32）。body=I。
+        { "EarnedDevotion": [20], "cmp": ">=" },
+
+        // type 25 HasMastery：MasteryName（u32 下标 0..29，对应 SkillClass01..30）+ HasMastery（布尔）。body=I B。
+        { "HasMastery": [0, true] },
+
+        // type 26 IsChallenge：0 Normal Veteran / 1 Epic Veteran / 2 Legendary Veteran（u32）。body=I。
+        { "IsChallenge": [2], "cmp": ">=" },
+
+        // type 27 HasBuff：BuffName（文件路径串）+ HasBuff（布尔）。body=S B。
+        { "HasBuff": ["records/buffs/example.dbr", true] },
+
+        // type 28 HasKilledMonsterClass：MonsterClass1 + MonsterClass2 + KillCount（三个 u32）。body=I I I。
+        // 前两值枚举：0 Common / 1 Champion / 2 Hero / 3 Boss / 4 Quest / 5 SuperBoss。
+        { "HasKilledMonsterClass": [0, 5, 1], "cmp": ">=" },
+
+        // type 29 HasKilledFaction：Faction1 + Faction2 + KillCount（三个 u32）。body=I I I。
+        // 枚举：0 None / 1 Alone / 2 GenericMonster / 3 Player / 4 Survivors / 5 Aetherials /
+        //       6 Cthonians / 7 Outlaws / 8 Beasts / 9 User0 …（下拉可继续滚动）。
+        { "HasKilledFaction": [4, 5, 100], "cmp": ">=" }
+      ],
+
+      // ======================================================================
+      // 动作全表（27 个可用槽）：type 0/16 工厂返回 null，不能写入。
+      // 每条写 { "官方类型名": 参数 }；动作没有 cmp / AND / OR，按数组顺序执行。
+      // ======================================================================
+      "act": [
+        // type 1 BeginQuestTask：QuestFile + Task（task uid）。body=S I。
+        { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 2 CompleteQuest：QuestFile。body=S。
+        { "CompleteQuest": ["quests/example.qst"] },
+
+        // type 3 CompleteQuestTask：QuestFile + Task（task uid）。body=S I。
+        { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 4 GiveMoney：MoneyAmount（u32）。body=I。
+        { "GiveMoney": [500] },
+
+        // type 5 GiveFaction：FactionType（字符串）+ Amount（u32）。body=S I。
+        { "GiveFaction": ["SURVIVORS", 100] },
+
+        // type 6 GiveItem：ItemRecord（.dbr）+ NumItems（u32）。body=S I。
+        { "GiveItem": ["records/items/gear/example.dbr", 1] },
+
+        // type 7 GiveLevel：NumLevels（u32）。body=I。
+        { "GiveLevel": [1] },
+
+        // type 8 GiveExperience：Experience（u32）。body=I。
+        { "GiveExperience": [1000] },
+
+        // type 9 GiveToken：TokenName（字符串）。body=S。
+        { "GiveToken": ["TOKEN_A"] },
+
+        // type 10 RemoveToken：TokenName（字符串）。body=S。
+        { "RemoveToken": ["TOKEN_A"] },
+
+        // type 11 LuaScript（动作形态）：Function + Args；没有条件版的 Evaluate 尾部。
+        { "LuaScript": { "call": "gd.example.run()", "args": ["arg1"] } },
+
+        // type 12 DebugPrint：Text（字符串）。body=S。
+        { "DebugPrint": ["hello"] },
+
+        // type 13 PlaySound：SoundRecord（文件路径串）。body=S。
+        { "PlaySound": ["records/sounds/example.dbr"] },
+
+        // type 14 PlayAnimation：AnimationType（u32 枚举）。body=I；语料中 9 = Chat。
+        { "PlayAnimation": [9] },
+
+        // type 15 GiveSkillPoint：NumSkillpoints（u32）。body=I。
+        { "GiveSkillPoint": [1] },
+
+        // type 17 Notification：Tag（本地化标签字符串）。body=S。
+        { "Notification": ["tagExample"] },
+
+        // type 18 GiveAttribPoint：NumAttributePoints（u32）。body=I。
+        { "GiveAttribPoint": [1] },
+
+        // type 19 ScriptEvent：ScriptEvent（字符串，通常 EV_ 前缀）。body=S。
+        { "ScriptEvent": ["EV_EXAMPLE"] },
+
+        // type 20 GiveRandomItem：ItemRecord（.dbr）+ NumItems（u32）。body=S I。
+        { "GiveRandomItem": ["records/items/gear/example.dbr", 2] },
+
+        // type 21 GenerateRandomValue：Name（字符串）+ Min（u32）+ Max（u32）。body=S I I。
+        { "GenerateRandomValue": ["roll", 1, 100] },
+
+        // type 22 CastSkill：SkillRecord（.dbr）。body=S。
+        { "CastSkill": ["records/skills/example.dbr"] },
+
+        // type 23 UnlockFaction：FactionType（字符串）。body=S。
+        { "UnlockFaction": ["SURVIVORS"] },
+
+        // type 24 SetFaction：FactionType（字符串）+ Value（u32）。body=S I。
+        { "SetFaction": ["SURVIVORS", 1000] },
+
+        // type 25 GiveDevotion：NumDevotionPoints（u32）。body=I。
+        { "GiveDevotion": [1] },
+
+        // type 26 GiveTribute：TributeAmount（u32）。body=I。
+        { "GiveTribute": [10] },
+
+        // type 27 UnlockTutorial：TutorialPage（u32）。body=I。
+        { "UnlockTutorial": [1] },
+
+        // type 28 PlayVideo：Video path（视频路径串）+ AllowSkip（布尔）。body=S B。
+        { "PlayVideo": ["video/intro.ivf", false] }
+      ]
+    }
+  ]
+}

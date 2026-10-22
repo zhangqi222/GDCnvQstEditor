@@ -6,12 +6,11 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
 
-namespace CnvQstStudio;
+namespace CnvQstEditor;
 
 /// <summary>
 /// 底部节点文本编辑器（官方编辑器风格：选中行后底部编辑，替代弹窗）：
-/// 顶部 = Quest ID 行（仅 QST）；下方两栏左右并排 ——
-/// 左 = 任务文件主语言文本，右 = 文件内其它语言块的同一槽位（双语编辑）。
+/// 顶部 = Quest ID 行（仅 QST）；下方 = 任务文件主语言文本（单栏）。
 /// 输入框自动换行，纵向滚动、无横向滚动条。
 /// </summary>
 internal sealed class NodeTextPanel : UserControl
@@ -20,13 +19,10 @@ internal sealed class NodeTextPanel : UserControl
     private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
     private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
     private readonly TextBox _main = NewBox();
-    private readonly TextBox _alt = NewBox();
     private readonly TextBlock _mainLabel = MkLabel("");
-    private readonly TextBlock _altLabel = MkLabel("");
     private readonly StackPanel _idHost;
     private DocSession? _doc;
     private int? _slot;
-    private LanguageBlock? _altLang;
     private bool _building;
 
     /// <summary>文本被编辑（调用方刷新脏标记/状态）。</summary>
@@ -40,31 +36,19 @@ internal sealed class NodeTextPanel : UserControl
         _idHost.Children.Add(_questIdText);
         _idHost.Children.Add(_copyId);
 
-        // 布局：id 行（跨两列）→ 标签行 → 两栏输入框（左右并排，固定高度填满剩余空间，中间竖分割线）
+        // 布局：id 行 → 标签行 → 单栏输入框（固定高度填满剩余空间）
         var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });          // 分割竖线
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var divider = new Border { Background = UiTheme.GridLineBrush, Margin = new Thickness(4, 0, 4, 0) };
-        divider.SetValue(Grid.RowProperty, 1);
-        Grid.SetRowSpan(divider, 2);
-        divider.SetValue(Grid.ColumnProperty, 1);
-        grid.Children.Add(divider);
-
-        Place(_idHost, 0, 0, colSpan: 3);
-        Place(_mainLabel, 1, 0);
-        Place(_altLabel, 1, 2);
-        Place(_main, 2, 0, rightMargin: 2);
-        Place(_alt, 2, 2, leftMargin: 2);
+        Place(_idHost, 0);
+        Place(_mainLabel, 1);
+        Place(_main, 2);
 
         Content = grid;
 
-        _main.TextChanged += (_, _) => OnEdited(_main, _doc?.PrimaryLanguage);
-        _alt.TextChanged += (_, _) => OnEdited(_alt, _altLang);
+        _main.TextChanged += (_, _) => OnEdited(_main);
     }
 
     private static TextBox NewBox()
@@ -89,13 +73,9 @@ internal sealed class NodeTextPanel : UserControl
 
     private Grid _grid = null!;
 
-    private void Place(Control e, int row, int col, int colSpan = 0, int rightMargin = 0, int leftMargin = 0)
+    private void Place(Control e, int row)
     {
         e.SetValue(Grid.RowProperty, row);
-        e.SetValue(Grid.ColumnProperty, col);
-        if (colSpan > 0) Grid.SetColumnSpan(e, colSpan);
-        var m = new Thickness(leftMargin, 0, rightMargin, 0);
-        e.Margin = m;
         _grid.Children.Add(e);
     }
 
@@ -122,9 +102,7 @@ internal sealed class NodeTextPanel : UserControl
         {
             IsEnabled = false;
             SetBoxText(_main, "");
-            SetBoxText(_alt, "");
             _mainLabel.Text = L.T("任务文件文本");
-            _altLabel.Text = L.T("本地化文本（无其它语言块）");
             _building = false;
             return;
         }
@@ -132,18 +110,6 @@ internal sealed class NodeTextPanel : UserControl
         IsEnabled = true;
         _mainLabel.Text = L.T("任务文件文本") + $"（{doc.PrimaryLanguage.Tag.Text}）";
         SetBoxText(_main, TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value)));
-
-        _altLang = doc.SecondaryLanguage;
-        if (_altLang != null)
-        {
-            _altLabel.Text = L.T("本地化文本") + $"（{_altLang.Tag.Text}）";
-            SetBoxText(_alt, TableLayout.Display(GetText(_altLang, slot.Value)));
-        }
-        else
-        {
-            _altLabel.Text = L.T("本地化文本（文件内无其它语言块）");
-            _alt.Text = "";
-        }
         _building = false;
     }
 
@@ -164,12 +130,18 @@ internal sealed class NodeTextPanel : UserControl
         box.IsUndoEnabled = undo;
     }
 
-    private void OnEdited(TextBox box, LanguageBlock? lang)
+    private void OnEdited(TextBox box)
     {
-        if (_building || _doc == null || _slot == null || lang == null) return;
+        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "cnvqst_dirty.log"), $"[panel] building={_building} slot={_slot} incoming={box.Text?.Replace("\n", "\\n")} current={(_doc != null && _slot != null && _slot < _doc.PrimaryLanguage.Texts.Count ? _doc.PrimaryLanguage.Texts[_slot.Value].Text.Replace("\n", "\\n") : "<none>")}\n"); } catch { }
+        if (_building || _doc == null || _slot == null) return;
+        var lang = _doc.PrimaryLanguage;
         int s = _slot.Value;
         if (s >= lang.Texts.Count) return;
-        lang.Texts[s].SetText(TableLayout.Stored(box.Text ?? ""));
+        // 程序化赋值后 TextChanged 可能延迟到 Bind 结束才派发，_building 已复位；
+        // 内容未变时不写入模型，避免选中行就把文档标成未保存。
+        string incoming = TableLayout.Stored(box.Text ?? "");
+        if (incoming == TableLayout.Stored(GetText(lang, s))) return;
+        lang.Texts[s].SetText(incoming);
         TextEdited?.Invoke();
     }
 }
