@@ -97,13 +97,24 @@ internal static class Program
 
             // 冒烟：启动界面显示后，自动打开编辑器主窗（覆盖两窗口构建），1.2 秒后全部关闭。
             var main = new MainWindow();
-            main.Activated += (_, _) =>
+            main.Activated += async (_, _) =>
             {
                 try
                 {
                     // 冒烟增强：用内存新建文档各开一页，实际构建 CNV/QST 两个 TreeDataGrid 表格。
                     main.OpenSmokeTab(Creation.NewConversation("Smoke", "你好，冒烟测试。", "再见。"));
                     main.OpenSmokeTab(Creation.NewQuest("SmokeGroup", "SmokeQuest", "任务一", "这是冒烟测试任务。"));
+
+                    // 文件树公共组件自测：临时两层迷你树，断言文件节点建立 + MOD 覆盖生效。
+                    string? ftErr = await FileTreePanel.SelfTestAsync();
+                    if (ftErr != null)
+                    {
+                        failure = new Exception(ftErr);
+                        Console.WriteLine(ftErr);
+                        main.Close();
+                        return;
+                    }
+
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
                     timer.Tick += (_, _) => { timer.Stop(); main.Close(); };
                     timer.Start();
