@@ -9,7 +9,7 @@
     <AssemblyName>CnvQstEditor-cli</AssemblyName>
     <Product>CnvQstEditor-cli</Product>
     <Description>Grim Dawn .cnv/.qst 命令行工具：查看、导出、转换、校验与生成</Description>
-    <Version>2.0.14</Version>
+    <Version>2.0.15</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -20,6 +20,7 @@ internal sealed class FileBrowserDialog : Window
 
     private readonly string _subDir;
     private readonly Func<string, bool> _fileFilter;
+    private readonly bool _preview;
     private readonly TreeView _tree = new() { MinHeight = 320 };
     private readonly TextBlock _countText = new() { Foreground = UiTheme.MutedBrush };
     private readonly TextBox _picked = new() { IsReadOnly = true, Watermark = L.T("（未选择文件）", "(No file selected)") };
@@ -37,11 +38,13 @@ internal sealed class FileBrowserDialog : Window
     /// <summary>确定后选中的文件相对路径（相对 database / resources，反斜杠）。</summary>
     public string? SelectedRelPath => _resultRel;
 
-    private FileBrowserDialog(string subDir, string title, string[]? exts, string? initialRel)
+    private FileBrowserDialog(string subDir, string title, string[]? exts, string? initialRel,
+        string[]? excludeExts = null, bool preview = false, string? scopeText = null)
     {
         _subDir = subDir;
-        _fileFilter = CreateFilter(subDir, exts);
+        _fileFilter = CreateFilter(subDir, exts, excludeExts);
         DialogChrome.Init(this, title, 720, 660);
+        _preview = preview;
 
         _tree.SelectionChanged += (_, _) => UpdatePicked();
         _tree.DoubleTapped += (_, e) =>
@@ -61,7 +64,9 @@ internal sealed class FileBrowserDialog : Window
         _ok.IsDefault = true;
         _ok.IsEnabled = false;
         _ok.Click += (_, _) => Accept();
-        var cancel = DialogChrome.Cancel(this);
+        var cancel = preview
+            ? DialogChrome.Cancel(this, L.T("关闭", "Close"))
+            : DialogChrome.Cancel(this);
 
         _refresh = DialogChrome.Button(L.T("重新扫描", "Rescan"), primary: false);
         _refresh.Click += (_, _) => _ = BuildIndexAsync(force: true);
@@ -72,10 +77,10 @@ internal sealed class FileBrowserDialog : Window
         var rulesText = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         rulesText.Children.Add(new TextBlock
         {
-            Text = subDir == "database"
+            Text = scopeText ?? (subDir == "database"
                 ? L.T("浏览范围：各层 database\\ 下的记录文件（.dbr）", "Scope: record files (.dbr) under each layer's database\\")
                 : L.T("浏览范围：各层 resources\\ 下的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
-                    "Scope: resources under each layer's resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)"),
+                    "Scope: resources under each layer's resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)")),
             Foreground = UiTheme.AccentBrush,
             TextWrapping = TextWrapping.Wrap,
         });
@@ -92,13 +97,18 @@ internal sealed class FileBrowserDialog : Window
         refreshHost.Children.Add(_refresh);
         ruleRow.Children.Add(refreshHost);
         rules.Children.Add(ruleRow);
-        rules.Children.Add(DialogChrome.Caption(L.T("双击文件或选中后点击确定。", "Double-click a file, or select it and click OK.")));
 
         var pickedRow = new DockPanel { Margin = new Thickness(0, 8, 0, 8) };
         var pickedLabel = new TextBlock { Text = L.T("路径", "Path") + "：", VerticalAlignment = VerticalAlignment.Center };
         DockPanel.SetDock(pickedLabel, Dock.Left);
         pickedRow.Children.Add(pickedLabel);
         pickedRow.Children.Add(_picked);
+
+        // 预览模式：只看树不选择——隐藏"确定/路径"行，提示文案改为纯浏览
+        var hint = DialogChrome.Caption(preview
+            ? L.T("预览模式：只读浏览各层文件；双击目录展开，无需选择。", "Preview mode: browse files across layers; double-click folders to expand. No selection needed.")
+            : L.T("双击文件或选中后点击确定。", "Double-click a file, or select it and click OK."));
+        rules.Children.Add(hint);
 
         var grid = new Grid { Margin = new Thickness(16) };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -108,11 +118,11 @@ internal sealed class FileBrowserDialog : Window
         Grid.SetRow(rules, 0);
         Grid.SetRow(_tree, 1);
         Grid.SetRow(pickedRow, 2);
-        var footer = DialogChrome.Footer(cancel, _ok);
+        var footer = preview ? DialogChrome.Footer(cancel) : DialogChrome.Footer(cancel, _ok);
         Grid.SetRow(footer, 3);
         grid.Children.Add(rules);
         grid.Children.Add(_tree);
-        grid.Children.Add(pickedRow);
+        if (!preview) grid.Children.Add(pickedRow);
         grid.Children.Add(footer);
         Content = grid;
 
@@ -256,12 +266,17 @@ internal sealed class FileBrowserDialog : Window
             item.Items.Add(new TreeViewItem { Header = L.T("（空）", "(empty)"), IsEnabled = false });
     }
 
-    private static Func<string, bool> CreateFilter(string subDir, string[]? exts)
+    private static Func<string, bool> CreateFilter(string subDir, string[]? exts, string[]? excludeExts)
     {
         if (exts is { Length: > 0 })
         {
             var set = exts.Select(e => e.TrimStart('.')).ToHashSet(StringComparer.OrdinalIgnoreCase);
             return rel => set.Contains(Path.GetExtension(rel).TrimStart('.'));
+        }
+        if (excludeExts is { Length: > 0 })
+        {
+            var set = excludeExts.Select(e => e.TrimStart('.')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return rel => !set.Contains(Path.GetExtension(rel).TrimStart('.'));
         }
         if (subDir.Equals("database", StringComparison.OrdinalIgnoreCase))
             return rel => rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase);
@@ -340,5 +355,24 @@ internal sealed class FileBrowserDialog : Window
         var dlg = new FileBrowserDialog(subDir, title, exts, initialRel);
         if (await dlg.ShowDialog<bool>(owner!) != true || dlg.SelectedFilePath == null) return null;
         return dlg.SelectedRelPath ?? AppSettings.ToRelative(dlg.SelectedFilePath);
+    }
+
+    /// <summary>
+    /// 预览模式打开内置浏览器（只浏览不选择，无"确定/路径"行）：
+    /// database 传 onlyExts=["dbr"]；resources 传 excludeExts=["arz","arc","dbr"]。
+    /// </summary>
+    public static async Task Preview(Window? owner, string subDir, string title, string? scopeText,
+        string[]? onlyExts, string[]? excludeExts)
+    {
+        if (AppSettings.Gd.IsEmpty)
+        {
+            Gui.Warn(owner,
+                L.T("未配置游戏目录，请先在 工具→设置… 中配置（游戏根目录 / DLC / MOD）。", "Game folders are not configured. Set them in Tools → Settings… first (game root / DLC / MOD)."),
+                title);
+            return;
+        }
+        var dlg = new FileBrowserDialog(subDir, title, onlyExts, null,
+            excludeExts: excludeExts, preview: true, scopeText: scopeText);
+        await dlg.ShowDialog<bool>(owner!);
     }
 }

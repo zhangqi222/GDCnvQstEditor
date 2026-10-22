@@ -848,6 +848,21 @@ internal sealed class SettingsDialog : Window
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 目录", "DLC2 folder"), _dlc2Row.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC3 目录", "DLC3 folder"), _dlc3Row.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("MOD 目录", "MOD folder"), _modRow.Host));
+
+        // 预览内置文件树：database 仅 .dbr；resources 排除 ARZ / ARC / DBR
+        var previewRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
+        var prevDb = DialogChrome.Button(L.T("预览 database 文件", "Preview database files"), primary: false);
+        prevDb.Click += async (_, _) => await FileBrowserDialog.Preview(this,
+            "database", L.T("预览 database 文件", "Preview database files"), null, new[] { "dbr" }, null);
+        var prevRes = DialogChrome.Button(L.T("预览 resources 文件", "Preview resources files"), primary: false);
+        prevRes.Click += async (_, _) => await FileBrowserDialog.Preview(this,
+            "resources", L.T("预览 resources 文件", "Preview resources files"),
+            L.T("浏览范围：各层 resources\\ 下除 ARZ / ARC / DBR 外的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
+                "Scope: resources under each layer's resources\\ excluding ARZ / ARC / DBR (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)"),
+            null, new[] { "arz", "arc", "dbr" });
+        previewRow.Children.Add(prevDb);
+        previewRow.Children.Add(prevRes);
+        stack.Children.Add(previewRow);
         stack.Children.Add(new TextBlock
         {
             Text = L.T(
