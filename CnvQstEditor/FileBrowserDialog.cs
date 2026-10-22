@@ -47,7 +47,7 @@ internal sealed class FileBrowserDialog : Window
         rules.Children.Add(new TextBlock
         {
             Text = scopeText ?? (subDir == "database"
-                ? L.T("浏览范围：各层 database\\ 下的记录文件（.dbr）", "Scope: record files (.dbr) under each layer's database\\")
+                ? L.T("浏览范围：各层 database\\ 下的记录文件（.dbr/.tpl）", "Scope: record files (.dbr/.tpl) under each layer's database\\")
                 : L.T("浏览范围：各层 resources\\ 下的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
                     "Scope: resources under each layer's resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)")),
             Foreground = UiTheme.AccentBrush,
@@ -142,7 +142,11 @@ internal sealed class FileBrowserDialog : Window
             return rel => !set.Contains(Path.GetExtension(rel).TrimStart('.'));
         }
         if (subDir.Equals("database", StringComparison.OrdinalIgnoreCase))
-            return rel => rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase);
+        {
+            // 记录文件：.dbr 为主，.tpl（模板记录）同属 database 侧
+            return rel => rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ||
+                          rel.EndsWith(".tpl", StringComparison.OrdinalIgnoreCase);
+        }
         // resources：显示所有非 dbr 文件（qst/cnv/wav/ogg/tex/fx/anm/lua 等）
         return rel => !rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase);
     }

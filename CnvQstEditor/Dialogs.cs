@@ -853,7 +853,7 @@ internal sealed class SettingsDialog : Window
         var previewRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
         var prevDb = DialogChrome.Button(L.T("预览 database 文件", "Preview database files"), primary: false);
         prevDb.Click += async (_, _) => await FileBrowserDialog.Preview(this,
-            "database", L.T("预览 database 文件", "Preview database files"), null, new[] { "dbr" }, null);
+            "database", L.T("预览 database 文件", "Preview database files"), null, new[] { "dbr", "tpl" }, null);
         var prevRes = DialogChrome.Button(L.T("预览 resources 文件", "Preview resources files"), primary: false);
         prevRes.Click += async (_, _) => await FileBrowserDialog.Preview(this,
             "resources", L.T("预览 resources 文件", "Preview resources files"),

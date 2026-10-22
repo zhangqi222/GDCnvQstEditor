@@ -192,7 +192,7 @@
     "每行一项；右侧按钮可增删。": "One item per line; add / remove with the buttons.",
     "比较符": "Comparator",
     "浏览": "Browse…",
-    "浏览范围：各层 database\\ 下的记录文件（.dbr）": "Scope: record files (.dbr) under each layer's database\\",
+    "浏览范围：各层 database\\ 下的记录文件（.dbr/.tpl）": "Scope: record files (.dbr/.tpl) under each layer's database\\",
     "浏览范围：各层 resources\\ 下的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）": "Scope: resources under each layer's resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)",
     "浏览范围：各层 resources\\ 下除 ARZ / ARC / DBR 外的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）": "Scope: resources under each layer's resources\\ excluding ARZ / ARC / DBR (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)",
     "添加": "Add",

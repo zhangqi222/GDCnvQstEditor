@@ -28,6 +28,8 @@ internal sealed class FileTreePanel : UserControl
     public event Action<GdFileEntry>? FileActivated;
 
     private readonly TreeView _tree = new() { MinHeight = 240 };
+    private readonly Grid _treeHost = new();   // 树 + 扫描进度覆盖层
+    private readonly StackPanel _buildingTip;
     private readonly TextBlock _countText = new() { Foreground = UiTheme.MutedBrush };
     private readonly Button _refreshBtn;
     private readonly Dictionary<string, TreeViewItem> _nodes = new(StringComparer.OrdinalIgnoreCase);
@@ -59,6 +61,32 @@ internal sealed class FileTreePanel : UserControl
             FileActivated?.Invoke(SelectedFile);
         };
 
+        // Semi 圆形进度（ProgressRing 主题）：扫描各层文件期间盖在树区中央
+        var ring = new ProgressBar { IsIndeterminate = true, Width = 32, Height = 32 };
+        if (Application.Current != null)
+        {
+            var theme = Application.Current.ActualThemeVariant ?? ThemeVariant.Default;
+            if (Application.Current.TryFindResource("ProgressRing", theme, out var ringTheme) &&
+                ringTheme is ControlTheme ct)
+                ring.Theme = ct;
+        }
+        _buildingTip = new StackPanel
+        {
+            IsVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _buildingTip.Children.Add(ring);
+        _buildingTip.Children.Add(new TextBlock
+        {
+            Text = L.T("正在扫描各层文件…", "Scanning layers…"),
+            Foreground = UiTheme.MutedBrush,
+            Margin = new Thickness(0, 10, 0, 0),
+        });
+
+        _treeHost.Children.Add(_tree);
+        _treeHost.Children.Add(_buildingTip);
+
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
         var refreshHost = new StackPanel { Orientation = Orientation.Horizontal };
         DockPanel.SetDock(refreshHost, Dock.Right);
@@ -66,13 +94,13 @@ internal sealed class FileTreePanel : UserControl
         head.Children.Add(refreshHost);
         head.Children.Add(_countText);
 
-        var grid = new Grid { RowSpacing = 0 };
+        var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(head, 0);
-        Grid.SetRow(_tree, 1);
+        Grid.SetRow(_treeHost, 1);
         grid.Children.Add(head);
-        grid.Children.Add(_tree);
+        grid.Children.Add(_treeHost);
         Content = grid;
     }
 
@@ -104,12 +132,13 @@ internal sealed class FileTreePanel : UserControl
 
         if (install.IsEmpty)
         {
-            ShowPlaceholder(L.T("未配置任何可用的游戏目录（每层须含 database 或 resources）。请先在 工具→设置… 中配置。",
+            ShowMessage(L.T("未配置任何可用的游戏目录（每层须含 database 或 resources）。请先在 工具→设置… 中配置。",
                 "No usable game folders configured (each layer needs database and/or resources). Set them in Tools → Settings… first."));
             _refreshBtn.IsEnabled = true;
             return;
         }
 
+        ShowBuilding();
         try
         {
             var index = await AppSettings.GdCache.GetAsync(install, forceRefresh: force, ct);
@@ -120,6 +149,7 @@ internal sealed class FileTreePanel : UserControl
         catch (OperationCanceledException) { }
         finally
         {
+            _buildingTip.IsVisible = false;
             if (!ct.IsCancellationRequested) _refreshBtn.IsEnabled = true;
         }
     }
@@ -148,11 +178,23 @@ internal sealed class FileTreePanel : UserControl
         }
     }
 
-    private void ShowPlaceholder(string text)
+    /// <summary>扫描中：清树并显示圆形进度覆盖层。</summary>
+    private void ShowBuilding()
     {
         _tree.Items.Clear();
         _nodes.Clear();
         _loaded.Clear();
+        _countText.Text = "";
+        _buildingTip.IsVisible = true;
+    }
+
+    /// <summary>无法使用时的占位提示（无进度环）。</summary>
+    private void ShowMessage(string text)
+    {
+        _tree.Items.Clear();
+        _nodes.Clear();
+        _loaded.Clear();
+        _buildingTip.IsVisible = false;
         _tree.Items.Add(new TreeViewItem { Header = text, IsEnabled = false });
         _countText.Text = "";
     }
@@ -160,6 +202,7 @@ internal sealed class FileTreePanel : UserControl
     /// <summary>索引就绪：重建整棵树（懒加载，只展开根）。在 UI 线程调用。</summary>
     private void RebuildTree()
     {
+        _buildingTip.IsVisible = false;
         _tree.Items.Clear();
         _nodes.Clear();
         _loaded.Clear();
@@ -214,11 +257,40 @@ internal sealed class FileTreePanel : UserControl
         _ => "Green",
     };
 
-    /// <summary>文件节点头：文件名 + 来源标签（Semi TagLabel；主题缺失时退化为 [文本]）。</summary>
+    /// <summary>Semi 矢量图标（FillIcons 字典已并入应用资源；与 CNV/QST 表格同一套）。</summary>
+    private static PathIcon MakeIcon(string semiKey, double size = 14)
+    {
+        var icon = new PathIcon
+        {
+            Width = size,
+            Height = size,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4, 0),
+        };
+        if (Application.Current != null)
+        {
+            var theme = Application.Current.ActualThemeVariant ?? ThemeVariant.Default;
+            if (Application.Current.TryFindResource(semiKey, theme, out var v) && v is Geometry g)
+                icon.Data = g;
+        }
+        return icon;
+    }
+
+    /// <summary>目录节点头：Semi 文件夹图标 + 名称（根用打开态图标）。</summary>
+    private Control MakeDirHeader(string name, bool isRoot)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal };
+        panel.Children.Add(MakeIcon(isRoot ? "SemiIconFolderOpen" : "SemiIconFolder"));
+        panel.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+        return panel;
+    }
+
+    /// <summary>文件节点头：Semi 文件图标 + 名称 + 来源标签（Semi TagLabel；主题缺失时退化为 [文本]）。</summary>
     private Control MakeFileHeader(string name, GdFileEntry entry)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-        panel.Children.Add(new TextBlock { Text = "📄 " + name, VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(MakeIcon("SemiIconFile"));
+        panel.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
         var tag = new Label
         {
             Content = LayerTag(entry.Layer),
@@ -245,7 +317,7 @@ internal sealed class FileTreePanel : UserControl
     {
         var item = new TreeViewItem
         {
-            Header = "📁 " + name,
+            Header = MakeDirHeader(name, relDir == _subDir),
             Tag = new NodeEntry(relDir, true, null),
         };
         ToolTip.SetTip(item, relDir);
