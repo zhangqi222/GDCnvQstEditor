@@ -24,6 +24,7 @@ internal sealed class NodeTextPanel : UserControl
     private DocSession? _doc;
     private int? _slot;
     private bool _building;
+    private string? _assigned;   // Bind 最近一次程序化赋给 _main 的显示文本（识别延迟派发的 TextChanged）
 
     /// <summary>文本被编辑（调用方刷新脏标记/状态）。</summary>
     public event Action? TextEdited;
@@ -101,6 +102,7 @@ internal sealed class NodeTextPanel : UserControl
         if (doc == null || slot == null)
         {
             IsEnabled = false;
+            _assigned = "";
             SetBoxText(_main, "");
             _mainLabel.Text = L.T("任务文件文本");
             _building = false;
@@ -109,7 +111,8 @@ internal sealed class NodeTextPanel : UserControl
 
         IsEnabled = true;
         _mainLabel.Text = L.T("任务文件文本") + $"（{doc.PrimaryLanguage.Tag.Text}）";
-        SetBoxText(_main, TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value)));
+        _assigned = TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value));
+        SetBoxText(_main, _assigned);
         _building = false;
     }
 
@@ -132,16 +135,19 @@ internal sealed class NodeTextPanel : UserControl
 
     private void OnEdited(TextBox box)
     {
-        try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "cnvqst_dirty.log"), $"[panel] building={_building} slot={_slot} incoming={box.Text?.Replace("\n", "\\n")} current={(_doc != null && _slot != null && _slot < _doc.PrimaryLanguage.Texts.Count ? _doc.PrimaryLanguage.Texts[_slot.Value].Text.Replace("\n", "\\n") : "<none>")}\n"); } catch { }
         if (_building || _doc == null || _slot == null) return;
+        // 程序化赋值后 TextChanged 可能延迟到 Bind 结束才派发，_building 已复位；
+        // 与 Bind 赋的确切文本一致时一律忽略（对任意内容都成立，不依赖 Display/Stored 往返），
+        // 避免仅选中行就把文档标成未保存。
+        if (box.Text == _assigned) return;
         var lang = _doc.PrimaryLanguage;
         int s = _slot.Value;
         if (s >= lang.Texts.Count) return;
-        // 程序化赋值后 TextChanged 可能延迟到 Bind 结束才派发，_building 已复位；
-        // 内容未变时不写入模型，避免选中行就把文档标成未保存。
         string incoming = TableLayout.Stored(box.Text ?? "");
-        if (incoming == TableLayout.Stored(GetText(lang, s))) return;
+        // 双保险：换行编码往返后与模型原文一致也视为未修改
+        if (incoming == GetText(lang, s)) return;
         lang.Texts[s].SetText(incoming);
+        _assigned = box.Text;
         TextEdited?.Invoke();
     }
 }
