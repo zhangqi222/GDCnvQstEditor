@@ -32,6 +32,7 @@ internal sealed class FileTreePanel : UserControl
     private readonly Button _refreshBtn;
     private readonly Dictionary<string, TreeViewItem> _nodes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loaded = new(StringComparer.OrdinalIgnoreCase);   // 已加载子项的目录
+    private readonly HashSet<string> _dirs = new(StringComparer.OrdinalIgnoreCase);     // 索引中存在的全部目录（决定是否有展开箭头）
     private GdIndex? _index;
     private string _subDir = "";
     private Func<string, bool> _filter = _ => true;
@@ -164,7 +165,23 @@ internal sealed class FileTreePanel : UserControl
         _loaded.Clear();
         if (_index == null) return;
 
+        // 目录集合：决定每个目录节点是否挂占位子项（挂了才有展开箭头可点）
+        _dirs.Clear();
+        _dirs.Add(_subDir);
         string prefix = _subDir + "\\";
+        foreach (var key in _index.Files.Keys)
+        {
+            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            int idx = prefix.Length;
+            while (true)
+            {
+                int slash = key.IndexOf('\\', idx);
+                if (slash < 0) break;
+                _dirs.Add(key[..slash]);
+                idx = slash + 1;
+            }
+        }
+
         int count = _index.Files.Keys.Count(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         _countText.Text = L.F("共 {0} 个文件（合并后）", count);
 
@@ -234,6 +251,10 @@ internal sealed class FileTreePanel : UserControl
         ToolTip.SetTip(item, relDir);
         _nodes[relDir] = item;
         item.Expanded += (_, _) => LoadChildren(item, relDir);
+        // 关键：Avalonia TreeViewItem 无子项时是"叶子"（:empty），展开箭头不可用——
+        // 有子级的目录必须先挂占位子项撑出箭头，展开时 LoadChildren 再替换为真实内容。
+        if (_dirs.Contains(relDir))
+            item.Items.Add(new TreeViewItem { Header = "…", IsEnabled = false });
         return item;
     }
 
@@ -314,6 +335,30 @@ internal sealed class FileTreePanel : UserControl
         }
     }
 
+    /// <summary>自测支持：目录节点是否有非空 Items（占位或真实子项 → 展开箭头可用）。用于防"锁死目录"回归。</summary>
+    internal bool DirExpandableForTest(string relDir) =>
+        _nodes.TryGetValue(relDir, out var n) && n.Items.Count > 0;
+
+    /// <summary>自测支持：收集已加载树中的全部目录节点相对路径。</summary>
+    internal List<string> CollectDirRelPathsForTest()
+    {
+        var result = new List<string>();
+        if (_tree.Items.Count == 0 || _tree.Items[0] is not TreeViewItem root) return result;
+        Walk(root);
+        return result;
+
+        void Walk(TreeViewItem item)
+        {
+            if (item.Tag is NodeEntry e && e.IsDir)
+            {
+                LoadChildren(item, e.RelPath);
+                result.Add(e.RelPath);
+            }
+            foreach (var child in item.Items.OfType<TreeViewItem>())
+                Walk(child);
+        }
+    }
+
     /// <summary>
     /// --smoke 自测：临时目录造 Base+MOD 两层迷你树，断言目录与文件节点都能建立、MOD 覆盖生效。
     /// 返回错误消息；null = 通过。
@@ -344,6 +389,12 @@ internal sealed class FileTreePanel : UserControl
             int dbr = files.Count(p => p.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase));
             if (dbr != 2)
                 return L.F("文件树自测失败：期望 2 个 .dbr 节点，实际 {0}（{1}）", dbr, string.Join(", ", files));
+            // 展开箭头可用性：树中每个目录节点必须带非空子项，否则用户点不开（叶子锁死）
+            var dirs = panel.CollectDirRelPathsForTest();
+            var locked = dirs.Where(d => !panel.DirExpandableForTest(d) && panel.IndexForTest?.Files.Keys
+                .Any(k => k.StartsWith(d + "\\", StringComparison.OrdinalIgnoreCase)) == true).ToList();
+            if (locked.Count > 0)
+                return L.F("文件树自测失败：目录缺占位子项（展开箭头不可用）：{0}", string.Join(", ", locked));
             var idx = panel.IndexForTest;
             var shared = idx?.Find(@"database\records\shared.dbr");
             if (shared == null) return "文件树自测失败：索引缺少 shared.dbr";
