@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CnvQstEditor", "CnvQstEdito
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EditorProbe", "EditorProbe\EditorProbe.csproj", "{3D674BA9-FC96-49E4-9FDF-63946A1A3126}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GdAssets", "GdAssets\GdAssets.csproj", "{9936C5C2-AF37-4398-875B-845C13405B4E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{3D674BA9-FC96-49E4-9FDF-63946A1A3126}.Release|x64.Build.0 = Release|Any CPU
 		{3D674BA9-FC96-49E4-9FDF-63946A1A3126}.Release|x86.ActiveCfg = Release|Any CPU
 		{3D674BA9-FC96-49E4-9FDF-63946A1A3126}.Release|x86.Build.0 = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|x64.Build.0 = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Debug|x86.Build.0 = Debug|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|x64.ActiveCfg = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|x64.Build.0 = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|x86.ActiveCfg = Release|Any CPU
+		{9936C5C2-AF37-4398-875B-845C13405B4E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -284,8 +284,13 @@ internal sealed class MainWindow : Window
 
     private void UpdateStatus()
     {
-        _statusDoc.Text = Active?.Doc.Summary ?? L.StatusReady;
-        _statusDoc.Foreground = Active?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
+        var v = Active;
+        // 文档状态统一在这一条最外层状态栏展示：摘要 + 未保存前缀 + 只读说明（原页内状态行已并入）
+        string text = v?.Doc.Summary ?? L.StatusReady;
+        if (v != null && v.Doc.Dirty) text = L.StatusSaving + "   " + text;
+        if (v != null && v.Doc.ReadOnly) text += "   .   " + L.StatusReadonly(v.Doc.LoadError ?? L.T("完整性检查未过"));
+        _statusDoc.Text = text;
+        _statusDoc.Foreground = v?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
         _statusLang.Text = L.DisplayName;
         _statusVer.Text = "CnvQstEditor " + AppInfo.Version;
     }

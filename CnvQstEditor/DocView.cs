@@ -18,11 +18,6 @@ internal sealed class DocView : UserControl
     private readonly CnvTableEditor _cnvTable = new() { IsVisible = false };
     private readonly QstTableEditor _qstTable = new() { IsVisible = false };
     private readonly LocalizationGrid _locGrid = new() { IsVisible = false };
-    private readonly TextBlock _status = new()
-    {
-        Margin = new Thickness(12, 2, 12, 4),
-        Foreground = UiTheme.MutedBrush,
-    };
     private readonly TextBlock _emptyHint = new()
     {
         Text = L.EmptyHint,
@@ -68,7 +63,6 @@ internal sealed class DocView : UserControl
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });
-        _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         // 分割行 = 拖动调高的 GridSplitter + 居中的显式折叠/展开按钮（文字 + 箭头，便于识别）
         var splitterHost = new Grid();
         splitterHost.Children.Add(_panelSplitter);
@@ -76,11 +70,9 @@ internal sealed class DocView : UserControl
         Grid.SetRow(_host, 0);
         Grid.SetRow(splitterHost, 1);
         Grid.SetRow(_panel, 2);
-        Grid.SetRow(_status, 3);
         _rootGrid.Children.Add(_host);
         _rootGrid.Children.Add(splitterHost);
         _rootGrid.Children.Add(_panel);
-        _rootGrid.Children.Add(_status);
         // 分割栏：拖动调高，点击（无拖动）在 折叠 / 展开 之间切换
         ToolTip.SetTip(_panelSplitter, L.T("拖动调整高度；点击折叠 / 展开底部编辑器。", "Drag to resize; click to collapse / expand the editor."));
         ToolTip.SetTip(_panelToggle, L.T("点击折叠 / 展开底部编辑器。", "Click to collapse / expand the editor."));
@@ -93,10 +85,9 @@ internal sealed class DocView : UserControl
         _qstTable.LocRequested += ToggleView;
         _cnvTable.SelectedChanged += OnSelectedChanged;
         _qstTable.SelectedChanged += OnSelectedChanged;
-        _panel.TextEdited += () => { Doc.Dirty = true; DirtyChanged?.Invoke(); UpdateStatus(); };
+        _panel.TextEdited += () => { Doc.Dirty = true; DirtyChanged?.Invoke(); };
 
         ShowCurrent();
-        UpdateStatus();
     }
 
     /// <summary>选中行变化 → 底部编辑器绑定该行的文本槽位。</summary>
@@ -176,14 +167,12 @@ internal sealed class DocView : UserControl
             ShowOnly(_locGrid);
             _locGrid.Bind(Doc, OnEdited);
         }
-        UpdateStatus();
     }
 
     private void OnEdited()
     {
         Doc.Dirty = true;
         DirtyChanged?.Invoke();
-        UpdateStatus();
     }
 
     public void RefreshAll()
@@ -192,20 +181,11 @@ internal sealed class DocView : UserControl
         else if (_qstTable.IsVisible) _qstTable.Bind(Doc, OnEdited);
         else if (_locGrid.IsVisible) _locGrid.Bind(Doc, OnEdited);
         OnSelectedChanged();
-        UpdateStatus();
     }
 
     public void AfterSaved()
     {
         Doc.Dirty = false;
         DirtyChanged?.Invoke();
-        UpdateStatus();
-    }
-
-    private void UpdateStatus()
-    {
-        string prefix = Doc.Dirty ? L.StatusSaving + "   " : "";
-        _status.Text = prefix + Doc.Summary + (Doc.ReadOnly ? "   .   " + L.StatusReadonly(Doc.LoadError ?? L.T("完整性检查未过")) : "");
-        _status.Foreground = Doc.ReadOnly ? UiTheme.WarnBrush : Doc.Dirty ? UiTheme.AccentBrush : UiTheme.MutedBrush;
     }
 }

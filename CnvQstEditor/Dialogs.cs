@@ -772,94 +772,175 @@ internal sealed class QstFieldsDialog : Window
 /// </summary>
 internal sealed class SettingsDialog : Window
 {
-    private readonly TextBox _root = new() { Watermark = @"例如 G:\GRIM DAWN", MinWidth = 360 };
+    /// <summary>一个目录行：输入框 + database/resources 就绪指示。</summary>
+    private sealed class DirRow
+    {
+        public required Control Host;
+        public required TextBox Box;
+        public required TextBlock Status;
+    }
+
+    private readonly TextBox _root = new() { Watermark = @"例如 G:\GRIM DAWN", MinWidth = 320 };
+    private readonly TextBox _dlc1 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX1", @"Auto-filled: <root>\GDX1"), MinWidth = 320 };
+    private readonly TextBox _dlc2 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX2", @"Auto-filled: <root>\GDX2"), MinWidth = 320 };
+    private readonly TextBox _dlc3 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX3", @"Auto-filled: <root>\GDX3"), MinWidth = 320 };
+    private readonly TextBox _mod = new() { Watermark = L.T(@"可选；如 G:\GD\MODS\我的MOD", @"Optional; e.g. G:\GD\MODS\MyMod"), MinWidth = 320 };
+    private readonly DirRow _rootRow, _dlc1Row, _dlc2Row, _dlc3Row, _modRow;
 
     internal SettingsDialog()
     {
-        DialogChrome.Init(this, L.T("设置", "Settings"), 660, 0, SizeToContent.Height);
+        DialogChrome.Init(this, L.T("设置", "Settings"), 720, 0, SizeToContent.Height);
         _root.Text = AppSettings.GameRoot;
+        _dlc1.Text = AppSettings.Dlc1Dir;
+        _dlc2.Text = AppSettings.Dlc2Dir;
+        _dlc3.Text = AppSettings.Dlc3Dir;
+        _mod.Text = AppSettings.ModDir;
 
-        var browse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false);
-        browse.Click += async (_, _) =>
+        _rootRow = MakeRow(_root, withBrowse: true, L.T("选择游戏根目录", "Select game root folder"));
+        _dlc1Row = MakeRow(_dlc1, withBrowse: false, null);
+        _dlc2Row = MakeRow(_dlc2, withBrowse: false, null);
+        _dlc3Row = MakeRow(_dlc3, withBrowse: false, null);
+        _modRow = MakeRow(_mod, withBrowse: true, L.T("选择 MOD 目录", "Select MOD folder"));
+
+        // 游戏根目录输入后自动填充 GDX1/2/3 完整路径（可再手工修改；再次改动根目录会重新填充）
+        _root.TextChanged += (_, _) =>
         {
-            var tl = TopLevel.GetTopLevel(this);
-            if (tl?.StorageProvider == null) return;
-            var opts = new FolderPickerOpenOptions { AllowMultiple = false, Title = L.T("选择游戏根目录", "Select game root folder") };
-            if (Directory.Exists(AppSettings.GameRoot))
+            string root = _root.Text?.Trim() ?? "";
+            if (root.Length == 0)
             {
-                try { opts.SuggestedStartLocation = await tl.StorageProvider.TryGetFolderFromPathAsync(new Uri(AppSettings.GameRoot)); }
-                catch { }
+                _dlc1.Text = _dlc2.Text = _dlc3.Text = "";
             }
-            var folders = await tl.StorageProvider.OpenFolderPickerAsync(opts);
-            if (folders.Count > 0)
-                _root.Text = folders[0].TryGetLocalPath() ?? _root.Text;
+            else
+            {
+                try
+                {
+                    _dlc1.Text = GdAssets.GdInstall.AutoDlcPath(root, 1);
+                    _dlc2.Text = GdAssets.GdInstall.AutoDlcPath(root, 2);
+                    _dlc3.Text = GdAssets.GdInstall.AutoDlcPath(root, 3);
+                }
+                catch { /* 根目录非法时保留原值 */ }
+            }
+            UpdateAll();
         };
-        var rootHost = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
-        rootHost.Children.Add(_root);
-        rootHost.Children.Add(browse);
+        _dlc1.TextChanged += (_, _) => UpdateAll();
+        _dlc2.TextChanged += (_, _) => UpdateAll();
+        _dlc3.TextChanged += (_, _) => UpdateAll();
+        _mod.TextChanged += (_, _) => UpdateAll();
+        UpdateAll();
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
         ok.Click += (_, _) =>
         {
             AppSettings.GameRoot = _root.Text?.Trim() ?? "";
+            AppSettings.Dlc1Dir = _dlc1.Text?.Trim() ?? "";
+            AppSettings.Dlc2Dir = _dlc2.Text?.Trim() ?? "";
+            AppSettings.Dlc3Dir = _dlc3.Text?.Trim() ?? "";
+            AppSettings.ModDir = _mod.Text?.Trim() ?? "";
             AppSettings.Save();
             Close(true);
         };
         var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
 
-        var resStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var dbStatus = new TextBlock { TextWrapping = TextWrapping.Wrap };
-
-        void UpdateStatus()
-        {
-            string root = _root.Text?.Trim() ?? "";
-            if (root.Length == 0)
-            {
-                resStatus.Text = dbStatus.Text = L.T("（尚未选择游戏根目录）", "(No game root folder selected)");
-                resStatus.Foreground = dbStatus.Foreground = UiTheme.MutedBrush;
-                return;
-            }
-            SetDirStatus(resStatus, root, "resources", L.T("非 dbr 资源（qst/cnv/wav/ogg/tex/fx/anm/lua…）", "non-dbr resources (qst/cnv/wav/ogg/tex/fx/anm/lua…)"));
-            SetDirStatus(dbStatus, root, "database", L.T("dbr 资源（.dbr）", ".dbr resources"));
-        }
-
-        void SetDirStatus(TextBlock block, string root, string sub, string what)
-        {
-            string dir = Path.Combine(root, sub);
-            bool exists = Directory.Exists(dir);
-            block.Text = (exists ? "✔ " : "✘ ") + dir + "  " + (exists
-                ? L.T("已找到", "found")
-                : L.T("不存在，请设置正确的目录并解包相应资源", "missing — set the correct folder and unpack the corresponding resources"));
-            block.Foreground = exists ? UiTheme.OkBrush : UiTheme.DangerBrush;
-        }
-
-        _root.TextChanged += (_, _) => UpdateStatus();
-        UpdateStatus();
-
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(DialogChrome.FieldRow(L.T("游戏根目录", "Game root folder"), rootHost));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("游戏根目录", "Game root folder"), _rootRow.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC1 目录", "DLC1 folder"), _dlc1Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 目录", "DLC2 folder"), _dlc2Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC3 目录", "DLC3 folder"), _dlc3Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("MOD 目录", "MOD folder"), _modRow.Host));
         stack.Children.Add(new TextBlock
         {
-            Text = L.T("dbr 文件应在：设置目录\\database\\", "dbr files must be under: <setting>\\database\\"),
+            Text = L.T(
+                "加载顺序：游戏根目录 → DLC1 → DLC2 → DLC3 → MOD，后者覆盖前者同名文件，新增文件同样生效；" +
+                "每层须含 database 或 resources 之一。填写游戏根目录后自动填充 GDX1/2/3 完整路径（可修改）。",
+                "Load order: game root → DLC1 → DLC2 → DLC3 → MOD; later layers override same-name files " +
+                "and add new ones. Each layer needs a database and/or resources subfolder. " +
+                "GDX1/2/3 paths are auto-filled from the game root (editable)."),
             Foreground = UiTheme.TextBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 2),
         });
-        stack.Children.Add(new TextBlock
-        {
-            Text = L.T("非 dbr 文件应在：设置目录\\resources\\（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
-                "non-dbr files must be under: <setting>\\resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)"),
-            Foreground = UiTheme.TextBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 4),
-        });
-        stack.Children.Add(resStatus);
-        stack.Children.Add(dbStatus);
         stack.Children.Add(DialogChrome.Caption(L.T(
-            "说明：浏览资源时只显示上述目录下的文件（内置文件浏览器），不符合目录规则的文件不会出现。配置保存于 %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json。",
-            "Resource browsing only lists files under the folders above (built-in browser); files outside these roots are never shown. Settings are stored in %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json.")));
+            "说明：浏览资源时按上述覆盖规则合并显示各层 database / resources 下的文件（文件名带来源标签）。配置保存于 %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json。",
+            "Resource browsing merges database / resources across layers by the override rules above " +
+            "(filenames carry a source tag). Settings are stored in %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json.")));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
+    }
+
+    /// <summary>构造一行：输入框（+可选浏览按钮）+ 状态指示；并缓存引用。</summary>
+    private DirRow MakeRow(TextBox box, bool withBrowse, string? browseTitle)
+    {
+        var status = new TextBlock { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
+        var host = new Grid();
+        host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        host.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        host.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        box.SetValue(Grid.ColumnProperty, 0);
+        host.Children.Add(box);
+        if (withBrowse)
+        {
+            var browse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false);
+            browse.Margin = new Thickness(8, 0, 0, 0);
+            browse.SetValue(Grid.ColumnProperty, 1);
+            browse.Click += async (_, _) =>
+            {
+                var tl = TopLevel.GetTopLevel(this);
+                if (tl?.StorageProvider == null) return;
+                var opts = new FolderPickerOpenOptions { AllowMultiple = false, Title = browseTitle ?? "" };
+                string cur = box.Text?.Trim() ?? "";
+                if (Directory.Exists(cur))
+                {
+                    try { opts.SuggestedStartLocation = await tl.StorageProvider.TryGetFolderFromPathAsync(new Uri(cur)); }
+                    catch { }
+                }
+                var folders = await tl.StorageProvider.OpenFolderPickerAsync(opts);
+                if (folders.Count > 0)
+                    box.Text = folders[0].TryGetLocalPath() ?? box.Text;
+            };
+            host.Children.Add(browse);
+        }
+        status.SetValue(Grid.ColumnProperty, 2);
+        host.Children.Add(status);
+        return new DirRow { Box = box, Status = status, Host = host };
+    }
+
+    private void UpdateAll()
+    {
+        UpdateRow(_rootRow);
+        UpdateRow(_dlc1Row);
+        UpdateRow(_dlc2Row);
+        UpdateRow(_dlc3Row);
+        UpdateRow(_modRow);
+    }
+
+    /// <summary>刷新一行的 database/resources 指示：√ 绿、× 红；目录未填时灰显无标记。</summary>
+    private static void UpdateRow(DirRow row)
+    {
+        string dir = row.Box.Text?.Trim() ?? "";
+        var status = row.Status;
+        var inlines = new Avalonia.Controls.Documents.InlineCollection();
+        if (dir.Length == 0)
+        {
+            // 目录未填：灰色提示，无 √/×
+            inlines.Add(new Avalonia.Controls.Documents.Run("database  resources") { Foreground = UiTheme.MutedBrush });
+        }
+        else
+        {
+            var st = GdAssets.GdInstall.Check(dir);
+            void AddPart(string name, bool ok)
+            {
+                if (inlines.Count > 0) inlines.Add(new Avalonia.Controls.Documents.Run("  ") { Foreground = UiTheme.MutedBrush });
+                inlines.Add(new Avalonia.Controls.Documents.Run(name + " ") { Foreground = UiTheme.MutedBrush });
+                inlines.Add(new Avalonia.Controls.Documents.Run(ok ? "√" : "×")
+                {
+                    Foreground = ok ? UiTheme.OkBrush : UiTheme.DangerBrush,
+                    FontWeight = Avalonia.Media.FontWeight.Bold,
+                });
+            }
+            AddPart("database", st.HasDatabase);
+            AddPart("resources", st.HasResources);
+        }
+        status.Inlines = inlines;
     }
 }

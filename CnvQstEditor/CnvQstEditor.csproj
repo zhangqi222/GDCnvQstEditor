@@ -9,12 +9,13 @@
     <AssemblyName>CnvQstEditor</AssemblyName>
     <Product>CnvQstEditor</Product>
     <Description>Grim Dawn .cnv/.qst 图形化查看、编辑、新建、导入导出与批量处理（格式见 CnvQstFormatDecoded.md）</Description>
-    <Version>2.0.12</Version>
+    <Version>2.0.14</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CnvQstLib\CnvQstLib.csproj" />
+    <ProjectReference Include="..\GdAssets\GdAssets.csproj" />
   </ItemGroup>
 
   <!-- 窗口图标（EXE 图标由 ApplicationIcon 嵌入，窗口图标需作为程序集资源供 Avalonia 读取） -->

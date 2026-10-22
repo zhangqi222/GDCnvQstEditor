@@ -22,6 +22,34 @@ internal static class AppSettings
     /// <summary>游戏根目录（如 G:\GRIM DAWN）。资源读取基准见 ResolveResource。</summary>
     public static string GameRoot { get; set; } = "";
 
+    /// <summary>DLC1 目录（惯例 &lt;游戏根目录&gt;\GDX1）。文件加载顺序在基础游戏之后。</summary>
+    public static string Dlc1Dir { get; set; } = "";
+
+    /// <summary>DLC2 目录（惯例 &lt;游戏根目录&gt;\GDX2）。</summary>
+    public static string Dlc2Dir { get; set; } = "";
+
+    /// <summary>DLC3 目录（惯例 &lt;游戏根目录&gt;\GDX3）。</summary>
+    public static string Dlc3Dir { get; set; } = "";
+
+    /// <summary>MOD 目录（用户自由设置，最高加载优先级）。</summary>
+    public static string ModDir { get; set; } = "";
+
+    /// <summary>把五个目录设置装配成 GdAssets.GdInstall（空串视为未配置）。</summary>
+    public static GdAssets.GdInstall Gd => new()
+    {
+        GameRoot = GameRoot,
+        Dlc1 = Dlc1Dir,
+        Dlc2 = Dlc2Dir,
+        Dlc3 = Dlc3Dir,
+        Mod = ModDir,
+    };
+
+    /// <summary>
+    /// 共享的跨层文件索引缓存：按层根目录缓存枚举结果（默认 3 秒新鲜窗口），
+    /// 大目录（20 万文件级）短时间内多次浏览不重复扫描；设置变更后可 Clear()。
+    /// </summary>
+    public static readonly GdAssets.GdIndexCache GdCache = new();
+
     /// <summary>最近打开的文件（新的在前，最多 <see cref="MaxRecentFiles"/> 条）。</summary>
     public static List<string> RecentFiles { get; private set; } = new();
 
@@ -37,6 +65,10 @@ internal static class AppSettings
             string json = StripJsonc(File.ReadAllText(File.Exists(FilePath) ? FilePath : LegacyFilePath));
             var root = JsonNode.Parse(json);
             GameRoot = root?["GameRoot"]?.GetValue<string>() ?? "";
+            Dlc1Dir = root?["Dlc1Dir"]?.GetValue<string>() ?? "";
+            Dlc2Dir = root?["Dlc2Dir"]?.GetValue<string>() ?? "";
+            Dlc3Dir = root?["Dlc3Dir"]?.GetValue<string>() ?? "";
+            ModDir = root?["ModDir"]?.GetValue<string>() ?? "";
             RecentFiles = new List<string>();
             if (root?["RecentFiles"] is JsonArray recent)
             {
@@ -61,13 +93,24 @@ internal static class AppSettings
             Directory.CreateDirectory(Dir);
             // 手写 JSONC 模板（注释落盘，方便用户手工改）；值用 JsonSerializer 转义
             string esc = JsonSerializer.Serialize(GameRoot);
+            string d1 = JsonSerializer.Serialize(Dlc1Dir);
+            string d2 = JsonSerializer.Serialize(Dlc2Dir);
+            string d3 = JsonSerializer.Serialize(Dlc3Dir);
+            string md = JsonSerializer.Serialize(ModDir);
             string recent = JsonSerializer.Serialize(RecentFiles);
             string text = "// CnvQstEditor 配置（JSONC：允许 // 与 /* */ 注释，允许尾逗号）\n" +
                 "{\n" +
                 "  /* 游戏根目录：用于条件/动作中\"资源路径\"类字段的 打开 / 浏览 功能。\n" +
-                "     非 dbr 串（如 quest\\xxx.qst）按 <游戏根目录>\\resources\\<值> 读取；\n" +
-                "     .dbr 串按 <游戏根目录>\\database\\<值> 读取（Grim Dawn 固定规则）。 */\n" +
+                "     非 dbr 串（如 quest\\xxx.qst）按 <目录>\\resources\\<值> 读取；\n" +
+                "     .dbr 串按 <目录>\\database\\<值> 读取（Grim Dawn 固定规则）。\n" +
+                "     文件加载顺序：游戏根目录 → DLC1 → DLC2 → DLC3 → MOD，后者覆盖前者同名文件。 */\n" +
                 "  \"GameRoot\": " + esc + ",\n" +
+                "  /* DLC1/2/3 目录：惯例为根目录下 GDX1/GDX2/GDX3；每层须含 database 或 resources 之一。 */\n" +
+                "  \"Dlc1Dir\": " + d1 + ",\n" +
+                "  \"Dlc2Dir\": " + d2 + ",\n" +
+                "  \"Dlc3Dir\": " + d3 + ",\n" +
+                "  /* MOD 目录：最高加载优先级，自由设置；须含 database 或 resources 之一。 */\n" +
+                "  \"ModDir\": " + md + ",\n" +
                 "  /* 最近打开的文件：新的在前，最多 10 条。 */\n" +
                 "  \"RecentFiles\": " + recent + "\n" +
                 "}\n";
@@ -141,31 +184,50 @@ internal static class AppSettings
 
     /// <summary>
     /// 把串字段里的资源相对路径换算成绝对路径：
-    /// .dbr → <GameRoot>\database\，其余（.qst/.cnv/.lua/.txt…）→ <GameRoot>\resources\；
+    /// .dbr → &lt;层&gt;\database\，其余（.qst/.cnv/.lua/.txt…）→ &lt;层&gt;\resources\；
     /// dirOverride（字段字典导向）优先于扩展名规则。
-    /// 未设置根目录或值为空返回 null。
+    /// 按 GD 加载覆盖顺序（MOD → DLC3 → DLC2 → DLC1 → 游戏根）取第一个实际存在的文件；
+    /// 都不存在时回退到最高可用层的候选路径（保持旧版"只设根目录"的行为）。
+    /// 未配置任何目录或值为空返回 null。
     /// </summary>
     public static string? ResolveResource(string rel, string? dirOverride = null)
     {
         rel = rel.Trim();
-        if (GameRoot.Length == 0 || rel.Length == 0) return null;
-        string baseDir = Path.Combine(GameRoot,
-            dirOverride ?? (rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ? "database" : "resources"));
-        return Path.GetFullPath(Path.Combine(baseDir, rel.Replace('/', '\\')));
+        if (rel.Length == 0) return null;
+        string sub = dirOverride ??
+            (rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ? "database" : "resources");
+        string relWin = rel.Replace('/', '\\');
+
+        // 由高到低优先级逐层找实际存在的文件；都不存在时回退到最低层（游戏根）候选，
+        // 与旧版"只设根目录"的行为一致
+        string? fallback = null;
+        foreach (var (_, root) in Gd.ActiveLayers().AsEnumerable().Reverse())
+        {
+            string cand = Path.GetFullPath(Path.Combine(root, sub, relWin));
+            fallback = cand;
+            if (File.Exists(cand)) return cand;
+        }
+        return fallback;
     }
 
-    /// <summary>把游戏目录内选中的绝对路径换算回串字段用的相对路径；不在 resources/database 下返回 null。</summary>
+    /// <summary>
+    /// 把游戏目录内选中的绝对路径换算回串字段用的相对路径；
+    /// 按所有已配置层的 database / resources 目录逐层匹配（反斜杠），都不匹配返回 null。
+    /// </summary>
     public static string? ToRelative(string abs)
     {
-        if (GameRoot.Length == 0 || abs.Length == 0) return null;
+        if (abs.Length == 0) return null;
         try
         {
             string norm = Path.GetFullPath(abs);
-            foreach (string sub in new[] { "resources", "database" })
+            foreach (var (_, root) in Gd.ActiveLayers())
             {
-                string baseDir = Path.GetFullPath(Path.Combine(GameRoot, sub)) + Path.DirectorySeparatorChar;
-                if (norm.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
-                    return norm[baseDir.Length..];   // 官方写法用反斜杠（quest\xxx.qst）
+                foreach (string sub in new[] { "resources", "database" })
+                {
+                    string baseDir = Path.GetFullPath(Path.Combine(root, sub)) + Path.DirectorySeparatorChar;
+                    if (norm.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+                        return norm[baseDir.Length..];   // 官方写法用反斜杠（quest\xxx.qst）
+                }
             }
         }
         catch { }

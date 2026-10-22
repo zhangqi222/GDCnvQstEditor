@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>GdAssets</AssemblyName>
+    <RootNamespace>GdAssets</RootNamespace>
+    <Description>Grim Dawn 安装目录模型与跨层合并文件索引（无 UI 依赖，可复用于任意 GD 工具）</Description>
+  </PropertyGroup>
+
+</Project>
