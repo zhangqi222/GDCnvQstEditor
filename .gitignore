@@ -18,3 +18,20 @@ probe_out/
 
 # 从官方编辑器程序集解出的依赖（本地研究用，不入库）
 _editor_extract/
+
+# 第三方库源码（本地参考，不入库）
+/Semi.Avalonia-11.3.22/
+/Avalonia.Controls.TreeDataGrid-11.0.10/
+/Avalonia.Controls.TreeDataGrid-11.1.0/
+/MaterialDesignInXamlToolkit-5.3.2/
+/wpfui-4.3.0/
+/gd-utility-master/
+
+# 参考 / 反馈 / 示例资料（本地研究用，不入库）
+/参考资料/
+/反馈截图/
+/scripts脚本示例/
+/_t/apidump/
+
+# 保存时自动生成的备份
+*.bak

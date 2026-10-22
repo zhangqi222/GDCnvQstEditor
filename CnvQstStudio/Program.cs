@@ -29,7 +29,8 @@ internal static class Program
             try
             {
                 L.Load();
-                CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
+                CnvQst.Names.DisplayNameResolver = name => L.TypePair(name);
+                ClipboardHelper.Install();   // 全局 TextBox 可靠复制（右键菜单 + Ctrl+C 无选区复制全文）
 
                 // 直接进编辑器（v2.0.1 起取消启动器页）。
                 var app = BuildApp();
@@ -87,7 +88,8 @@ internal static class Program
         try
         {
             L.Load();
-            CnvQst.Names.DisplayNameResolver = name => L.Type(name, name);
+            CnvQst.Names.DisplayNameResolver = name => L.TypePair(name);
+            ClipboardHelper.Install();
 
             var app = BuildApp();
             Exception? failure = null;
@@ -172,7 +174,10 @@ internal static class Program
 
     private static int RunCli(string[] args)
     {
-        bool attached = args[0] != "cli-from-parent" && AttachConsole(AttachParentProcess);
+        // 设 CNVQST_NO_ATTACH=1（脚本/自动化捕获 stdout 场景）或 cli-from-parent 时不附加父控制台
+        bool attached = args[0] != "cli-from-parent"
+            && Environment.GetEnvironmentVariable("CNVQST_NO_ATTACH") != "1"
+            && AttachConsole(AttachParentProcess);
         if (attached)
         {
             // AttachConsole 后重新连接 CONOUT$，使 Console.Out/Err 指向父控制台。

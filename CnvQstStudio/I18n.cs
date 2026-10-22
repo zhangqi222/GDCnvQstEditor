@@ -71,7 +71,14 @@ internal static class L
                 {
                     var info = TryLoad(file);
                     if (info == null) continue;
-                    if (info.Code == BaselineCode) { baseline.Name = info.Name; continue; }
+                    if (info.Code == BaselineCode)
+                    {
+                        baseline.Name = info.Name;
+                        // 基线包的 types 段（类型名/参数名中文名）也加载：TypePair 在中文界面下
+                        // 才能输出"原文（本地化）"配对，与表格的 L.Type() 显示保持一致。
+                        foreach (var kv in info.Types) baseline.Types[kv.Key] = kv.Value;
+                        continue;
+                    }
                     _languages.RemoveAll(l => l.Code == info.Code);
                     _languages.Add(info);
                 }
@@ -154,6 +161,24 @@ internal static class L
     public static string Type(string official, string zh) =>
         IsBaseline ? (ZhAlias(official) ?? zh)
                    : _current.Types.TryGetValue(official, out var v) && v.Length > 0 ? v : official;
+
+    /// <summary>
+    /// 类型名"原文（本地化）"配对显示（条件/动作名等，经由 Names.DisplayNameResolver 进入）：
+    /// 本地化名取自当前语言包 types 段（zh-CN 基准包同样带中文名）；
+    /// 无译文或与原文相同 → 只显示原文。传入的 label 可能带"（推断）"后缀，查找前剥离、结果后补回。
+    /// </summary>
+    public static string TypePair(string label)
+    {
+        string suffix = "";
+        const string inferred = "（推断）";
+        if (label.EndsWith(inferred, StringComparison.Ordinal))
+        {
+            label = label[..^inferred.Length];
+            suffix = inferred;
+        }
+        string loc = _current.Types.TryGetValue(label, out var v) && v.Length > 0 ? v : label;
+        return string.Equals(loc, label, StringComparison.Ordinal) ? label + suffix : $"{label}（{loc}）" + suffix;
+    }
 
     /// <summary>中文别名表（来自各语言包的 types 反向不可用，故中文侧从 en 包同名字段读）。</summary>
     private static readonly Dictionary<string, string> _zhAlias = new();

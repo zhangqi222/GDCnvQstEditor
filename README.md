@@ -29,7 +29,7 @@ dotnet build qstcnv.sln                        # 全部工程（CnvQstLib/CnvQst
 
 ## 图形界面（CnvQstStudio，单 EXE 双模式）
 
-`CnvQstStudio` 是同一套实现的 WinForms 图形界面，支持查看 / 编辑 / 新建 / 导入导出 / 批量处理，
+`CnvQstStudio` 是同一套实现的图形界面，支持查看 / 编辑 / 新建 / 导入导出 / 批量处理，
 与 CLI 共用 CnvQstLib，保证行为一致。
 
 | 启动方式 | 行为 |

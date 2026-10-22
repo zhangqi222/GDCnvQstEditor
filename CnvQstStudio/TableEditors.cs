@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
 
@@ -25,17 +27,36 @@ internal sealed class ColoredLine
         Text = text;
         Brush = unknown ? UiTheme.UnknownBrush : inferred ? UiTheme.InferredBrush : UiTheme.TextBrush;
     }
+
+    /// <summary>
+    /// 从条件/动作记录生成显示行（CnvRow / QstRow 共用）：
+    /// 每条 = 徽标 + 描述；表格列改为单行显示，段间以 " | " 串联（分隔符随前段着色）。
+    /// </summary>
+    public static List<ColoredLine> FromRecords(ScriptList list)
+    {
+        var lines = new List<ColoredLine>();
+        int n = list.Records.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var r = list.Records[i];
+            bool un = !r.Named;
+            bool inf = r.Named && (r.IsCondition ? Names.InferredCondition(r.Type) : Names.InferredAction(r.Type));
+            string sep = i < n - 1 ? " | " : "";
+            lines.Add(new ColoredLine((r.IsCondition ? "⚑ " : "⚡ ") + Gui.Describe(r) + sep, un, inf));
+        }
+        return lines;
+    }
 }
 
 /// <summary>CNV 节点的界面名（树形表格第一列：类型徽标 + 文本摘要，层次由缩进表达）。</summary>
 internal static class CnvNodeLabel
 {
-    /// <summary>节点类型的界面名（中文基准，走语言包），带官方风格的图标前缀。</summary>
-    public static string KindZh(uint type) => L.T(type switch
+    /// <summary>节点类型的 emoji 前缀（仅树形表格第一列用；根节点改用 Semi 图标无 emoji）。</summary>
+    public static string KindEmoji(uint type) => type switch
     {
-        0 => "🏁 根", 1 => "💬 台词", 2 => "➡ 继续选项", 3 => "✅ 接受选项", 4 => "❌ 拒绝选项",
-        5 => "🔹 通用", 6 => "🛑 结束对话", 7 => "↪ 跳转", 8 => "🎲 随机选项", _ => "❓ 未知类型",
-    });
+        0 => "🏁", 1 => "💬", 2 => "➡", 3 => "✅", 4 => "❌",
+        5 => "🔹", 6 => "🛑", 7 => "↪", 8 => "🎲", _ => "❓",
+    };
 
     /// <summary>无 emoji 的类型名（根节点改用 Semi 图标时，文本不再重复图标语义）。</summary>
     public static string KindName(uint type) => L.T(type switch
@@ -64,18 +85,17 @@ internal static class CnvNodeLabel
         _ => UiTheme.TextBrush,
     };
 
-    /// <summary>树形表用：类型名 + 文本摘要（无缩进——层级由行的缩进表达）。</summary>
+    /// <summary>树形表用：类型名（"原文（本地化）"，如 speech（台词））+ 跳转编号 + 完整文本
+    /// （无缩进——层级由行的缩进表达；不预截断，由单元格按列宽自动省略号裁切，与 QST 节点列一致）。
+    /// 跳转编号在内容前：`↪ link #N：内容`（原"跳转 内容 编号"改为"跳转 编号 内容"）。</summary>
     public static string TreeLabel(CnvFile c, CnvStep s)
     {
-        // 根节点：图标改用 Semi 小房子（PathIcon），文本不再带 emoji
-        string label = s.Type == Names.StepRoot && s.Depth == 0 ? KindName(s.Type) : KindZh(s.Type);
-        string text = c.TextFor(s).Replace("\n", " ");
+        bool root = s.Type == Names.StepRoot && s.Depth == 0;   // 根节点：Semi 小房子图标，无 emoji
+        string label = root ? KindEnZh(s.Type) : KindEmoji(s.Type) + " " + KindEnZh(s.Type);
+        if (s.HasLink) label += " #" + s.LinkId;
+        string text = c.TextFor(s).Replace("\n", " ").Replace("\r", "");
         if (text.Length > 0)
-        {
-            if (text.Length > 30) text = text[..30] + "…";
             label += $"：{text}";
-        }
-        if (s.HasLink) label += L.F("（跳转→#{0}）", s.LinkId);   // 表格里直接显示跳转目标编号，便于识别
         return label;
     }
 }
@@ -162,22 +182,10 @@ internal sealed class CnvRow : INotifyPropertyChanged
         if ((Step.Unknown & 4) != 0) parts.Add(L.T("不重要"));
         if (!Step.VoPath.IsEmpty) parts.Add(L.T("有配音"));
         Attrs = string.Join("　", parts);
-        Cond = ScriptLines(Step.Conditions);
-        Act = ScriptLines(Step.Actions);
+        Cond = ColoredLine.FromRecords(Step.Conditions);
+        Act = ColoredLine.FromRecords(Step.Actions);
         foreach (string p in new[] { nameof(Node), nameof(NodeBrush), nameof(IconKey), nameof(Attrs), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
-    }
-
-    private static List<ColoredLine> ScriptLines(ScriptList list)
-    {
-        var lines = new List<ColoredLine>();
-        foreach (var r in list.Records)
-        {
-            bool un = !r.Named;
-            bool inf = r.Named && (r.IsCondition ? Names.InferredCondition(r.Type) : Names.InferredAction(r.Type));
-            lines.Add(new ColoredLine((r.IsCondition ? "⚑ " : "⚡ ") + Gui.Describe(r), un, inf));
-        }
-        return lines;
     }
 }
 
@@ -196,7 +204,7 @@ internal abstract class QstRowOwner
     public virtual bool CanDelete => false;
     public virtual string SubText => "";
     public virtual IBrush NodeBrush => UiTheme.TextBrush;
-    /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid；事件无 uid 则显示 flags）。</summary>
+    /// <summary>第二列常显的 ID（OBJID 列：quest id / task uid / objective uid，统一十六进制；事件无 uid 则显示 flags）。</summary>
     public virtual string IdText => "";
     /// <summary>该 ID 的作用说明（单元格 ToolTip）。</summary>
     public virtual string IdTip => "";
@@ -234,7 +242,7 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
-    public override string IdText => q.Id.ToString();
+    public override string IdText => "0x" + q.Id.ToString("X8");   // 引用标识统一十六进制（官方 Lua/编辑器惯例）
     public override string IdTip => L.T("Quest ID：任务在存档中的引用标识（官方 QuestEditor 底部显示的 Quest ID）。", "Quest ID: reference id shown at the bottom of the official QuestEditor.");
     public override int? TextSlot => 1;
     // 任务名行：默认正文色（不再蓝色）
@@ -269,7 +277,7 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public override ScriptList? Actions => null;
     public override bool CanDelete => true;
     public override string SubText => "";   // 描述改为任务节点下的固定描述行，不再以斜体重复显示
-    public override string IdText => t.UnknownA8.ToString();
+    public override string IdText => "0x" + t.UnknownA8.ToString("X8");   // 引用标识统一十六进制
     public override string IdTip => L.T("uid：task 的引用标识，引擎按此引用 task。", "uid: task reference id used by the engine.");
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
     public override IBrush NodeBrush => UiTheme.AccentBrush;   // task 名：primary 色
@@ -311,8 +319,8 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override ScriptList? Conditions => o.Conditions;
     public override ScriptList? Actions => o.Actions;
     public override bool CanDelete => true;
-    // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显
-    public override string IdText => o.Unknown0.ToString();
+    // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显，十六进制
+    public override string IdText => "0x" + o.Unknown0.ToString("X8");
     public override string IdTip => L.T("Objective ID：对话/任务的条件与动作按此 ID 引用该目标（=objective 的 uid）。", "Objective ID: conditions/actions reference this objective by id (= objective uid).");
     public override int? TextSlot => slot;
 }
@@ -353,6 +361,8 @@ internal sealed class QstRow : INotifyPropertyChanged
     public string Node { get; private set; }
     public string SubText { get; private set; }
     public IBrush NodeBrush { get; private set; }
+    /// <summary>序号（Bind 时按展开树显示顺序 1 起编号，与 CNV 序号列统一显示）。</summary>
+    public string Seq { get; internal set; } = "";
     public string IdText { get; private set; }
     public string IdTip { get; private set; } = "";
     public string? IconKey { get; private set; }
@@ -389,8 +399,8 @@ internal sealed class QstRow : INotifyPropertyChanged
         IdTip = Owner.IdTip;
         IconKey = Owner.IconKey;
         NodeBrush = Owner.NodeBrush;
-        Cond = Owner.Conditions != null ? ScriptLines(Owner.Conditions) : new List<ColoredLine>();
-        Act = Owner.Actions != null ? ScriptLines(Owner.Actions) : new List<ColoredLine>();
+        Cond = Owner.Conditions != null ? ColoredLine.FromRecords(Owner.Conditions) : new List<ColoredLine>();
+        Act = Owner.Actions != null ? ColoredLine.FromRecords(Owner.Actions) : new List<ColoredLine>();
         foreach (string p in new[] { nameof(Node), nameof(SubText), nameof(IdText), nameof(IdTip), nameof(IconKey), nameof(NodeBrush), nameof(Cond), nameof(Act) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
     }
@@ -414,18 +424,6 @@ internal sealed class QstRow : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(p));
             _editor.NotifyEdited();
         }
-    }
-
-    private static List<ColoredLine> ScriptLines(ScriptList list)
-    {
-        var lines = new List<ColoredLine>();
-        foreach (var r in list.Records)
-        {
-            bool un = !r.Named;
-            bool inf = r.Named && (r.IsCondition ? Names.InferredCondition(r.Type) : Names.InferredAction(r.Type));
-            lines.Add(new ColoredLine((r.IsCondition ? "⚑ " : "⚡ ") + Gui.Describe(r), un, inf));
-        }
-        return lines;
     }
 }
 
@@ -474,12 +472,40 @@ internal static class TreeGridShared
 
     public static readonly HighlightToBrushConverter HighlightToBrush = new();
 
-    // 列宽（供 Cnv/Qst 两表共用，保证两文档视图布局一致）
-    public const double ColNode = 300;
-    public const double ColAttrs = 140;
-    public const double ColText = 280;
-    public const double ColCond = 230;
-    public const double ColAct = 230;
+    // 列宽（供 Cnv/Qst 两表共用，保证两文档视图布局一致）：
+    // 序号列 Auto 按内容自适应；其余五列 Star 权重 = 30% / 8% / 8% / 27% / 27%。
+    public const double ColNode = 30;
+    public const double ColAttrs = 8;
+    public const double ColText = 8;
+    public const double ColCond = 27;
+    public const double ColAct = 27;
+
+    /// <summary>
+    /// 节点列单元格内容：Semi 图标 + 单行文本。用 Grid（Auto 图标列 + Star 文本列）而非
+    /// StackPanel——StackPanel 横向测量给子项无限宽，文本会按原始长度被硬裁切而不出省略号；
+    /// Grid 下文本列受单元格宽度约束，按宽度自动"…"裁切（保持单行行高不变）。
+    /// </summary>
+    public static Control NodeCellContent()
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var icon = new PathIcon { Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) };
+        icon.Bind(Visual.IsVisibleProperty, new Binding("IconKey") { Converter = Avalonia.Data.Converters.StringConverters.IsNotNullOrEmpty });
+        icon.Bind(PathIcon.DataProperty, new Binding("IconKey") { Converter = IconToGeometry });
+        Grid.SetColumn(icon, 0);
+        var text = new TextBlock
+        {
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        text.Bind(TextBlock.TextProperty, new Binding("Node"));
+        text.Bind(TextBlock.ForegroundProperty, new Binding("NodeBrush"));
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(icon);
+        grid.Children.Add(text);
+        return grid;
+    }
 
     public static Window? OwnerOf(Visual c) => TopLevel.GetTopLevel(c) as Window;
 

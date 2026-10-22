@@ -11,8 +11,8 @@ namespace CnvQstStudio;
 
 /// <summary>
 /// 编辑器主窗口（Semi.Avalonia）。布局：
-///   标题栏 → 全量菜单栏 → 文档页签（突出显示、带独立关闭按钮）→ 状态栏
-/// 不设常驻工具栏：文档级操作走菜单，表格级操作走右键菜单（层次感）。
+///   标题栏 → 全量菜单栏 → 常用操作工具条（Semi Light secondary 按钮）→ 文档页签（突出显示、带独立关闭按钮）→ 状态栏
+/// 文档级操作菜单与工具条双入口，表格级操作走右键菜单。
 /// 所有可见文案走 <see cref="L"/>（中文为基准、语言包可扩展）。
 /// </summary>
 internal sealed class MainWindow : Window
@@ -23,6 +23,7 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _statusVer = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Grid _root = new();
     private Menu? _menu;
+    private Control? _toolbar;
     private bool _forceClose;
 
     public MainWindow()
@@ -49,9 +50,9 @@ internal sealed class MainWindow : Window
             },
         };
 
-        for (int i = 0; i < 3; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
-        Grid.SetRow(_tabs, 1);
-        Grid.SetRow(status, 2);
+        for (int i = 0; i < 4; i++) _root.RowDefinitions.Add(new RowDefinition { Height = i == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        Grid.SetRow(_tabs, 2);
+        Grid.SetRow(status, 3);
         _root.Children.Add(_tabs);
         _root.Children.Add(status);
 
@@ -124,6 +125,7 @@ internal sealed class MainWindow : Window
     private void BuildChrome()
     {
         if (_menu != null) _root.Children.Remove(_menu);
+        if (_toolbar != null) _root.Children.Remove(_toolbar);
 
         var menu = new Menu();
 
@@ -157,6 +159,8 @@ internal sealed class MainWindow : Window
         tools.Items.Add(MkItem(L.VerifyCurrent, new KeyGesture(Key.F5), VerifyActive));
         tools.Items.Add(MkItem(L.Anchors, null, ShowAnchors));
         tools.Items.Add(MkItem(L.ReloadCurrent, new KeyGesture(Key.R, KeyModifiers.Control), () => _ = ReloadActive()));
+        tools.Items.Add(new Separator());
+        tools.Items.Add(MkItem(L.T("设置…", "Settings…"), null, () => _ = ShowSettings()));
 
         var view = MkMenu(L.MView);
         view.Items.Add(MkItem(L.LocStringTable, new KeyGesture(Key.L, KeyModifiers.Control), SelectLocTab));
@@ -180,6 +184,33 @@ internal sealed class MainWindow : Window
         Grid.SetRow(menu, 0);
         _root.Children.Add(menu);
         _menu = menu;
+
+        // 常用操作工具条（菜单下、页签上）：Semi Light 主题 secondary 按钮
+        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(10, 6, 10, 4) };
+        foreach (var (label, action) in new (string, Action)[]
+        {
+            (L.OpenTitle, () => _ = OpenViaDialog()),
+            (L.Save, () => _ = SaveActive()),
+            (L.SaveAs, () => _ = SaveActiveAs()),
+            (L.VerifyCurrent, VerifyActive),
+            (L.ReloadCurrent, () => _ = ReloadActive()),
+            (L.T("设置…", "Settings…"), () => _ = ShowSettings()),
+        })
+            toolbar.Children.Add(ToolBtn(label, action));
+        Grid.SetRow(toolbar, 1);
+        _root.Children.Add(toolbar);
+        _toolbar = toolbar;
+    }
+
+    /// <summary>工具条按钮：Semi Light 主题 secondary 样式（浅色底、主题色文字，与菜单主色呼应）。
+    /// Semi.Avalonia 的按钮变体经样式类切换：light = 主题 Light、secondary = 次要色。</summary>
+    private static Button ToolBtn(string text, Action onClick)
+    {
+        var b = new Button { Content = text };
+        b.Classes.Add("light");
+        b.Classes.Add("secondary");
+        b.Click += (_, _) => onClick();
+        return b;
     }
 
     private static MenuItem MkMenu(string header) => new() { Header = header };
@@ -488,6 +519,8 @@ internal sealed class MainWindow : Window
         CliApp.Run(["anchors", view.Doc.FilePath], sw, sw);
         new TextWindow("anchors — " + Path.GetFileName(view.Doc.FilePath), sw.ToString()).Show();
     }
+
+    private async Task ShowSettings() => await new SettingsDialog().ShowDialog<bool>(this);
 
     private async Task ReloadActive()
     {

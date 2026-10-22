@@ -87,9 +87,9 @@ public sealed class ScriptRecord
         get
         {
             if (!Named) return $"Type{Type}";
+            string label = Names.DisplayNameResolver?.Invoke(ClassName!) ?? ClassName!;
             bool inferred = IsCondition ? Names.InferredCondition(Type) : Names.InferredAction(Type);
-            string label = inferred ? $"{ClassName}（推断）" : ClassName!;
-            return Names.DisplayNameResolver?.Invoke(label) ?? label;
+            return label + (inferred ? "（推断）" : "");
         }
     }
 
@@ -185,7 +185,7 @@ public static class Scriptable
         /* 8*/ ["MoneyAmount"],                                 // HasMoney
         /* 9*/ ["ItemRecord", "ItemCount", "CompleteOnly"],     // HasItem
         /*10*/ ["MonsterRecords"],                              // HasKilled（P 尾字 = KillCount）
-        /*11*/ ["QuestFile", "Task", "Objective", "Satisfied"], // HasQuestObjective
+        /*11*/ ["Quest", "Task", "Objective", "Satisfied"],     // HasQuestObjective（官方编辑器首字段名 Quest）
         /*12*/ ["Function"],                                    // Lua 条件
         /*13*/ ["KnowsPlayer"],                                 // KnowsPlayer
         /*14*/ ["QuestFile", "Task", "OnTask"],                 // OnQuestTask
@@ -195,14 +195,14 @@ public static class Scriptable
         /*18*/ ["TokenName", "HasToken"],                       // ServerHasToken
         /*19*/ ["QuestFile", "QuestBlocked"],                   // QuestBlocked
         /*20*/ ["TokenName", "HasToken"],                       // AnyoneHasToken
-        /*21*/ ["Name", "RandomValue"],                         // CheckRandomValue
+        /*21*/ ["Name", "Value"],                               // CheckRandomValue（官方编辑器第二字段名 Value）
         /*22*/ ["DLC_ID"],                                      // OwnsDLC
         /*23*/ ["TributeAmount"],                               // HasTribute
         /*24*/ ["DevotionAmount"],                              // EarnedDevotion
         /*25*/ ["MasteryName", "HasMastery"],                    // HasMastery
         /*26*/ ["IsChallenge"],                                  // IsChallenge
         /*27*/ ["BuffName", "HasBuff"],                          // HasBuff
-        /*28*/ ["Faction1", "Faction2", "KillCount"],            // HasKilledMonsterClass
+        /*28*/ ["MonsterClass1", "MonsterClass2", "KillCount"], // HasKilledMonsterClass（官方编辑器字段名）
         /*29*/ ["Faction1", "Faction2", "KillCount"],            // HasKilledFaction
     };
 
@@ -236,7 +236,7 @@ public static class Scriptable
         /*25*/ ["NumDevotionPoints"],                           // GiveDevotion
         /*26*/ ["TributeAmount"],                               // GiveTribute
         /*27*/ ["TutorialPage"],                                // UnlockTutorial
-        /*28*/ ["VideoPath", "AllowSkip"],                      // PlayVideo
+        /*28*/ ["Video path", "AllowSkip"],                      // PlayVideo（官方编辑器字段名，"path" 小写）
     };
 
     /// <summary>新建条件/动作时的默认 body 版本：语料里 HasFaction/HasItem/HasQuestObjective/LuaScript/

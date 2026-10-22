@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using CnvQst;
@@ -17,6 +18,7 @@ internal sealed class NodeTextPanel : UserControl
 {
     private readonly TextBlock _questIdText = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
+    private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
     private readonly TextBox _main = NewBox();
     private readonly TextBox _alt = NewBox();
     private readonly TextBlock _mainLabel = MkLabel("");
@@ -32,12 +34,7 @@ internal sealed class NodeTextPanel : UserControl
 
     public NodeTextPanel()
     {
-        _copyId.Click += async (_, _) =>
-        {
-            string id = _questIdText.Text?.Replace("Quest ID: ", "") ?? "";
-            var tl = TopLevel.GetTopLevel(this);
-            if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(id); } catch { } }
-        };
+        _copyId.Click += (_, _) => ClipboardHelper.SetText(_questId);
 
         _idHost = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
         _idHost.Children.Add(_questIdText);
@@ -70,12 +67,23 @@ internal sealed class NodeTextPanel : UserControl
         _alt.TextChanged += (_, _) => OnEdited(_alt, _altLang);
     }
 
-    private static TextBox NewBox() => new()
+    private static TextBox NewBox()
     {
-        AcceptsReturn = true,
-        TextWrapping = TextWrapping.Wrap,   // 超长自动换行；纵向滚动由 TextBox 内建，无横向滚动条
-        VerticalAlignment = VerticalAlignment.Stretch,   // 固定填满父容器分给的高度，不随内容增高
-    };
+        var box = new TextBox
+        {
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,   // 超长自动换行；纵向滚动由 TextBox 内建，无横向滚动条
+            VerticalAlignment = VerticalAlignment.Stretch,   // 固定填满父容器分给的高度，不随内容增高
+            // Semi 主题默认 VerticalContentAlignment=Center（内容垂直居中）；改为默认顶格左上对齐
+            VerticalContentAlignment = VerticalAlignment.Top,
+        };
+        EnableReliableCopy(box);
+        return box;
+    }
+
+    // 复制修复逻辑已提炼为全局 ClipboardHelper.Enable（所有 TextBox 统一启用），
+    // 这里仅为可读性保留转调。
+    private static void EnableReliableCopy(TextBox box) => ClipboardHelper.Enable(box);
 
     private static TextBlock MkLabel(string text) => new() { Text = text, Margin = new Thickness(0, 0, 0, 2) };
 
@@ -101,7 +109,8 @@ internal sealed class NodeTextPanel : UserControl
         // Quest ID 行（仅 QST 文档显示）
         if (doc?.Qst != null)
         {
-            _questIdText.Text = "Quest ID: " + doc.Qst.Id;
+            _questId = "0x" + doc.Qst.Id.ToString("X8");   // 引用标识统一十六进制（与表格列/官方 Lua 一致）
+            _questIdText.Text = "Quest ID: " + _questId;
             _idHost.IsVisible = true;
         }
         else

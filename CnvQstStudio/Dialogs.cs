@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using CnvQst;
 using CnvQst.Cli;
 
@@ -69,6 +71,21 @@ internal static class DialogChrome
     };
 
     public static TextBlock Label(string text) => new() { Text = text, VerticalAlignment = VerticalAlignment.Center };
+
+    /// <summary>左标签 + 右控件的表单行（各编辑弹窗共用）。标签列自然宽度（Auto），间距 8，不再固定像素。</summary>
+    public static Control FieldRow(string label, Control control)
+    {
+        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var lbl = Label(label);
+        lbl.Margin = new Thickness(0, 0, 8, 0);
+        lbl.SetValue(Grid.ColumnProperty, 0);
+        control.SetValue(Grid.ColumnProperty, 1);
+        g.Children.Add(lbl);
+        g.Children.Add(control);
+        return g;
+    }
 }
 
 /// <summary>纯文本查看窗口（anchors 输出等）。</summary>
@@ -85,11 +102,7 @@ internal sealed class TextWindow : Window
             TextWrapping = TextWrapping.NoWrap,
         };
         var copy = DialogChrome.Button(L.Copy, primary: true);
-        copy.Click += async (_, _) =>
-        {
-            var tl = TopLevel.GetTopLevel(this);
-            if (tl?.Clipboard != null) { try { await tl.Clipboard.SetTextAsync(box.Text ?? ""); } catch { } }
-        };
+        copy.Click += (_, _) => ClipboardHelper.SetText(box.Text ?? "");
 
         var root = new DockPanel { Margin = new Thickness(12) };
         DockPanel.SetDock(copy, Dock.Bottom);
@@ -99,29 +112,48 @@ internal sealed class TextWindow : Window
     }
 }
 
-/// <summary>字符串列表编辑（P body 的路径列表等）。</summary>
+/// <summary>字符串列表编辑（P body 的路径列表等）：表格单元格直接编辑，按钮增删行。</summary>
 internal sealed class StringListDialog : Window
 {
     public List<string> Items { get; private set; } = new();
-    private readonly ListBox _list = new() { MinHeight = 220 };
-    private readonly TextBox _edit = new();
+    private readonly List<PathRow> _rows = new();
+    private readonly DataGrid _grid = new()
+    {
+        AutoGenerateColumns = false,
+        HeadersVisibility = DataGridHeadersVisibility.Column,
+        CanUserReorderColumns = false,
+        MinHeight = 220,
+    };
+    private readonly string _baseTitle;
 
     public StringListDialog(string title, List<string> items)
     {
-        DialogChrome.Init(this, title, 600, 460);
+        _baseTitle = title;
+        DialogChrome.Init(this, title, 640, 460);
+        _rows.AddRange(items.Select(s => new PathRow(s)));
+
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("序号", "#"),
+            Binding = new Binding(nameof(PathRow.Num)),
+            IsReadOnly = true,
+            Width = new DataGridLength(48),
+        });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("路径", "Path"),
+            Binding = new Binding(nameof(PathRow.S)) { Mode = BindingMode.TwoWay },
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+        });
+        Reload();
+
         var add = DialogChrome.Button(L.Add, minWidth: 76);
         var del = DialogChrome.Button(L.Delete, minWidth: 76);
-        add.Click += (_, _) => { _list.Items.Add(""); _list.SelectedIndex = _list.Items.Count - 1; _edit.Focus(); };
+        add.Click += (_, _) => { _rows.Add(new PathRow("")); Reload(); _grid.SelectedIndex = _rows.Count - 1; };
         del.Click += (_, _) =>
         {
-            int i = _list.SelectedIndex;
-            if (i >= 0) { _list.Items.RemoveAt(i); _edit.Text = ""; }
-        };
-        _list.SelectionChanged += (_, _) => _edit.Text = _list.SelectedItem?.ToString() ?? "";
-        _edit.TextChanged += (_, _) =>
-        {
-            int i = _list.SelectedIndex;
-            if (i >= 0) _list.Items[i] = _edit.Text ?? "";
+            int i = _grid.SelectedIndex;
+            if (i is >= 0 && i < _rows.Count) { _rows.RemoveAt(i); Reload(); }
         };
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
@@ -129,7 +161,8 @@ internal sealed class StringListDialog : Window
         var cancel = DialogChrome.Cancel(this);
         ok.Click += (_, _) =>
         {
-            Items = _list.Items.Cast<object?>().Select(o => o?.ToString() ?? "").ToList();
+            _grid.CommitEdit(DataGridEditingUnit.Row, true);   // 提交编辑中的单元格，避免最后一笔未落盘
+            Items = _rows.Select(r => r.S).ToList();
             Close(true);
         };
 
@@ -139,22 +172,35 @@ internal sealed class StringListDialog : Window
         root.Children.Add(footer);
 
         var top = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-        top.Children.Add(DialogChrome.Caption(L.T("每行一项；右侧按钮可增删。")));
-        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 6) };
+        top.Children.Add(DialogChrome.Caption(L.T("每行一项，在表格单元格中直接编辑；按钮可增删行。")));
+        var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         btnRow.Children.Add(add);
         btnRow.Children.Add(del);
         top.Children.Add(btnRow);
-        top.Children.Add(_edit);
         DockPanel.SetDock(top, Dock.Top);
         root.Children.Add(top);
-        root.Children.Add(_list);
+        root.Children.Add(_grid);
         Content = root;
+    }
 
-        foreach (var s in items) _list.Items.Add(s);
+    /// <summary>重编序号并刷新表格（增删后调用）。</summary>
+    private void Reload()
+    {
+        for (int i = 0; i < _rows.Count; i++) _rows[i].Num = i + 1;
+        _grid.ItemsSource = null;
+        _grid.ItemsSource = _rows;
+        Title = L.F("{0}（{1} 项）", _baseTitle, _rows.Count);
+    }
+
+    private sealed class PathRow
+    {
+        public PathRow(string s) => S = s;
+        public int Num { get; set; }
+        public string S { get; set; } = "";
     }
 }
 
-/// <summary>Lua 参数编辑（A/B/C/字符串 4 列）。</summary>
+/// <summary>Lua 参数编辑（A/B/C 数值 + 字符串；数值列内嵌十进制/十六进制联动框）。</summary>
 internal sealed class LuaParamsDialog : Window
 {
     private readonly ScriptField _field;
@@ -163,11 +209,11 @@ internal sealed class LuaParamsDialog : Window
     public LuaParamsDialog(ScriptField field)
     {
         _field = field;
-        DialogChrome.Init(this, L.F("Lua 参数（{0} 项）", field.Params!.Count), 700, 440);
-        _grid.Columns.Add(new DataGridTextColumn { Header = "u32 A", Binding = new Binding(nameof(LuaRow.A)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "u8 B", Binding = new Binding(nameof(LuaRow.B)), Width = new DataGridLength(60) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = "u32 C", Binding = new Binding(nameof(LuaRow.C)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("字符串"), Binding = new Binding(nameof(LuaRow.S)), Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
+        DialogChrome.Init(this, L.F("Lua 参数（{0} 项）", field.Params!.Count), 1040, 480);
+        _grid.Columns.Add(NumCol("u32 A", p => p.A, (p, v) => p.A = v));
+        _grid.Columns.Add(NumCol("u8 B", p => p.B, (p, v) => p.B = (byte)v, max: 255));
+        _grid.Columns.Add(NumCol("u32 C", p => p.C, (p, v) => p.C = v));
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("字符串"), Binding = new Binding(nameof(LuaRow.S)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
 
         var add = new Button { Content = L.T("添加参数"), MinWidth = 100, Margin = new Thickness(0, 0, 6, 0) };
         var del = new Button { Content = L.T("删除所选"), MinWidth = 100 };
@@ -177,12 +223,11 @@ internal sealed class LuaParamsDialog : Window
             int i = _grid.SelectedIndex;
             if (i is >= 0) { _field.Params!.RemoveAt(i); Reload(); }
         };
-        _grid.CellEditEnding += (_, _) => Apply();
 
         var ok = DialogChrome.Button(L.Confirm, primary: true);
         ok.IsDefault = true;
         var cancel = DialogChrome.Cancel(this);
-        ok.Click += (_, _) => { Apply(); Close(true); };
+        ok.Click += (_, _) => { Close(true); };
 
         var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         bar.Children.Add(add);
@@ -200,37 +245,34 @@ internal sealed class LuaParamsDialog : Window
         Reload();
     }
 
+    /// <summary>数值列：单元格内嵌十进制单框（Lua 参数为传给脚本的数值，非 ID），保存进制提示放 ToolTip。</summary>
+    private DataGridTemplateColumn NumCol(string header, Func<LuaParam, uint> get, Action<LuaParam, uint> set, uint max = uint.MaxValue)
+    {
+        return new DataGridTemplateColumn
+        {
+            Header = header,
+            Width = new DataGridLength(300),
+            CellTemplate = new FuncDataTemplate<LuaRow>((row, _) =>
+            {
+                var p = row!.P;
+                var num = new NumPairBox(get(p), max, inlineHint: false);
+                num.ValueChanged += () => set(p, num.Value);
+                return num;
+            }),
+        };
+    }
+
     private void Reload()
     {
-        Apply();
         _grid.ItemsSource = _field.Params!.Select(p => new LuaRow(p)).ToList();
         Title = L.F("Lua 参数（{0} 项）", _field.Params!.Count);
     }
 
-    private void Apply()
-    {
-        if (_grid.ItemsSource is not IEnumerable<LuaRow> rows) return;
-        var list = rows.ToList();
-        for (int i = 0; i < _field.Params!.Count && i < list.Count; i++)
-        {
-            var r = list[i];
-            _field.Params[i].A = r.AValue;
-            if (byte.TryParse(r.B, out byte b)) _field.Params[i].B = b;
-            _field.Params[i].C = r.CValue;
-            _field.Params[i].S.SetText(r.S);
-        }
-    }
-
     private sealed class LuaRow
     {
-        private readonly LuaParam _p;
-        public LuaRow(LuaParam p) => _p = p;
-        public string A { get => Gui.U32Text(_p.A); set { try { _p.A = Gui.ParseU32(value); } catch { } } }
-        public string B { get => _p.B.ToString(); set { } }
-        public string C { get => Gui.U32Text(_p.C); set { try { _p.C = Gui.ParseU32(value); } catch { } } }
-        public string S { get => _p.S.Text; set => _p.S.SetText(value); }
-        public uint AValue => _p.A;
-        public uint CValue => _p.C;
+        public LuaRow(LuaParam p) => P = p;
+        public LuaParam P { get; }
+        public string S { get => P.S.Text; set => P.S.SetText(value); }
     }
 }
 
@@ -267,9 +309,9 @@ internal sealed class NewConversationDialog : Window
         Content = Layout(
             DialogChrome.Heading(L.NewConversationTitle),
             DialogChrome.Caption(L.T("首句与结束语可以先留空，稍后在表格里补。")),
-            Field(L.NewConversationSpeaker, sp),
-            Field(L.NewConversationFirst, ft),
-            Field(L.NewConversationEnd, et),
+            DialogChrome.FieldRow(L.NewConversationSpeaker, sp),
+            DialogChrome.FieldRow(L.NewConversationFirst, ft),
+            DialogChrome.FieldRow(L.NewConversationEnd, et),
             DialogChrome.Footer(cancel, ok));
     }
 
@@ -283,19 +325,6 @@ internal sealed class NewConversationDialog : Window
         for (int i = 0; i < items.Length - 1; i++) stack.Children.Add(items[i]);
         root.Children.Add(stack);
         return root;
-    }
-
-    internal static Control Field(string label, Control control)
-    {
-        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var lbl = DialogChrome.Label(label);
-        lbl.SetValue(Grid.ColumnProperty, 0);
-        control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(lbl);
-        g.Children.Add(control);
-        return g;
     }
 }
 
@@ -339,15 +368,13 @@ internal sealed class NewQuestDialog : Window
         var stack = new StackPanel();
         stack.Children.Add(DialogChrome.Heading(L.NewQuestTitle));
         stack.Children.Add(DialogChrome.Caption(L.T("会生成一个含单个 Task 的 QST2 v9 骨架，之后可在表格里增删。")));
-        stack.Children.Add(NewConversationDialogField(L.NewQuestGroup, g));
-        stack.Children.Add(NewConversationDialogField(L.NewQuestName, n));
-        stack.Children.Add(NewConversationDialogField(L.NewQuestTaskTitle, t));
-        stack.Children.Add(NewConversationDialogField(L.NewQuestTaskDesc, d));
+        stack.Children.Add(DialogChrome.FieldRow(L.NewQuestGroup, g));
+        stack.Children.Add(DialogChrome.FieldRow(L.NewQuestName, n));
+        stack.Children.Add(DialogChrome.FieldRow(L.NewQuestTaskTitle, t));
+        stack.Children.Add(DialogChrome.FieldRow(L.NewQuestTaskDesc, d));
         root.Children.Add(stack);
         Content = root;
     }
-
-    private static Control NewConversationDialogField(string label, Control control) => NewConversationDialog.Field(label, control);
 }
 
 /// <summary>TXT 回填预览：txt 行 vs 当前本地化表逐行对照；行数不符禁止应用。</summary>
@@ -440,17 +467,10 @@ internal sealed class ScriptListDialog : Window
                 : new SolidColorBrush(Color.FromRgb(0xE2, 0xF3, 0xEA)),
         };
 
+        // 关系逻辑只保留一处：条件由内嵌 ScriptListEditor 顶部的"关系逻辑"下拉统一提供；
+        // 动作无 AND/OR 关系，仅提示按顺序执行。
         var logicRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-        if (isCondition)
-        {
-            logicRow.Children.Add(DialogChrome.Label(L.T("关系逻辑", "Logic") + ":"));
-            var logic = new ComboBox { MinWidth = 150, Margin = new Thickness(8, 0, 0, 0) };
-            logic.ItemsSource = new[] { L.T("满足全部（AND）"), L.T("满足任一（OR）") };
-            logic.SelectedIndex = _work.Logic == 1 ? 1 : 0;
-            logic.SelectionChanged += (_, _) => _work.Logic = logic.SelectedIndex == 1 ? 1u : 0u;
-            logicRow.Children.Add(logic);
-        }
-        else
+        if (!isCondition)
         {
             logicRow.Children.Add(DialogChrome.Caption(L.T("动作按顺序执行（格式上没有 AND/OR 关系逻辑）。")));
         }
@@ -485,7 +505,10 @@ internal sealed class ScriptListDialog : Window
     }
 }
 
-/// <summary>CNV 节点属性对话框：类型 / flags / voPath / linkId。</summary>
+/// <summary>
+/// CNV 节点编辑对话框（添加 / 编辑共用同一弹窗，字段与保存逻辑完全一致）：
+/// 类型 / flags / voPath / linkId。添加模式 = 表格先插入默认节点再弹本窗，取消即回滚。
+/// </summary>
 internal sealed class CnvNodeDialog : Window
 {
     private readonly CnvStep _step;
@@ -497,14 +520,21 @@ internal sealed class CnvNodeDialog : Window
     private readonly TextBox _voPath = new() { MinWidth = 320 };
     private readonly ComboBox _link = new() { MinWidth = 320 };
 
-    private CnvNodeDialog(CnvFile c, CnvStep s)
+    /// <summary>跳转目标下拉项：Label=截断显示文本（保持原样），Full=完整文本（ToolTip 悬停显示）。</summary>
+    private sealed record LinkItem(string Label, string Full);
+
+    private CnvNodeDialog(CnvFile c, CnvStep s, bool isNew)
     {
         _cnv = c;
         _step = s;
-        DialogChrome.Init(this, L.T($"节点属性  [{s.Index}]", $"Node Properties  [{s.Index}]"), 540, 320);
+        string title = isNew
+            ? L.T($"添加节点  [{s.Index}]", $"Add Node  [{s.Index}]")
+            : L.T($"节点编辑  [{s.Index}]", $"Node Edit  [{s.Index}]");
+        DialogChrome.Init(this, title, 540, 320);
 
+        // 类型名"原文（本地化）"（如 speech（台词）），与表格节点列一致
         var types = new List<string>();
-        for (uint t = 0; t <= 8; t++) types.Add(CnvNodeLabel.KindZh(t));
+        for (uint t = 0; t <= 8; t++) types.Add(CnvNodeLabel.KindEnZh(t));
         _type.ItemsSource = types;
         _type.SelectedIndex = s.Type <= 8 ? (int)s.Type : 0;
         _once.IsChecked = (s.Unknown & 1) != 0;
@@ -512,15 +542,27 @@ internal sealed class CnvNodeDialog : Window
         _unimportant.IsChecked = (s.Unknown & 4) != 0;
         _voPath.Text = s.VoPath.Text;
         _voPath.IsEnabled = c.Version >= 6;
-        var links = new List<string>();
+        var links = new List<LinkItem>();
         for (int i = 0; i < c.Steps.Count; i++)
         {
-            var t = c.TextFor(c.Steps[i]);
-            links.Add($"{i}: {CnvNodeLabel.KindName(c.Steps[i].Type)} {(t.Length > 20 ? t[..20] + "…" : t)}");
+            string kind = CnvNodeLabel.KindEnZh(c.Steps[i].Type);
+            string t = c.TextFor(c.Steps[i]).Replace("\n", " ").Replace("\r", "");
+            links.Add(new LinkItem(
+                $"{i}: {kind} {(t.Length > 20 ? t[..20] + "…" : t)}",
+                t.Length > 0 ? $"{i}: {kind} {t}" : $"{i}: {kind}"));
         }
         _link.ItemsSource = links;
+        // 下拉项与收起后选中项都走该模板：显示截断文本，鼠标悬停 ToolTip 弹出完整内容
+        _link.ItemTemplate = new FuncDataTemplate<LinkItem>((li, _) =>
+        {
+            var tb = new TextBlock { Text = li?.Label ?? "", TextTrimming = TextTrimming.CharacterEllipsis };
+            ToolTip.SetTip(tb, li?.Full ?? "");
+            return tb;
+        });
         _link.SelectedIndex = s.LinkId < (uint)c.Steps.Count ? (int)s.LinkId : -1;
         _link.IsEnabled = s.Type == Names.StepLink;
+        // 切换类型为"跳转"时实时启用跳转目标下拉（仅跳转节点有 LinkId 字段）
+        _type.SelectionChanged += (_, _) => _link.IsEnabled = _type.SelectedIndex == (int)Names.StepLink;
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
@@ -528,7 +570,7 @@ internal sealed class CnvNodeDialog : Window
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(Field(L.T("类型") + ":", _type));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("类型") + ":", _type));
         stack.Children.Add(new TextBlock
         {
             Text = L.T("台词文本请在主界面底部编辑器中修改（选中节点行后编辑）。"),
@@ -537,40 +579,46 @@ internal sealed class CnvNodeDialog : Window
             Margin = new Thickness(0, 4, 0, 0),
         });
         var flagsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 6) };
-        flagsRow.Children.Add(new TextBlock { Text = L.T("显示开关") + ":", Width = 100, VerticalAlignment = VerticalAlignment.Center });
+        var flagsLabel = new TextBlock { Text = L.T("显示开关") + ":", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        flagsRow.Children.Add(flagsLabel);
         flagsRow.Children.Add(_once);
         flagsRow.Children.Add(_always);
         flagsRow.Children.Add(_unimportant);
         stack.Children.Add(flagsRow);
-        stack.Children.Add(Field(L.T("配音文件") + ":", _voPath));
-        stack.Children.Add(Field(L.T("跳转到") + ":", _link));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("配音文件") + ":", _voPath));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("跳转到") + ":", _link));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
 
-    private static Control Field(string label, Control control)
+    /// <summary>把弹窗当前值写回节点（添加 / 编辑共用；只改低 3 位开关，高位为游戏侧保留位）。</summary>
+    private void Apply()
     {
-        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var lbl = DialogChrome.Label(label);
-        lbl.SetValue(Grid.ColumnProperty, 0);
-        control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(lbl);
-        g.Children.Add(control);
-        return g;
+        _step.Type = (uint)Math.Max(0, _type.SelectedIndex);
+        _step.Unknown = (_step.Unknown & ~7u)
+            | (_once.IsChecked == true ? 1u : 0u)
+            | (_always.IsChecked == true ? 2u : 0u)
+            | (_unimportant.IsChecked == true ? 4u : 0u);
+        _step.VoPath.SetText(_voPath.Text ?? "");
+        _step.HasLink = _step.Type == Names.StepLink;
+        if (_link.SelectedIndex >= 0 && _step.HasLink) _step.LinkId = (uint)_link.SelectedIndex;
     }
 
+    /// <summary>编辑既有节点。</summary>
     public static async Task<bool> Show(DocSession doc, CnvStep s, Window? owner)
     {
-        var dlg = new CnvNodeDialog(doc.Cnv!, s);
+        var dlg = new CnvNodeDialog(doc.Cnv!, s, isNew: false);
         if (await dlg.ShowDialog<bool>(owner!) != true) return false;
-        s.Type = (uint)dlg._type.SelectedIndex;
-        // 只改低 3 位（编辑器开关），高位为游戏侧保留位，原样保留
-        s.Unknown = (s.Unknown & ~7u) | (dlg._once.IsChecked == true ? 1u : 0u) | (dlg._always.IsChecked == true ? 2u : 0u) | (dlg._unimportant.IsChecked == true ? 4u : 0u);
-        s.VoPath.SetText(dlg._voPath.Text ?? "");
-        s.HasLink = s.Type == Names.StepLink;
-        if (dlg._link.SelectedIndex >= 0 && s.HasLink) s.LinkId = (uint)dlg._link.SelectedIndex;
+        dlg.Apply();
+        return true;
+    }
+
+    /// <summary>添加新节点（与编辑共用同一弹窗；step 已由调用方插入，取消时由调用方回滚）。</summary>
+    public static async Task<bool> ShowNew(CnvFile c, CnvStep s, Window? owner)
+    {
+        var dlg = new CnvNodeDialog(c, s, isNew: true);
+        if (await dlg.ShowDialog<bool>(owner!) != true) return false;
+        dlg.Apply();
         return true;
     }
 }
@@ -578,7 +626,8 @@ internal sealed class CnvNodeDialog : Window
 /// <summary>quest 头部属性对话框。flags 语义取自官方 Common.Quest+Flag：Primary/Secondary 互斥，Repeatable 独立。</summary>
 internal sealed class QuestPropsDialog : Window
 {
-    private readonly TextBox _uid = new() { MinWidth = 160 };
+    // 任务文件 Id：引用标识，固定十六进制单框（官方 QuestEditor 底部同款显示）
+    private readonly NumPairBox _uid = new(0, mode: NumBoxMode.HexOnly);
     private readonly CheckBox _primary = new() { Content = L.T("主线任务 Primary（bit0）", "Primary (bit0)") };
     private readonly CheckBox _secondary = new() { Content = L.T("支线任务 Secondary（bit1）", "Secondary (bit1)") };
     private readonly CheckBox _repeatable = new() { Content = L.T("可重复 Repeatable（bit2）", "Repeatable (bit2)") };
@@ -586,7 +635,7 @@ internal sealed class QuestPropsDialog : Window
     internal QuestPropsDialog(QstFile q)
     {
         DialogChrome.Init(this, L.T("任务属性", "Quest Properties"), 380, 260);
-        _uid.Text = Gui.U32Text(q.Id);
+        _uid.SetValue(q.Id);
         uint f = q.Unknown10;
         _primary.IsChecked = (f & 1) != 0;
         _secondary.IsChecked = (f & 2) != 0;
@@ -601,7 +650,7 @@ internal sealed class QuestPropsDialog : Window
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(Field("uid", _uid));
+        stack.Children.Add(DialogChrome.FieldRow("uid", _uid));
         stack.Children.Add(_primary);
         stack.Children.Add(_secondary);
         stack.Children.Add(_repeatable);
@@ -616,24 +665,11 @@ internal sealed class QuestPropsDialog : Window
         Content = stack;
     }
 
-    private static Control Field(string label, Control control)
-    {
-        var g = new Grid { Margin = new Thickness(0, 4, 0, 10) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var lbl = DialogChrome.Label(label);
-        lbl.SetValue(Grid.ColumnProperty, 0);
-        control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(lbl);
-        g.Children.Add(control);
-        return g;
-    }
-
     public static async Task<bool> Show(QstFile q, Window? owner)
     {
         var dlg = new QuestPropsDialog(q);
         if (await dlg.ShowDialog<bool>(owner!) != true) return false;
-        try { q.Id = Gui.ParseU32(dlg._uid.Text ?? ""); } catch { }
+        q.Id = dlg._uid.Value;
         uint f = 0;
         if (dlg._primary.IsChecked == true) f |= 1;
         if (dlg._secondary.IsChecked == true) f |= 2;
@@ -643,30 +679,31 @@ internal sealed class QuestPropsDialog : Window
     }
 }
 
-/// <summary>QST 字段编辑对话框（task / objective / event 的 uid、flags 与门控位）。
+/// <summary>QST 节点编辑对话框（task / objective / event 的 uid、flags 与门控位）。
 /// 字段名与位含义来自官方 Common.dll（QuestNode_Task/Objective/Event）。</summary>
 internal sealed class QstFieldsDialog : Window
 {
-    private readonly List<(string, TextBox)> _nums = new();
+    private readonly List<(string, NumPairBox)> _nums = new();
     private readonly List<(string, CheckBox)> _flags = new();
 
     internal QstFieldsDialog(QstRowOwner row)
     {
-        DialogChrome.Init(this, L.T("字段编辑  " + row.NodeLabel, "Fields  " + row.NodeLabel), 460, 0, SizeToContent.Height);
+        // uid 行在官方编辑器无编辑入口 → NumPairBox 只读展示（十六进制单框）；flags 为计数类小值走十进制单框
+        DialogChrome.Init(this, L.T("节点编辑", "Edit Node") + "  " + row.NodeLabel, 660, 0, SizeToContent.Height);
         switch (row)
         {
             case QstTaskRow tr:
-                _nums.Add((L.T("uid（引用标识）", "uid (referenced by)"), Num(tr.T.UnknownA8)));
-                _nums.Add((L.T("flags（暂只有 None）", "flags (only None)"), Num(tr.T.UnknownAC)));
-                _flags.Add((L.T("isBlocker（v≥8）", "isBlocker (v>=8)"), Check(tr.T.Flag8)));
-                _flags.Add((L.T("dontPropagate（v≥9）", "dontPropagate (v>=9)"), Check(tr.T.Flag9)));
+                _nums.Add((L.T("uid（引用标识）", "uid (referenced by)"), new NumPairBox(tr.T.UnknownA8, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
+                _nums.Add((L.T("flags（暂只有 None）", "flags (only None)"), new NumPairBox(tr.T.UnknownAC)));
+                _flags.Add((L.T("isBlocker（阻断后续任务，v≥8）", "isBlocker (blocks next tasks, v>=8)"), Check(tr.T.Flag8)));
+                _flags.Add((L.T("dontPropagate（不向上传递，v≥9）", "dontPropagate (don't propagate, v>=9)"), Check(tr.T.Flag9)));
                 break;
             case QstObjectiveRow or:
-                _nums.Add((L.T("uid", "uid"), Num(or.O.Unknown0)));
-                _nums.Add((L.T("flags", "flags"), Num(or.O.Unknown1)));
+                _nums.Add((L.T("uid", "uid"), new NumPairBox(or.O.Unknown0, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
+                _nums.Add((L.T("flags", "flags"), new NumPairBox(or.O.Unknown1)));
                 break;
             case QstEventRow er:
-                _nums.Add((L.T("flags", "flags"), Num(er.E.Unknown)));
+                _nums.Add((L.T("flags", "flags"), new NumPairBox(er.E.Unknown)));
                 break;
         }
 
@@ -676,7 +713,7 @@ internal sealed class QstFieldsDialog : Window
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        foreach (var (lab, n) in _nums) stack.Children.Add(Field(lab, n));
+        foreach (var (lab, n) in _nums) stack.Children.Add(DialogChrome.FieldRow(lab, n));
         foreach (var (lab, cb) in _flags) { cb.Content = lab; stack.Children.Add(cb); }
         stack.Children.Add(new TextBlock
         {
@@ -689,69 +726,79 @@ internal sealed class QstFieldsDialog : Window
         Content = stack;
     }
 
-    private static TextBox Num(uint v) => new() { Text = Gui.U32Text(v), MinWidth = 140 };
-
     private static CheckBox Check(bool v) => new() { IsChecked = v };
-
-    private static Control Field(string label, Control control)
-    {
-        var g = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
-        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var lbl = DialogChrome.Label(label);
-        lbl.SetValue(Grid.ColumnProperty, 0);
-        control.SetValue(Grid.ColumnProperty, 1);
-        g.Children.Add(lbl);
-        g.Children.Add(control);
-        return g;
-    }
 
     public static async Task<bool> Show(QstRowOwner row, Window? owner)
     {
         var dlg = new QstFieldsDialog(row);
         if (await dlg.ShowDialog<bool>(owner!) != true) return false;
-        foreach (var (lab, box) in dlg._nums) _ = lab;
         if (row is QstTaskRow tr)
         {
-            try { tr.T.UnknownA8 = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
-            try { tr.T.UnknownAC = Gui.ParseU32(dlg._nums[1].Item2.Text ?? ""); } catch { }
+            tr.T.UnknownA8 = dlg._nums[0].Item2.Value;
+            tr.T.UnknownAC = dlg._nums[1].Item2.Value;
             tr.T.Flag8 = dlg._flags[0].Item2.IsChecked == true;
             tr.T.Flag9 = dlg._flags[1].Item2.IsChecked == true;
         }
         else if (row is QstObjectiveRow or)
         {
-            try { or.O.Unknown0 = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
-            try { or.O.Unknown1 = Gui.ParseU32(dlg._nums[1].Item2.Text ?? ""); } catch { }
+            or.O.Unknown0 = dlg._nums[0].Item2.Value;
+            or.O.Unknown1 = dlg._nums[1].Item2.Value;
         }
         else if (row is QstEventRow er)
         {
-            try { er.E.Unknown = Gui.ParseU32(dlg._nums[0].Item2.Text ?? ""); } catch { }
+            er.E.Unknown = dlg._nums[0].Item2.Value;
         }
         return true;
     }
 }
 
-/// <summary>新节点类型选择（添加子节点）。</summary>
-internal sealed class CnvTypePicker : Window
+/// <summary>
+/// 设置弹窗：游戏根目录等。配置持久化到 %USERPROFILE%\.CnvQstStudio\CnvQstStudio.json（JSONC）。
+/// 游戏根目录用于串字段"资源路径"的 打开 / 浏览：非 dbr → root\resources\，.dbr → root\database\。
+/// </summary>
+internal sealed class SettingsDialog : Window
 {
-    public uint Type { get; private set; }
-    private readonly ComboBox _box = new() { MinWidth = 220 };
+    private readonly TextBox _root = new() { Watermark = @"例如 G:\GRIM DAWN", MinWidth = 360 };
 
-    public CnvTypePicker()
+    internal SettingsDialog()
     {
-        DialogChrome.Init(this, L.T("选择新节点类型", "Choose New Node Type"), 300, 0, SizeToContent.Height);
-        var kinds = new List<string>();
-        for (uint t = 0; t <= 8; t++) kinds.Add($"{t} {CnvNodeLabel.KindEnZh(t)}");   // 英文（当前语言），与表格/属性对话框一致
-        _box.ItemsSource = kinds;
-        _box.SelectedIndex = 1;
+        DialogChrome.Init(this, L.T("设置", "Settings"), 660, 0, SizeToContent.Height);
+        _root.Text = AppSettings.GameRoot;
+
+        var browse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false);
+        browse.Click += async (_, _) =>
+        {
+            var tl = TopLevel.GetTopLevel(this);
+            if (tl?.StorageProvider == null) return;
+            var opts = new FolderPickerOpenOptions { AllowMultiple = false, Title = L.T("选择游戏根目录", "Select game root folder") };
+            if (Directory.Exists(AppSettings.GameRoot))
+            {
+                try { opts.SuggestedStartLocation = await tl.StorageProvider.TryGetFolderFromPathAsync(new Uri(AppSettings.GameRoot)); }
+                catch { }
+            }
+            var folders = await tl.StorageProvider.OpenFolderPickerAsync(opts);
+            if (folders.Count > 0)
+                _root.Text = folders[0].TryGetLocalPath() ?? _root.Text;
+        };
+        var rootHost = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8 };
+        rootHost.Children.Add(_root);
+        rootHost.Children.Add(browse);
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        ok.Click += (_, _) => { Type = (uint)Math.Max(0, _box.SelectedIndex); Close(true); };
+        ok.Click += (_, _) =>
+        {
+            AppSettings.GameRoot = _root.Text?.Trim() ?? "";
+            AppSettings.Save();
+            Close(true);
+        };
+        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(_box);
-        stack.Children.Add(DialogChrome.Footer(ok));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("游戏根目录", "Game root folder"), rootHost));
+        stack.Children.Add(DialogChrome.Caption(L.T(
+            "说明：用于条件/动作中“资源路径”类字段的 打开 / 浏览。非 dbr 串（如 quest\\xxx.qst）将以 <游戏根目录>\\resources\\ 为基础目录读取；.dbr 串将以 <游戏根目录>\\database\\ 为基础目录读取。配置保存于 %USERPROFILE%\\.CnvQstStudio\\CnvQstStudio.json。")));
+        stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
 }

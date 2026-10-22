@@ -199,18 +199,19 @@ public static class Names
 
     private static string Display(string label) => DisplayNameResolver?.Invoke(label) ?? label;
 
-    /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。</summary>
+    /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。
+    /// "（推断）"后缀在本地化名之后追加，不参与 DisplayNameResolver 的查找键。</summary>
     public static string ConditionLabel(uint type)
     {
         if (ConditionClass(type) is (string n, true))
-            return Display(InferredCondition(type) ? $"{n}（推断）" : n);
+            return Display(n) + (InferredCondition(type) ? "（推断）" : "");
         string? hint = ConditionHints.GetValueOrDefault(type);
         return hint == null ? $"Type{type}（未命名）" : $"Type{type}（{hint}）";
     }
 
     public static string ActionLabel(uint type) =>
         ActionClass(type) is (string n, true)
-            ? Display(InferredAction(type) ? $"{n}（推断）" : n)
+            ? Display(n) + (InferredAction(type) ? "（推断）" : "")
             : $"Type{type}（未命名）";
 
     public static (string? name, bool named) ConditionClass(uint type) =>

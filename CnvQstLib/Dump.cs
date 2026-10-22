@@ -73,14 +73,14 @@ public static class Dump
 
         foreach (var t in q.Tasks)
         {
-            sb.AppendLine($"Task  @0x{t.Offset:X} +{t.Length}   uid={t.UnknownA8} flags={t.UnknownAC}" +
+            sb.AppendLine($"Task  @0x{t.Offset:X} +{t.Length}   uid=0x{t.UnknownA8:X8} flags={t.UnknownAC}" +
                           $"   isBlocker={(t.Flag8 ? 1 : 0)} dontPropagate={(t.Flag9 ? 1 : 0)}" +
                           $"   （运行时 uid {t.Uid},{t.Uid2}）");
             WriteEvents(sb, "Incentives", t.Incentives);
             sb.AppendLine($"   Objectives ({t.Objectives.Count})");
             foreach (var o in t.Objectives)
             {
-                sb.AppendLine($"      Objective  uid={o.Unknown0} flags={o.Unknown1}   @0x{o.Offset:X}");
+                sb.AppendLine($"      Objective  uid=0x{o.Unknown0:X8} flags={o.Unknown1}   @0x{o.Offset:X}");
                 WriteList(sb, "         ", "Conditions", o.Conditions);
                 WriteList(sb, "         ", "Actions", o.Actions);
             }

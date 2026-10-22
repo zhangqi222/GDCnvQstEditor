@@ -406,8 +406,97 @@ IsChallenge（I+比较符）、Hasbuff（S+B）、HasKilledFaction / HasKilledMo
 **枚举型字段要给合法值**：编辑器拿它当下标查表，越界会弹 ArgumentOutOfRange 对话框
 （首次探测时 PlayAnimation 的 I=10000 即如此）。
 
+### 4.5 官方编辑器"详情弹窗"的逐类型字段名（2026-10-21 逐类型截图核对）
 
-### 4.5 语料类型分布（本地 446 文件，条件+动作混合计数）
+> 官方编辑器中双击条件/动作条目 → 添加/编辑时弹出的**类型详情窗**，逐类型截图共 58 张，
+> 存于 `反馈截图/条件截图/`、`反馈截图/动作截图/`。下表字段名为官方 UI 原文（按显示顺序）。
+> 本项目 `Scriptable.CondParams / ActionParams` 参数名表与 GUI 细则弹窗已按此对齐
+> （与旧表差异修正 4 处，在表中标出）。
+
+**弹窗通用规则**：
+
+- 字段以树形列表呈现：首行为主字段（粗体，前缀 `−`/`+` 为树形展开标记），其余为子字段；
+  文件类串字段带 `…` 浏览按钮。
+- 布尔字段渲染为 TRUE/FALSE 下拉；数值字段直接输入；枚举字段渲染为下拉（选项见备注列）。
+- **含数值比较语义的条件，弹窗尾部固定多一行 `Comparator`**（下拉 `<` `<=` `=` `>=` `>` `!=`）——
+  它就是记录头第 3 个字 comparison 的可视化（§4.1）。任务步骤号类（QuestTaskComplete /
+  OnQuestTask / HasQuestObjective）与布尔类条件不显示此行（此时 comparison 恒为 `=`，语料印证）；
+  **动作一律没有 Comparator**。
+- **P 列表字段**显示为 `字段名 [N]`（N=当前项数），列表行只显序号 1,2,…，行右侧有
+  `…`（浏览）与 `−`（移除）按钮。
+- **Lua 条件/动作**使用专用窗（标题 Edit Condition / Edit Action）：`Function` 下拉 +
+  `Args` 表格（Defaults / Nil All / Move Up / Move Down 按钮）；条件版底部另有
+  `Evaluation` 区 = 返回类型下拉（Bool / Number / String / Nil）+ 比较符下拉 + 期望值下拉，
+  对应 L 形态条件的固定尾部（§4.2）。
+
+**条件（30 类；`反馈截图/条件截图/`）**：
+
+| type | 类型名 | 官方弹窗字段（按显示顺序） | 备注 |
+|---|---|---|---|
+| 0 | OnQuest | QuestFile, OnQuest | |
+| 1 | QuestTaskComplete | QuestFile, Task, TaskComplete | Task 不可编辑 |
+| 2 | HasExperience | Experience, Comparator | |
+| 3 | IsLevel | IsLevel, Comparator | |
+| 4 | IsDifficulty | IsDifficulty, Comparator | 下拉 Normal/Epic/Legendary |
+| 5 | IsHardcore | IsHardcore | TRUE/FALSE |
+| 6 | HasFaction | FactionName, Value, Comparator | |
+| 7 | HasToken | TokenName, HasToken | |
+| 8 | HasMoney | MoneyAmount, Comparator | |
+| 9 | HasItem | ItemRecord, ItemCount, CompleteOnly, Comparator | |
+| 10 | HasKilled | MonsterRecords [N], KillCount, Comparator | 列表行带 …/− 按钮 |
+| 11 | HasQuestObjective | **Quest**, Task, Objective, Satisfied | 首字段名 Quest（旧表记 QuestFile，**修正**）；Task/Objective 不可编辑 |
+| 12 | LuaScript | Function, Args；条件版另有 Evaluation 区 | 专用窗 |
+| 13 | KnowsPlayer | KnowsPlayer | TRUE/FALSE |
+| 14 | OnQuestTask | QuestFile, Task, OnTask | Task 不可编辑 |
+| 15 | UsedQuestItem | ItemRecord, NumUsed, Comparator | |
+| 16 | HasKilledProxy | ProxyRecords [N], KillCount, Comparator | |
+| 17 | WaitForCompletion | （无字段行） | |
+| 18 | ServerHasToken | TokenName, HasToken | |
+| 19 | QuestBlocked | QuestFile, QuestBlocked | |
+| 20 | AnyoneHasToken | TokenName, HasToken | |
+| 21 | CheckRandomValue | Name, Value, Comparator | 第二字段名 Value（旧表记 RandomValue，**修正**） |
+| 22 | OwnsDLC | DLC_ID, Comparator | |
+| 23 | HasTribute | TributeAmount, Comparator | |
+| 24 | EarnedDevotion | DevotionAmount, Comparator | |
+| 25 | HasMastery | MasteryName, HasMastery | MasteryName 实值形如 SkillClass01 |
+| 26 | IsChallenge | IsChallenge, Comparator | 下拉 Normal Veteran/Epic Veteran/Legendary Veteran |
+| 27 | HasBuff | BuffName, HasBuff | BuffName 带 … 按钮 |
+| 28 | HasKilledMonsterClass | **MonsterClass1**, **MonsterClass2**, KillCount, Comparator | 前两字段名 MonsterClass1/2（旧表记 Faction1/2，**修正**）；下拉 Common/Champion/Hero/Boss/Quest/SuperBoss |
+| 29 | HasKilledFaction | Faction1, Faction2, KillCount, Comparator | 下拉 None/Aleric/GenericMonster/Player/Survivors/Aetherials/Cthollians/Outlaws/Beasts/User1..8…（截图可见部分） |
+
+**动作（27 个可用槽；`反馈截图/动作截图/`）**：
+
+| type | 类型名 | 官方弹窗字段（按显示顺序） | 备注 |
+|---|---|---|---|
+| 1 | BeginQuestTask | QuestFile, Task | |
+| 2 | CompleteQuest | QuestFile | |
+| 3 | CompleteQuestTask | QuestFile, Task | Task 不可编辑 |
+| 4 | GiveMoney | MoneyAmount | |
+| 5 | GiveFaction | FactionType, Amount | |
+| 6 | GiveItem | ItemRecord, NumItems | |
+| 7 | GiveLevel | NumLevels | |
+| 8 | GiveExperience | Experience | |
+| 9 | RemoveToken | TokenName | |
+| 10 | GiveToken | TokenName | |
+| 11 | LuaScript | Function, Args | 专用窗，无 Evaluation 区 |
+| 12 | DebugPrint | Text | |
+| 13 | PlaySound | SoundRecord | |
+| 14 | PlayAnimation | AnimationType | |
+| 15 | GiveSkillPoint | NumSkillpoints | |
+| 17 | Notification | Tag | |
+| 18 | GiveAttribPoint | NumAttributePoints | 弹窗中标签被截断为 NumAttribut… |
+| 19 | ScriptEvent | ScriptEvent | 本次截图确认（此前标记"推断"可去除疑义）|
+| 20 | GiveRandomItem | ItemRecord, NumItems | |
+| 21 | GenerateRandomValue | Name, Min, Max | |
+| 22 | CastSkill | SkillRecord | |
+| 23 | UnlockFaction | FactionType | |
+| 24 | SetFaction | FactionType, Value | 与 5 GiveFaction 的区分再次确认 |
+| 25 | GiveDevotion | NumDevotionPoints | 弹窗中标签被截断为 NumDevotion… |
+| 26 | GiveTribute | TributeAmount | |
+| 27 | UnlockTutorial | TutorialPage | |
+| 28 | PlayVideo | **Video path**, AllowSkip | 官方字段名 "Video path"（旧表记 VideoPath，**修正**）|
+
+### 4.6 语料类型分布（本地 446 文件，条件+动作混合计数）
 
 type4×2084、1×907、9×853、8×835、5×792、11×532、14×509、7×484、10×415、3×381、6×343、
 21×297、17×266、2×258、19×146、22×130、20×115、18×108、0×24、12×23、15×2、25×1。

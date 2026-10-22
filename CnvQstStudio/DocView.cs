@@ -42,6 +42,22 @@ internal sealed class DocView : UserControl
         ResizeDirection = GridResizeDirection.Rows,
         IsVisible = false,
     };
+    private readonly Grid _rootGrid = new();
+    private readonly Button _panelToggle = new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        Padding = new Thickness(12, 1, 12, 1),
+        MinHeight = 20,
+        FontSize = 11,
+        CornerRadius = new CornerRadius(10),
+        BorderThickness = new Thickness(1),
+        BorderBrush = new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)),
+        Background = Brushes.White,
+        Foreground = UiTheme.MutedBrush,
+    };
+    private bool _panelCollapsed;
+    private GridLength _panelHeight = new(180);
 
     public DocView(DocSession doc)
     {
@@ -49,20 +65,29 @@ internal sealed class DocView : UserControl
 
         foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint }) _host.Children.Add(c);
 
-        var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });
+        _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        // 分割行 = 拖动调高的 GridSplitter + 居中的显式折叠/展开按钮（文字 + 箭头，便于识别）
+        var splitterHost = new Grid();
+        splitterHost.Children.Add(_panelSplitter);
+        splitterHost.Children.Add(_panelToggle);
         Grid.SetRow(_host, 0);
-        Grid.SetRow(_panelSplitter, 1);
+        Grid.SetRow(splitterHost, 1);
         Grid.SetRow(_panel, 2);
         Grid.SetRow(_status, 3);
-        root.Children.Add(_host);
-        root.Children.Add(_panelSplitter);
-        root.Children.Add(_panel);
-        root.Children.Add(_status);
-        Content = root;
+        _rootGrid.Children.Add(_host);
+        _rootGrid.Children.Add(splitterHost);
+        _rootGrid.Children.Add(_panel);
+        _rootGrid.Children.Add(_status);
+        // 分割栏：拖动调高，点击（无拖动）在 折叠 / 展开 之间切换
+        ToolTip.SetTip(_panelSplitter, L.T("拖动调整高度；点击折叠 / 展开底部编辑器。", "Drag to resize; click to collapse / expand the editor."));
+        ToolTip.SetTip(_panelToggle, L.T("点击折叠 / 展开底部编辑器。", "Click to collapse / expand the editor."));
+        _panelSplitter.Tapped += (_, _) => TogglePanel();
+        _panelToggle.Click += (_, _) => TogglePanel();
+        UpdateToggle();
+        Content = _rootGrid;
 
         _cnvTable.LocRequested += ToggleView;
         _qstTable.LocRequested += ToggleView;
@@ -83,6 +108,32 @@ internal sealed class DocView : UserControl
             : null;
         _panel.Bind(Doc, slot);
     }
+
+    /// <summary>点击分割栏/按钮：折叠（高度记入 _panelHeight 后置 0）/ 展开（恢复上次高度）。</summary>
+    private void TogglePanel()
+    {
+        var row = _rootGrid.RowDefinitions[2];
+        if (_panelCollapsed)
+        {
+            row.Height = _panelHeight;
+            _panelCollapsed = false;
+        }
+        else
+        {
+            // 记录当前实际高度（拖动后 RowDefinition.Height 可能仍是旧值，以 ActualHeight 为准）
+            double h = row.ActualHeight;
+            if (h > 8) _panelHeight = new GridLength(Math.Max(h, 40));
+            row.Height = new GridLength(0);
+            _panelCollapsed = true;
+        }
+        UpdateToggle();
+    }
+
+    /// <summary>分割栏按钮文案随折叠状态切换（▾=可收起 / ▴=可展开），文字 + 符号便于识别。</summary>
+    private void UpdateToggle() =>
+        _panelToggle.Content = _panelCollapsed
+            ? "▴ " + L.T("展开编辑器", "Expand Editor")
+            : "▾ " + L.T("底部编辑器", "Editor");
 
     private void ShowCurrent()
     {
@@ -109,6 +160,7 @@ internal sealed class DocView : UserControl
         bool structure = target == _cnvTable || target == _qstTable;
         _panel.IsVisible = structure;
         _panelSplitter.IsVisible = structure;
+        _panelToggle.IsVisible = structure;
         if (structure) OnSelectedChanged();
     }
 
