@@ -360,6 +360,14 @@ internal sealed class QstTableEditor : UserControl
         _changed();
     }
 
+    /// <summary>本地化槽位文本变化后刷新显示该槽位的行（组名/任务名/标题/描述/目标）。</summary>
+    public void RefreshTextSlot(int slot)
+    {
+        foreach (var r in _rows)
+            if (r.Owner.TextSlot == slot)
+                r.Reload();
+    }
+
     public void Bind(DocSession doc, Changed changed)
     {
         _doc = doc;

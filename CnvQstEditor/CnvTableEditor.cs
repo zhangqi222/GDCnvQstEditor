@@ -301,6 +301,14 @@ internal sealed class CnvTableEditor : UserControl
         if (_source?.RowSelection.SelectedItem is CnvRow r) r.Reload();
     }
 
+    /// <summary>本地化槽位文本变化后刷新显示该槽位的行（跳转节点无自身文本时回退显示目标文本）。</summary>
+    public void RefreshTextSlot(int slot)
+    {
+        foreach (var r in _rows)
+            if (r.Step.Index == slot || (r.Step.Type == Names.StepLink && r.Step.LinkId == (uint)slot))
+                r.Reload();
+    }
+
     public void NotifyEdited()
     {
         _doc.Dirty = true;

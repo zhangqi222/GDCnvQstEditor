@@ -199,7 +199,8 @@ internal abstract class QstRowOwner
 
     protected static string SlotText(QstFile q, int slot)
     {
-        var lang = q.Languages.Count > 0 ? q.Languages[0] : null;
+        // 与底部编辑器一致：优先 enUS（官方语义），无 enUS 时退回首个语言块
+        var lang = q.Languages.FirstOrDefault(l => l.Tag.Text == "enUS") ?? q.Languages.FirstOrDefault();
         return lang != null && slot >= 0 && slot < lang.Texts.Count ? lang.Texts[slot].Text : "";
     }
 }

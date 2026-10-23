@@ -224,9 +224,7 @@ internal sealed class MainWindow : Window
             for (int i = 0; i < paths.Count; i++)
             {
                 string path = paths[i];
-                var item = MkItem($"{i + 1}. {Path.GetFileName(path)}", null, () => _ = OpenFile(path));
-                ToolTip.SetTip(item, path);
-                _recentMenu.Items.Add(item);
+                _recentMenu.Items.Add(MkItem($"{i + 1}. {path}", null, () => _ = OpenFile(path)));
             }
         }
         _recentMenu.Items.Add(new Separator());

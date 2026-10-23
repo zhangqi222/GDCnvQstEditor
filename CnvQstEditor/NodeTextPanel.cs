@@ -19,6 +19,7 @@ internal sealed class NodeTextPanel : UserControl
     private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
     private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
     private readonly TextBox _main = NewBox();
+    private readonly LineNumberGutter _gutter = new();
     private readonly TextBlock _mainLabel = MkLabel("");
     private readonly StackPanel _idHost;
     private DocSession? _doc;
@@ -43,9 +44,18 @@ internal sealed class NodeTextPanel : UserControl
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
+        var editorRow = new Grid();
+        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _gutter.SetValue(Grid.ColumnProperty, 0);
+        _main.SetValue(Grid.ColumnProperty, 1);
+        editorRow.Children.Add(_gutter);
+        editorRow.Children.Add(_main);
+
         Place(_idHost, 0);
         Place(_mainLabel, 1);
-        Place(_main, 2);
+        Place(editorRow, 2);
+        _gutter.Attach(_main);
 
         Content = grid;
 
@@ -102,6 +112,7 @@ internal sealed class NodeTextPanel : UserControl
         if (doc == null || slot == null)
         {
             IsEnabled = false;
+            _gutter.IsVisible = false;
             _assigned = "";
             SetBoxText(_main, "");
             _mainLabel.Text = L.T("任务文件文本");
@@ -110,6 +121,7 @@ internal sealed class NodeTextPanel : UserControl
         }
 
         IsEnabled = true;
+        _gutter.IsVisible = true;
         _mainLabel.Text = L.T("任务文件文本") + $"（{doc.PrimaryLanguage.Tag.Text}）";
         _assigned = TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value));
         SetBoxText(_main, _assigned);

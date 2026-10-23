@@ -85,7 +85,19 @@ internal sealed class DocView : UserControl
         _qstTable.LocRequested += ToggleView;
         _cnvTable.SelectedChanged += OnSelectedChanged;
         _qstTable.SelectedChanged += OnSelectedChanged;
-        _panel.TextEdited += () => { Doc.Dirty = true; DirtyChanged?.Invoke(); };
+        _panel.TextEdited += () =>
+        {
+            Doc.Dirty = true;
+            DirtyChanged?.Invoke();
+            if (_cnvTable.IsVisible)
+            {
+                if (_cnvTable.SelectedTextSlot is int s) _cnvTable.RefreshTextSlot(s);
+            }
+            else if (_qstTable.IsVisible && _qstTable.SelectedTextSlot is int q)
+            {
+                _qstTable.RefreshTextSlot(q);
+            }
+        };
 
         ShowCurrent();
     }
