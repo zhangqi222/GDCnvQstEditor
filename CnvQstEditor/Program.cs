@@ -65,6 +65,7 @@ internal static class Program
         builder.SetupWithoutStarting();
         var app = builder.Instance!;
         app.Name = "CnvQstEditor";
+        UiTheme.ApplyStartup();   // 按配置应用主题（跟随系统/明/暗），GUI 与冒烟共用
         return app;
     }
 

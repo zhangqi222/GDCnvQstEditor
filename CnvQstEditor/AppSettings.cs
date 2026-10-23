@@ -56,6 +56,9 @@ internal static class AppSettings
     /// <summary>全局文档视图（切换时应用到所有页签，并持久化供下次启动沿用）。</summary>
     public static DocViewMode ViewMode { get; set; } = DocViewMode.Visual;
 
+    /// <summary>主题模式：system=跟随系统 / light / dark（见 UiTheme 常量；持久化供下次启动沿用）。</summary>
+    public static string ThemeMode { get; set; } = UiTheme.ThemeSystem;
+
     public const int MaxRecentFiles = 10;
 
     static AppSettings() => Load();
@@ -73,8 +76,16 @@ internal static class AppSettings
             Dlc2Dir = root?["Dlc2Dir"]?.GetValue<string>() ?? "";
             Dlc3Dir = root?["Dlc3Dir"]?.GetValue<string>() ?? "";
             ModDir = root?["ModDir"]?.GetValue<string>() ?? "";
-            ViewMode = Enum.TryParse<DocViewMode>(root?["ViewMode"]?.GetValue<string>(), ignoreCase: true, out var mode)
+            // 旧版槽位视图已并入本地化视图：配置值 "Slot" 平滑迁移到 Localization，避免回退到可视化
+            string viewRaw = root?["ViewMode"]?.GetValue<string>() ?? "";
+            if (viewRaw.Equals("Slot", StringComparison.OrdinalIgnoreCase))
+                viewRaw = nameof(DocViewMode.Localization);
+            ViewMode = Enum.TryParse<DocViewMode>(viewRaw, ignoreCase: true, out var mode)
                 && Enum.IsDefined(typeof(DocViewMode), mode) ? mode : DocViewMode.Visual;
+            string themeRaw = root?["ThemeMode"]?.GetValue<string>() ?? UiTheme.ThemeSystem;
+            ThemeMode = themeRaw.Equals(UiTheme.ThemeLight, StringComparison.OrdinalIgnoreCase) ? UiTheme.ThemeLight
+                : themeRaw.Equals(UiTheme.ThemeDark, StringComparison.OrdinalIgnoreCase) ? UiTheme.ThemeDark
+                : UiTheme.ThemeSystem;
             RecentFiles = new List<string>();
             if (root?["RecentFiles"] is JsonArray recent)
             {
@@ -94,7 +105,7 @@ internal static class AppSettings
             bool missingKeys = root != null &&
                 (root["GameRoot"] == null || root["Dlc1Dir"] == null || root["Dlc2Dir"] == null ||
                  root["Dlc3Dir"] == null || root["ModDir"] == null || root["RecentFiles"] == null ||
-                 root["ViewMode"] == null);
+                 root["ViewMode"] == null || root["ThemeMode"] == null);
             if (missingKeys || srcPath == LegacyFilePath)
                 Save();
         }
@@ -128,6 +139,7 @@ internal static class AppSettings
             string md = JsonSerializer.Serialize(ModDir);
             string recent = JsonSerializer.Serialize(RecentFiles);
             string viewMode = JsonSerializer.Serialize(ViewMode.ToString());
+            string themeMode = JsonSerializer.Serialize(ThemeMode);
             string text = "// CnvQstEditor 配置（JSONC：允许 // 与 /* */ 注释，允许尾逗号）\n" +
                 "{\n" +
                 "  /* 游戏根目录：用于条件/动作中\"资源路径\"类字段的 打开 / 浏览 功能。\n" +
@@ -143,6 +155,8 @@ internal static class AppSettings
                 "  \"ModDir\": " + md + ",\n" +
                 "  /* 全局文档视图：Visual / Json / Localization / Slot / Dump；对所有页签生效。 */\n" +
                 "  \"ViewMode\": " + viewMode + ",\n" +
+                "  /* 主题模式：system=跟随系统 / light=明亮 / dark=暗色。 */\n" +
+                "  \"ThemeMode\": " + themeMode + ",\n" +
                 "  /* 最近打开的文件：新的在前，最多 10 条。 */\n" +
                 "  \"RecentFiles\": " + recent + "\n" +
                 "}\n";

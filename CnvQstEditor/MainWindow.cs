@@ -180,8 +180,7 @@ internal sealed class MainWindow : Window
             (DocViewMode.Visual, new KeyGesture(Key.D1, KeyModifiers.Control)),
             (DocViewMode.Json, new KeyGesture(Key.D2, KeyModifiers.Control)),
             (DocViewMode.Localization, new KeyGesture(Key.D3, KeyModifiers.Control)),
-            (DocViewMode.Slot, new KeyGesture(Key.D4, KeyModifiers.Control)),
-            (DocViewMode.Dump, new KeyGesture(Key.D5, KeyModifiers.Control)),
+            (DocViewMode.Dump, new KeyGesture(Key.D4, KeyModifiers.Control)),
         })
         {
             var item = MkItem(ViewName(mode), gesture, () => SetActiveView(mode));
@@ -235,10 +234,10 @@ internal sealed class MainWindow : Window
         {
             Width = 1,
             Margin = new Thickness(4, 3, 4, 3),
-            Background = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8)),
+            Background = UiTheme.GridLineBrush,
         });
         var viewRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Slot, DocViewMode.Dump })
+        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Dump })
         {
             var b = new RadioButton
             {
@@ -272,7 +271,6 @@ internal sealed class MainWindow : Window
         DocViewMode.Visual => L.T("Visual editor"),
         DocViewMode.Json => L.T("JSON editor (read-only)"),
         DocViewMode.Localization => L.T("Localization text (read-only)"),
-        DocViewMode.Slot => L.T("Slot guide (read-only)"),
         DocViewMode.Dump => L.T("DUMP view (read-only)"),
         _ => mode.ToString(),
     };
@@ -283,7 +281,6 @@ internal sealed class MainWindow : Window
         DocViewMode.Visual => L.T("Visual"),
         DocViewMode.Json => L.T("JSON"),
         DocViewMode.Localization => L.T("Localization"),
-        DocViewMode.Slot => L.T("Slots"),
         DocViewMode.Dump => L.T("DUMP"),
         _ => mode.ToString(),
     };
@@ -395,8 +392,7 @@ internal sealed class MainWindow : Window
         Bind(new KeyGesture(Key.D1, KeyModifiers.Control), () => SetActiveView(DocViewMode.Visual));
         Bind(new KeyGesture(Key.D2, KeyModifiers.Control), () => SetActiveView(DocViewMode.Json));
         Bind(new KeyGesture(Key.D3, KeyModifiers.Control), () => SetActiveView(DocViewMode.Localization));
-        Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Slot));
-        Bind(new KeyGesture(Key.D5, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
+        Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
 
         // 菜单标签里的访问键（文件(F) 等）在 Avalonia 内嵌 Menu 中不生效，按 Alt+字母 直接展开菜单。
         Bind(new KeyGesture(Key.F, KeyModifiers.Alt), () => OpenAccessMenu('F'));

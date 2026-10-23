@@ -3,15 +3,30 @@
              x:Class="CnvQstEditor.EditorApp">
   <Application.Resources>
     <ResourceDictionary>
+      <!-- 窗口背景：亮色用 Semi 灰阶相近值（介于 Grey0 #F9F9F9 与 Grey1 #E6E8EA 的柔和浅灰，
+           替换纯白避免刺眼）；暗色沿用 Semi 默认暗背景（SemiBackground0）。
+           编辑器底色在 UiTheme.EditorBrush（亮 #F9F9F9 / 暗 #232429），与窗口背景接近但可区分，
+           两处色值需同步调整。所有窗口经下方 Window 样式统一应用。 -->
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="UiWindowBackground" Color="#F2F3F5" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="UiWindowBackground" Color="#16161A" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="UiWindowBackground" Color="#F2F3F5" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
       <ResourceDictionary.MergedDictionaries>
         <!-- AvaloniaEdit（11.4.1）：只取控件模板（Base.xaml）。Simple/Fluent 主题包会
              通过 StaticResource 引用 Semi 未提供的资源键（FontSizeNormal 等）导致加载失败，
              因此不用主题包，选中色等在此按 Semi 配色补齐；暂不使用 Semi 的 AvaloniaEdit 主题包。 -->
         <ResourceInclude Source="avares://AvaloniaEdit/Themes/Base.xaml" />
       </ResourceDictionary.MergedDictionaries>
-      <SolidColorBrush x:Key="TextAreaSelectionBrush" Color="#3B82F6" Opacity="0.35" />
-      <SolidColorBrush x:Key="SearchPanelBackgroundBrush" Color="#FFFFFF" />
-      <SolidColorBrush x:Key="SearchPanelBorderBrush" Color="#E0E0E0" />
+      <SolidColorBrush x:Key="TextAreaSelectionBrush" Color="#0064FA" Opacity="0.35" />
+      <SolidColorBrush x:Key="SearchPanelBackgroundBrush" Color="#F9F9F9" />
+      <SolidColorBrush x:Key="SearchPanelBorderBrush" Color="#E6E8EA" />
       <FontFamily x:Key="SearchPanelFontFamily">Consolas</FontFamily>
       <x:Double x:Key="SearchPanelFontSize">12</x:Double>
     </ResourceDictionary>
@@ -21,9 +36,10 @@
     <StyleInclude Source="avares://Semi.Avalonia/Index.axaml" />
     <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
     <StyleInclude Source="avares://Semi.Avalonia.TreeDataGrid/Index.axaml" />
-    <!-- 所有窗口统一图标（主窗、批量面板与各对话框） -->
+    <!-- 所有窗口统一图标（主窗、批量面板与各对话框）+ 统一非纯白背景（随明暗主题切换） -->
     <Style Selector="Window">
       <Setter Property="Icon" Value="avares://CnvQstEditor/app.ico" />
+      <Setter Property="Background" Value="{DynamicResource UiWindowBackground}" />
     </Style>
   </Application.Styles>
 </Application>

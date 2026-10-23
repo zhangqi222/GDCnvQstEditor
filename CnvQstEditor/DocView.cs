@@ -4,23 +4,25 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit;
+using AvaloniaEdit.Folding;
+using AvaloniaEdit.Highlighting;
 using CnvQst;
 
 namespace CnvQstEditor;
 
-/// <summary>文档视图模式：只有可视化编辑器可修改；其余四种为只读。</summary>
+/// <summary>文档视图模式：只有可视化编辑器可修改；其余三种为只读。</summary>
 internal enum DocViewMode
 {
     Visual,
     Json,
     Localization,
-    Slot,
     Dump,
 }
 
 /// <summary>
-/// 单个文档视图：可视化表格（唯一可编辑入口）+ JSON / 本地化 / 槽位 / DUMP 四种只读视图。
-/// 只读视图占满整个编辑区；JSON、DUMP 用行号，本地化与槽位用“行号 + 槽位名”标注槽位。
+/// 单个文档视图：可视化表格（唯一可编辑入口）+ JSON / 本地化 / DUMP 三种只读视图。
+/// 只读视图占满整个编辑区；本地化视图 = 合并视图（行号 + 节点名 + 描述 + 建议标注在左侧，
+/// 内容为本地化文本），JSON 与 DUMP 用纯行号。
 /// </summary>
 internal sealed class DocView : UserControl
 {
@@ -41,19 +43,18 @@ internal sealed class DocView : UserControl
         VerticalAlignment = VerticalAlignment.Top,
     };
 
-    private readonly TextEditor _jsonEditor = NewReadOnlyEditor(lineNumbers: true);
-    private readonly TextEditor _locEditor = NewReadOnlyEditor(lineNumbers: false);
-    private readonly TextEditor _slotEditor = NewReadOnlyEditor(lineNumbers: false);
-    private readonly TextEditor _dumpEditor = NewReadOnlyEditor(lineNumbers: true);
-    private readonly SlotMargin _locMargin = new();
-    private readonly SlotMargin _slotMargin = new();
-    private readonly TextBlock _slotInfo = new()
+    private readonly TextEditor _jsonEditor = UiEditors.ReadOnly();
+    private FoldingManager? _jsonFolding;   // JSON 折叠（首次进入 JSON 视图时安装）
+    private readonly RowMargin _locRowMargin = new();
+    private readonly TextEditor _locEditor;
+    private readonly TextEditor _dumpEditor = UiEditors.ReadOnly();
+    private readonly TextBlock _locInfo = new()
     {
         Foreground = UiTheme.MutedBrush,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(10, 6, 10, 4),
     };
-    private readonly Grid _slotHost = new() { IsVisible = false };
+    private readonly Grid _locHost = new() { IsVisible = false };
 
     private readonly Grid _host = new();
     private readonly NodeTextPanel _panel = new() { IsVisible = false, ClipToBounds = true };
@@ -61,7 +62,7 @@ internal sealed class DocView : UserControl
     {
         Height = 6,
         HorizontalAlignment = HorizontalAlignment.Stretch,
-        Background = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0)),
+        Background = UiTheme.GridLineBrush,
         ResizeBehavior = GridResizeBehavior.PreviousAndNext,
         ResizeDirection = GridResizeDirection.Rows,
         IsVisible = false,
@@ -76,8 +77,8 @@ internal sealed class DocView : UserControl
         FontSize = 11,
         CornerRadius = new CornerRadius(10),
         BorderThickness = new Thickness(1),
-        BorderBrush = new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)),
-        Background = Brushes.White,
+        BorderBrush = UiTheme.GridLineBrush,
+        Background = UiTheme.EditorBrush,
         Foreground = UiTheme.MutedBrush,
     };
 
@@ -87,18 +88,18 @@ internal sealed class DocView : UserControl
     public DocView(DocSession doc)
     {
         Doc = doc;
+        _locEditor = UiEditors.ReadOnly(_locRowMargin);
+        // JSON 语法着色：AvaloniaEdit 内置 JSON 高亮定义（Json.xshd），配色随主题由 UiTheme.Refresh 同步
+        _jsonEditor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".json");
 
-        _locEditor.TextArea.LeftMargins.Insert(0, _locMargin);
-        _slotEditor.TextArea.LeftMargins.Insert(0, _slotMargin);
+        _locHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _locHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_locInfo, 0);
+        Grid.SetRow(_locEditor, 1);
+        _locHost.Children.Add(_locInfo);
+        _locHost.Children.Add(_locEditor);
 
-        _slotHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _slotHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_slotInfo, 0);
-        Grid.SetRow(_slotEditor, 1);
-        _slotHost.Children.Add(_slotInfo);
-        _slotHost.Children.Add(_slotEditor);
-
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locEditor, _slotHost, _dumpEditor, _emptyHint })
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locHost, _dumpEditor, _emptyHint })
             _host.Children.Add(c);
 
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -143,28 +144,7 @@ internal sealed class DocView : UserControl
         SetView(DocViewMode.Visual);
     }
 
-    private static TextEditor NewReadOnlyEditor(bool lineNumbers)
-    {
-        var editor = new TextEditor
-        {
-            IsReadOnly = true,
-            ShowLineNumbers = lineNumbers,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 12,
-            WordWrap = false,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Background = Brushes.White,
-            Padding = new Thickness(4, 2, 4, 2),
-            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
-            LineNumbersMargin = new Thickness(4, 0, 6, 0),
-        };
-        editor.TextArea.Foreground = UiTheme.TextBrush;
-        editor.TextArea.Background = Brushes.White;
-        return editor;
-    }
-
-    /// <summary>切换整体视图（可视化 / JSON / 本地化 / 槽位 / DUMP）。</summary>
+    /// <summary>切换整体视图（可视化 / JSON / 本地化 / DUMP）。</summary>
     public void SetView(DocViewMode mode)
     {
         Mode = mode;
@@ -178,12 +158,8 @@ internal sealed class DocView : UserControl
                 LoadJson();
                 break;
             case DocViewMode.Localization:
-                ShowSingle(_locEditor);
+                ShowSingle(_locHost);
                 LoadLocalization();
-                break;
-            case DocViewMode.Slot:
-                ShowSingle(_slotHost);
-                LoadSlots();
                 break;
             case DocViewMode.Dump:
                 ShowSingle(_dumpEditor);
@@ -276,74 +252,68 @@ internal sealed class DocView : UserControl
 
     private void ShowOnly(Control target)
     {
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locEditor, _slotHost, _dumpEditor, _emptyHint })
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locHost, _dumpEditor, _emptyHint })
             c.IsVisible = c == target;
     }
 
+    /// <summary>JSON 视图：语法着色（key/string/number/keyword/注释）+ 对象/数组折叠。</summary>
     private void LoadJson()
     {
         try
         {
-            _jsonEditor.Text = Doc.Cnv != null
+            ApplyJson(Doc.Cnv != null
                 ? JsonIO.Export(Doc.Cnv, Doc.Title)
-                : Doc.Qst != null ? JsonIO.Export(Doc.Qst, Doc.Title) : "";
+                : Doc.Qst != null ? JsonIO.Export(Doc.Qst, Doc.Title) : "");
         }
         catch (Exception ex)
         {
-            _jsonEditor.Text = ex.Message;
+            ApplyJson(ex.Message);
         }
     }
 
+    private void ApplyJson(string text)
+    {
+        _jsonEditor.Text = text;
+        _jsonFolding ??= FoldingManager.Install(_jsonEditor.TextArea);
+        _jsonFolding.UpdateFoldings(JsonScanner.Analyze(text), -1);
+    }
+
+    /// <summary>
+    /// 本地化合并视图：左侧行号列 = 行号 + 节点名（按类型着色）+ 节点描述 + 槽位建议（均为固定内容），
+    /// 正文 = 本地化文本（换行压成 {^n} 保持单行对齐）。顶部保留统计与“未对齐请回可视化编辑器”提示。
+    /// </summary>
     private void LoadLocalization()
     {
         try
         {
             var texts = Doc.PrimaryLanguage.Texts;
-            var labels = LocalizedRoles(texts.Count);
-            _locMargin.SetLabels(labels);
-            _locEditor.Text = string.Join("\n", texts.Select(t => OneLine(t.Text)));
-        }
-        catch (Exception ex)
-        {
-            _locMargin.SetLabels([]);
-            _locEditor.Text = ex.Message;
-        }
-    }
-
-    private List<string> LocalizedRoles(int count)
-    {
-        var labels = new List<string>(count);
-        if (Doc.Cnv != null)
-        {
-            var slots = SlotGuide.ForCnv(Doc.Cnv);
-            for (int i = 0; i < count; i++)
-                labels.Add(i < slots.Count ? SlotText.Role(slots[i]) : L.T("(no bound node)"));
-        }
-        else if (Doc.Qst != null)
-        {
-            var slots = SlotGuide.ForQst(Doc.Qst);
-            for (int i = 0; i < count; i++)
-                labels.Add(i < slots.Count ? SlotText.Role(slots[i]) : L.T("(no matching slot)"));
-        }
-        return labels;
-    }
-
-    private void LoadSlots()
-    {
-        try
-        {
             var slots = Doc.Cnv != null ? SlotGuide.ForCnv(Doc.Cnv)
                 : Doc.Qst != null ? SlotGuide.ForQst(Doc.Qst)
                 : [];
-            _slotMargin.SetLabels(slots.Select(SlotText.Role).ToList());
-            _slotEditor.Text = string.Join("\n", slots.Select(SlotText.Placeholder));
-            _slotInfo.Text = L.F("Total {0} slots · {1} suggested · newline: {{^n}}", slots.Count, slots.Count(s => s.Suggested));
+            var rows = new List<RowLabel>(texts.Count);
+            for (int i = 0; i < texts.Count; i++)
+            {
+                if (i < slots.Count)
+                {
+                    var s = slots[i];
+                    rows.Add(new RowLabel(i + 1, SlotText.Role(s), SlotText.Brush(s), SlotText.Desc(s), SlotText.Advice(s)));
+                }
+                else
+                {
+                    rows.Add(new RowLabel(i + 1, L.T("(no matching slot)")));
+                }
+            }
+            _locRowMargin.SetRows(rows);
+            _locEditor.Text = string.Join("\n", texts.Select(t => OneLine(t.Text)));
+            _locInfo.Text = L.F(
+                "Total {0} slots · {1} suggested · {2} must stay empty · newline: {{^n}} · If rows look misaligned, edit in the visual editor.",
+                slots.Count, slots.Count(s => s.Suggested), slots.Count(s => s.MustBeEmpty));
         }
         catch (Exception ex)
         {
-            _slotMargin.SetLabels([]);
-            _slotEditor.Text = ex.Message;
-            _slotInfo.Text = "";
+            _locRowMargin.SetRows(null);
+            _locEditor.Text = ex.Message;
+            _locInfo.Text = "";
         }
     }
 
@@ -382,9 +352,6 @@ internal sealed class DocView : UserControl
                 break;
             case DocViewMode.Localization:
                 LoadLocalization();
-                break;
-            case DocViewMode.Slot:
-                LoadSlots();
                 break;
             case DocViewMode.Dump:
                 LoadDump();

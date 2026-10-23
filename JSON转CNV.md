@@ -871,11 +871,11 @@ CnvQstEditor-cli.exe convert <spec.json> [-o out.cnv]
 ### 13.2 模板
 
 ```bash
-CnvQstEditor-cli.exe sample cnv                 # 打印到 stdout
-CnvQstEditor-cli.exe sample cnv -o sample.json  # 写到文件
+CnvQstEditor-cli.exe sample cnv                    # 释放内置 cnv_full.json 到当前目录
+CnvQstEditor-cli.exe sample cnv -o D:\mydir        # 释放到指定目录
 ```
 
-模板只包含最小结构，适合作为起点。
+`sample` 释放的是内置全量示例（cnv_full.json / qst_full.json，含逐字段描述），可直接作为 convert 输入或删改起点。
 
 ### 13.3 查看与验证
 

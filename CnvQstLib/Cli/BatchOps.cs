@@ -36,8 +36,8 @@ public sealed class BatchItem
         get
         {
             string reason =
-                Error ?? (!ParseOk ? "解析失败" : !Tiled ? "记录未铺满文件" : !LocOk ? "未落在声明的本地化偏移"
-                    : !RoundTripOk ? "round-trip 不一致" : "");
+                Error ?? (!ParseOk ? CliL.T("解析失败") : !Tiled ? CliL.T("记录未铺满文件") : !LocOk ? CliL.T("未落在声明的本地化偏移")
+                    : !RoundTripOk ? CliL.T("round-trip 不一致") : "");
             if (LangOk) return reason;
             return (reason.Length > 0 ? reason + "\n" : "") + LangDetail;
         }
@@ -46,8 +46,8 @@ public sealed class BatchItem
     /// <summary>通过时的简要说明（节点/任务数与文本槽行数）。</summary>
     public string Summary => Kind switch
     {
-        "CNV" or "CNV-JSON" => $"CNV {StepsOrTasks} 节点 · 文本槽 {TextSlots} 行",
-        "QST2" or "QST2-JSON" => $"QST {StepsOrTasks} task · 文本槽 {TextSlots} 行",
+        "CNV" or "CNV-JSON" => CliL.F("CNV {0} 节点 · 文本槽 {1} 行", StepsOrTasks, TextSlots),
+        "QST2" or "QST2-JSON" => CliL.F("QST {0} task · 文本槽 {1} 行", StepsOrTasks, TextSlots),
         _ => Kind,
     };
 }
@@ -142,7 +142,7 @@ public static class BatchOps
                 rewritten = q.Write();
                 break;
             default:
-                item.Error = "未知模型";
+                item.Error = CliL.T("未知模型");
                 return item;
         }
 
@@ -183,7 +183,7 @@ public static class BatchOps
             ? CnvFile.Parse(data)
             : Path.GetExtension(file).Equals(".qst", StringComparison.OrdinalIgnoreCase)
                 ? QstFile.Parse(data)
-                : throw new GdParseException($"无法按扩展名识别格式：{file}（仅支持 .cnv/.qst）");
+                : throw new GdParseException(CliL.F("无法按扩展名识别格式：{0}（仅支持 .cnv/.qst）", file));
 
     /// <summary>扫描目录（或单文件）并逐个检查。</summary>
     public static List<BatchItem> Scan(string path)
@@ -215,7 +215,7 @@ public static class BatchOps
                 {
                     CnvFile c => TextExport.CnvTxt(c),
                     QstFile q => TextExport.QstTxt(q),
-                    _ => throw new GdParseException("未知模型"),
+                    _ => throw new GdParseException(CliL.T("未知模型")),
                 };
                 string target = TargetPath(file, path, outDir, flat, ".txt");
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -246,7 +246,7 @@ public static class BatchOps
                 {
                     CnvFile c => JsonIO.Export(c, name),
                     QstFile q => JsonIO.Export(q, name),
-                    _ => throw new GdParseException("未知模型"),
+                    _ => throw new GdParseException(CliL.T("未知模型")),
                 };
                 string target = TargetPath(file, path, outDir, flat, ".json");
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -273,7 +273,7 @@ public static class BatchOps
             string stem = Path.GetFileNameWithoutExtension(file);
             if (!txts.TryGetValue(stem, out string? txtFile))
             {
-                results.Add((file, null, null, "未找到同名 txt"));
+                results.Add((file, null, null, CliL.T("未找到同名 txt")));
                 continue;
             }
             try
@@ -311,18 +311,18 @@ public static class BatchOps
         {
             CnvFile c => c.Write(),
             QstFile q => q.Write(),
-            _ => throw new GdParseException("未知模型"),
+            _ => throw new GdParseException(CliL.T("未知模型")),
         };
         // 重解析确认无损
         if (model is CnvFile)
         {
             var c2 = CnvFile.Parse(rewritten);
-            if (!c2.Valid) throw new GdParseException($"回写后解析失败：{c2.Error}");
+            if (!c2.Valid) throw new GdParseException(CliL.F("回写后解析失败：{0}", c2.Error));
         }
         else
         {
             var q2 = QstFile.Parse(rewritten);
-            if (!q2.Valid) throw new GdParseException($"回写后解析失败：{q2.Error}");
+            if (!q2.Valid) throw new GdParseException(CliL.F("回写后解析失败：{0}", q2.Error));
         }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
         File.WriteAllBytes(outPath, rewritten);
@@ -337,13 +337,13 @@ public static class BatchOps
         {
             CnvFile c => c.PrimaryLanguage.Texts,
             QstFile q => q.PrimaryLanguage.Texts,
-            _ => throw new GdParseException("未知模型"),
+            _ => throw new GdParseException(CliL.T("未知模型")),
         };
         var rows = new List<(int, string, string)>();
         int n = Math.Max(lines.Count, texts.Count);
         for (int i = 0; i < n; i++)
-            rows.Add((i + 1, i < lines.Count ? lines[i] : "<缺失>",
-                      i < texts.Count ? texts[i].Text : "<缺失>"));
+            rows.Add((i + 1, i < lines.Count ? lines[i] : CliL.T("<缺失>"),
+                      i < texts.Count ? texts[i].Text : CliL.T("<缺失>")));
         return rows;
     }
 

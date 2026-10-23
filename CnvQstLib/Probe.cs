@@ -1,4 +1,5 @@
 using System.Text;
+using CnvQst.Cli;
 
 namespace CnvQst;
 
@@ -238,8 +239,8 @@ public static class Probe
     {
         Directory.CreateDirectory(dir);
         var sb = new StringBuilder();
-        sb.AppendLine("探测器输出：" + Path.GetFullPath(dir));
-        sb.AppendLine("用法：用官方编辑器逐个打开，看它显示的条件/动作名、比较符、开关与文本槽位。");
+        sb.AppendLine(CliL.T("探测器输出：") + Path.GetFullPath(dir));
+        sb.AppendLine(CliL.T("用法：用官方编辑器逐个打开，看它显示的条件/动作名、比较符、开关与文本槽位。"));
         sb.AppendLine();
         int ok = 0;
         foreach (var it in items)
@@ -252,7 +253,7 @@ public static class Probe
                           (check == "OK" ? "" : $"  ← {check}"));
         }
         sb.AppendLine();
-        sb.AppendLine($"自检 {ok}/{items.Count()} 通过（铺满 + locOffset + round-trip 逐字节一致）。");
+        sb.AppendLine(CliL.F("自检 {0}/{1} 通过（铺满 + locOffset + round-trip 逐字节一致）。", ok, items.Count()));
         string text = sb.ToString();
         File.WriteAllText(Path.Combine(dir, "索引.txt"), text);
         return text;
@@ -265,16 +266,16 @@ public static class Probe
             if (data.Length >= 4 && data[0] == (byte)'C')
             {
                 var c = CnvFile.Parse(data);
-                if (!c.Valid) return c.Error ?? "解析失败";
-                if (!c.Tiled) return "记录未铺满文件";
-                if (!c.LocOffsetMatches) return "本地化偏移不符";
-                return c.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
+                if (!c.Valid) return c.Error ?? CliL.T("解析失败");
+                if (!c.Tiled) return CliL.T("记录未铺满文件");
+                if (!c.LocOffsetMatches) return CliL.T("本地化偏移不符");
+                return c.Write().SequenceEqual(data) ? "OK" : CliL.T("round-trip 不一致");
             }
             var q = QstFile.Parse(data);
-            if (!q.Valid) return q.Error ?? "解析失败";
-            if (!q.Tiled) return "记录未铺满文件";
-            if (!q.LocOffsetMatches) return "本地化偏移不符";
-            return q.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
+            if (!q.Valid) return q.Error ?? CliL.T("解析失败");
+            if (!q.Tiled) return CliL.T("记录未铺满文件");
+            if (!q.LocOffsetMatches) return CliL.T("本地化偏移不符");
+            return q.Write().SequenceEqual(data) ? "OK" : CliL.T("round-trip 不一致");
         }
         catch (Exception e) { return e.Message; }
     }

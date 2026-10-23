@@ -463,8 +463,8 @@ internal sealed class ScriptListDialog : Window
             FontWeight = FontWeight.SemiBold,
             Padding = new Thickness(12, 8, 8, 8),
             Background = isCondition
-                ? new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xFE))
-                : new SolidColorBrush(Color.FromRgb(0xE2, 0xF3, 0xEA)),
+                ? UiTheme.BannerBlueBrush
+                : UiTheme.BannerGreenBrush,
         };
 
         // 关系逻辑只保留一处：条件由内嵌 ScriptListEditor 顶部的"关系逻辑"下拉统一提供；
@@ -786,10 +786,14 @@ internal sealed class SettingsDialog : Window
     private readonly TextBox _dlc3 = new() { Watermark = L.T(@"Auto-filled: <root>\GDX3"), MinWidth = 320 };
     private readonly TextBox _mod = new() { Watermark = L.T(@"Optional; e.g. G:\GD\MODS\MyMod"), MinWidth = 320 };
     private readonly DirRow _rootRow, _dlc1Row, _dlc2Row, _dlc3Row, _modRow;
+    private readonly string _themeOriginal;   // 打开弹窗前的主题模式（取消时回退）
+    private string _theme;                    // 弹窗内当前选择的主题模式
 
     internal SettingsDialog()
     {
         DialogChrome.Init(this, L.T("Settings"), 720, 0, SizeToContent.Height);
+        _themeOriginal = AppSettings.ThemeMode;
+        _theme = _themeOriginal;
         _root.Text = AppSettings.GameRoot;
         _dlc1.Text = AppSettings.Dlc1Dir;
         _dlc2.Text = AppSettings.Dlc2Dir;
@@ -837,6 +841,7 @@ internal sealed class SettingsDialog : Window
             AppSettings.Dlc2Dir = _dlc2.Text?.Trim() ?? "";
             AppSettings.Dlc3Dir = _dlc3.Text?.Trim() ?? "";
             AppSettings.ModDir = _mod.Text?.Trim() ?? "";
+            AppSettings.ThemeMode = _theme;
             string? err = AppSettings.Save();
             if (err != null)
                 await MsgBox.Show(this,
@@ -845,8 +850,31 @@ internal sealed class SettingsDialog : Window
             Close(true);
         };
         var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
+        // 取消：主题恢复为打开弹窗前的模式（切换时已即时预览）
+        cancel.Click += (_, _) => UiTheme.Apply(_themeOriginal);
 
         var stack = new StackPanel { Margin = new Thickness(16) };
+        // 主题模式：跟随系统 / 明亮 / 暗色（切换即时生效预览，确定时写入配置）
+        var themeRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 16 };
+        foreach (var (value, label) in new[]
+                 {
+                     (UiTheme.ThemeSystem, L.T("Follow system")),
+                     (UiTheme.ThemeLight, L.T("Light theme")),
+                     (UiTheme.ThemeDark, L.T("Dark theme")),
+                 })
+        {
+            var rb = new RadioButton { GroupName = "ThemeMode", Content = label, IsChecked = value == _theme };
+            rb.IsCheckedChanged += (_, _) =>
+            {
+                if (rb.IsChecked == true)
+                {
+                    _theme = value;
+                    UiTheme.Apply(value);
+                }
+            };
+            themeRow.Children.Add(rb);
+        }
+        stack.Children.Add(DialogChrome.FieldRow(L.T("UI theme"), themeRow));
         stack.Children.Add(DialogChrome.FieldRow(L.T("Game root folder"), _rootRow.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC1 folder"), _dlc1Row.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 folder"), _dlc2Row.Host));

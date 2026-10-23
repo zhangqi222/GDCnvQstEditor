@@ -1,4 +1,5 @@
 using System.Text;
+using CnvQst.Cli;
 
 namespace CnvQst;
 
@@ -26,7 +27,7 @@ public enum SlotKind
 
 /// <summary>
 /// 一个本地化槽位的结构信息。Index 为 0 起的槽位下标；TaskNo / ItemNo 为 1 起的显示序号
-/// （CNV link 的 ItemNo 是跳转目标节点下标）。
+/// （CNV link 的 ItemNo 是跳转目标节点下标）。Desc 为该槽的简短语义描述（中文基准，GUI/CLI 各自本地化）。
 /// </summary>
 public sealed record SlotInfo(
     int Index,
@@ -38,28 +39,57 @@ public sealed record SlotInfo(
 {
     public bool IsLink => Kind == SlotKind.CnvLink;
 
-    /// <summary>CLI 用的中文槽位名（GUI 走语言包，不直接使用）。</summary>
-    public string RoleZh => Kind switch
+    /// <summary>简短节点描述（中文基准，经 CliL 本地化；尽量 ≤8 字，GUI/CLI 明细列共用）。</summary>
+    public string Desc => CliL.T(Kind switch
     {
-        SlotKind.CnvRoot => "说话人名（根节点）",
-        SlotKind.CnvSpeech => "台词",
+        SlotKind.CnvRoot => "对话起点",
+        SlotKind.CnvSpeech => "正文台词",
         SlotKind.CnvContinue => "继续选项",
         SlotKind.CnvAccept => "接受选项",
         SlotKind.CnvDecline => "拒绝选项",
-        SlotKind.CnvEnd => "结束对话",
-        SlotKind.CnvLink => $"跳转 #{ItemNo}",
-        SlotKind.CnvRandom => "随机选项",
-        SlotKind.CnvGeneric => "通用节点",
-        SlotKind.CnvUnknown => "未知类型",
-        SlotKind.QstGroup => "任务组名",
-        SlotKind.QstName => "任务名",
-        SlotKind.QstTaskTitle => $"T{TaskNo} 标题",
-        SlotKind.QstTaskDescription => $"T{TaskNo} 描述",
-        SlotKind.QstIncentive => $"T{TaskNo} OnAccept #{ItemNo}",
-        SlotKind.QstObjective => $"T{TaskNo} 目标 #{ItemNo}",
-        SlotKind.QstEvent => $"T{TaskNo} OnComplete #{ItemNo}",
-        _ => $"槽位 {Index + 1}",
+        SlotKind.CnvEnd => "结束台词",
+        SlotKind.CnvLink => "引用跳转",
+        SlotKind.CnvRandom => "随机分支",
+        SlotKind.CnvGeneric => "普通节点",
+        SlotKind.CnvUnknown => "未识别",
+        SlotKind.QstGroup => "任务分组",
+        SlotKind.QstName => "任务名称",
+        SlotKind.QstTaskTitle => "任务标题",
+        SlotKind.QstTaskDescription => "任务描述",
+        SlotKind.QstIncentive => "接受时触发",
+        SlotKind.QstObjective => "任务目标",
+        SlotKind.QstEvent => "完成时触发",
+        _ => "",
+    });
+
+    /// <summary>CLI 用的槽位名（中文基准，经 CliL 本地化；GUI 走语言包，不直接使用）。</summary>
+    public string RoleZh => Kind switch
+    {
+        SlotKind.CnvRoot => CliL.T("说话人名（根节点）"),
+        SlotKind.CnvSpeech => CliL.T("台词"),
+        SlotKind.CnvContinue => CliL.T("继续选项"),
+        SlotKind.CnvAccept => CliL.T("接受选项"),
+        SlotKind.CnvDecline => CliL.T("拒绝选项"),
+        SlotKind.CnvEnd => CliL.T("结束对话"),
+        SlotKind.CnvLink => CliL.F("跳转 #{0}", ItemNo),
+        SlotKind.CnvRandom => CliL.T("随机选项"),
+        SlotKind.CnvGeneric => CliL.T("通用节点"),
+        SlotKind.CnvUnknown => CliL.T("未知类型"),
+        SlotKind.QstGroup => CliL.T("任务组名"),
+        SlotKind.QstName => CliL.T("任务名"),
+        SlotKind.QstTaskTitle => CliL.F("T{0} 标题", TaskNo),
+        SlotKind.QstTaskDescription => CliL.F("T{0} 描述", TaskNo),
+        SlotKind.QstIncentive => CliL.F("T{0} OnAccept #{1}", TaskNo, ItemNo),
+        SlotKind.QstObjective => CliL.F("T{0} 目标 #{1}", TaskNo, ItemNo),
+        SlotKind.QstEvent => CliL.F("T{0} OnComplete #{1}", TaskNo, ItemNo),
+        _ => CliL.F("槽位 {0}", Index + 1),
     };
+
+    /// <summary>CLI 用的填写建议（肯定词，避免被忽略）：建议输入 / 必须为空 / 可为空。</summary>
+    public string AdviceZh => Suggested ? CliL.T("建议输入内容")
+        : MustBeEmpty ? CliL.T("必须为空（格式保留）")
+        : IsLink ? CliL.T("可为空（复用目标文本）")
+        : CliL.T("可为空");
 }
 
 /// <summary>
@@ -112,13 +142,7 @@ public static class SlotGuide
 
     public static int SuggestedCount(IEnumerable<SlotInfo> slots) => slots.Count(s => s.Suggested);
 
-    public static string HintZh(SlotInfo slot) =>
-        slot.Suggested ? "请输入文本内容"
-        : slot.MustBeEmpty ? "应为空（格式保留）"
-        : slot.IsLink ? "可为空（复用目标节点文本）"
-        : "可为空";
-
-    /// <summary>单文件/单模型的完整槽位明细（CLI 输出）。</summary>
+    /// <summary>单文件/单模型的完整槽位明细（CLI 输出）：行号 / 槽位名 / 描述 / 建议 / 当前内容。</summary>
     public static string Report(object model) => model switch
     {
         CnvFile c => Report(ForCnv(c), "CNV", Primary(c)),
@@ -131,30 +155,42 @@ public static class SlotGuide
         int suggested = slots.Count(s => s.Suggested);
         int mustEmpty = slots.Count(s => s.MustBeEmpty);
         int optional = slots.Count - suggested - mustEmpty;
-        var hints = slots.Select((s, i) => s.Suggested && !IsFilled(lang, i)
-            ? HintZh(s) + "（当前为空）"
-            : HintZh(s)).ToList();
-        int emptySuggested = hints.Count(h => h.EndsWith("（当前为空）", StringComparison.Ordinal));
+        int emptySuggested = slots.Count(s => s.Suggested && !IsFilled(lang, s.Index));
 
         var sb = new StringBuilder();
-        sb.AppendLine($"{kind} 槽位明细：总槽位 {slots.Count} 行，建议填写 {suggested} 行，可为空 {optional} 行"
-            + (mustEmpty > 0 ? $"，格式保留应为空 {mustEmpty} 行。" : "。"));
+        sb.AppendLine(mustEmpty > 0
+            ? CliL.F("{0} 槽位明细：总槽位 {1} 行，建议填写 {2} 行，可为空 {3} 行，格式保留必须为空 {4} 行。", kind, slots.Count, suggested, optional, mustEmpty)
+            : CliL.F("{0} 槽位明细：总槽位 {1} 行，建议填写 {2} 行，可为空 {3} 行。", kind, slots.Count, suggested, optional));
         if (lang != null)
         {
-            string mark = lang.Texts.Count == slots.Count ? "" : "（与应有槽位数不一致）";
-            sb.AppendLine($"语言 {lang.Tag.Text}：实际 {lang.Texts.Count} 行{mark}。");
+            string mark = lang.Texts.Count == slots.Count ? "" : CliL.T("（与应有槽位数不一致）");
+            sb.AppendLine(CliL.F("语言 {0}：实际 {1} 行{2}。", lang.Tag.Text, lang.Texts.Count, mark));
         }
         if (emptySuggested > 0)
-            sb.AppendLine($"其中建议填写但当前为空：{emptySuggested} 行（只提醒，不影响转换）。");
-        sb.AppendLine("换行请写 {^n}；建议填写仅为提醒，不阻止转换。");
-        sb.AppendLine(Pad("  行", 6) + Pad("槽位名", 30) + "建议");
+            sb.AppendLine(CliL.F("其中建议输入但当前为空：{0} 行（只提醒，不影响转换）。", emptySuggested));
+        sb.AppendLine(CliL.T("换行请写 {^n}；建议仅为提醒，不阻止转换；如发现未对齐，请在可视化编辑器（GUI）中修改。"));
+        sb.AppendLine(Pad(CliL.T("  行"), 6) + Pad(CliL.T("槽位名"), 26) + Pad(CliL.T("描述"), 11) + Pad(CliL.T("建议"), 22) + CliL.T("内容"));
         for (int i = 0; i < slots.Count; i++)
-            sb.AppendLine(Pad($"  {i + 1}", 6) + Pad(slots[i].RoleZh, 30) + hints[i]);
+        {
+            var s = slots[i];
+            string content = OneLine(Filled(lang, s.Index));
+            sb.AppendLine(Pad($"  {i + 1}", 6) + Pad(s.RoleZh, 26) + Pad(s.Desc, 11)
+                + Pad(s.AdviceZh, 22) + (content.Length > 0 ? content : CliL.T("（空）")));
+        }
         return sb.ToString();
     }
 
-    private static bool IsFilled(LanguageBlock? lang, int index) =>
-        lang != null && index < lang.Texts.Count && lang.Texts[index].Text.Length > 0;
+    private static string Filled(LanguageBlock? lang, int index) =>
+        lang != null && index < lang.Texts.Count ? lang.Texts[index].Text : "";
+
+    private static bool IsFilled(LanguageBlock? lang, int index) => Filled(lang, index).Length > 0;
+
+    /// <summary>内容压成单行并截断（CLI 终端宽度有限；{^n} 表示换行）。</summary>
+    private static string OneLine(string text)
+    {
+        text = text.Replace("\r\n", "{^n}").Replace("\n", "{^n}").Replace("\r", "{^n}");
+        return text.Length <= 40 ? text : text[..40] + "…";
+    }
 
     /// <summary>按终端显示宽度补空格（中日韩字符占 2 列），让明细表列对齐。</summary>
     private static string Pad(string text, int width)

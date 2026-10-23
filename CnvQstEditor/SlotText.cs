@@ -2,9 +2,13 @@ using CnvQst;
 
 namespace CnvQstEditor;
 
-/// <summary>槽位名/建议文案的 GUI 本地化映射（CLI 用 SlotInfo.RoleZh，不经过这里）。</summary>
+/// <summary>
+/// 槽位 UI 文案的 GUI 本地化（CLI 用 SlotInfo.RoleZh / AdviceZh，不经过这里）。
+/// 节点名/描述/建议三列均为固定内容，随 <see cref="RowMargin"/> 一次装载。
+/// </summary>
 internal static class SlotText
 {
+    /// <summary>槽位名（与可视化编辑器节点列同源：类型术语走 types 段括注）。</summary>
     public static string Role(SlotInfo s) => s.Kind switch
     {
         SlotKind.CnvRoot => L.T("Speaker name (root)"),
@@ -27,15 +31,56 @@ internal static class SlotText
         _ => L.T("(no matching slot)"),
     };
 
-    public static string Hint(SlotInfo s) =>
-        s.Suggested ? L.T("Suggested")
-        : s.MustBeEmpty ? L.T("Must be empty (reserved by format)")
-        : s.IsLink ? L.T("May be empty") + " · " + L.T("Reuses the target node text")
+    /// <summary>简短节点描述（≤8 字级别的固定短语）。</summary>
+    public static string Desc(SlotInfo s) => s.Kind switch
+    {
+        SlotKind.CnvRoot => L.T("Conversation start"),
+        SlotKind.CnvSpeech => L.T("Main speech"),
+        SlotKind.CnvContinue => L.T("Continue option"),
+        SlotKind.CnvAccept => L.T("Accept option"),
+        SlotKind.CnvDecline => L.T("Decline option"),
+        SlotKind.CnvEnd => L.T("Closing line"),
+        SlotKind.CnvLink => L.T("Link reference"),
+        SlotKind.CnvRandom => L.T("Random branch"),
+        SlotKind.CnvGeneric => L.T("Plain node"),
+        SlotKind.CnvUnknown => L.T("Unrecognized"),
+        SlotKind.QstGroup => L.T("Quest group"),
+        SlotKind.QstName => L.T("Quest name"),
+        SlotKind.QstTaskTitle => L.T("Quest task title"),
+        SlotKind.QstTaskDescription => L.T("Quest task description"),
+        SlotKind.QstIncentive => L.T("Fired on accept"),
+        SlotKind.QstObjective => L.T("Quest objective"),
+        SlotKind.QstEvent => L.T("Fired on complete"),
+        _ => "",
+    };
+
+    /// <summary>槽位建议（肯定词，明确指令避免被忽略）。</summary>
+    public static string Advice(SlotInfo s) =>
+        s.Suggested ? L.T("Suggest entering content")
+        : s.MustBeEmpty ? L.T("Must stay empty (reserved by format)")
+        : s.IsLink ? L.T("May be empty (reuses target text)")
         : L.T("May be empty");
 
-    public static string Placeholder(SlotInfo s) =>
-        s.Suggested ? L.T("Enter text here")
-        : s.MustBeEmpty ? L.T("Must be empty (reserved by format)")
-        : s.IsLink ? L.T("May be empty") + " · " + L.T("Reuses the target node text")
-        : L.T("May be empty");
+    /// <summary>单行占位提示（建议词同款，用于槽位视图的正文占位；合并视图已并入本地化内容，不再使用占位）。</summary>
+    public static string Placeholder(SlotInfo s) => Advice(s);
+
+    /// <summary>槽位建议的强调色：建议输入=accent、必须为空=warn、可为空=muted。</summary>
+    public static Avalonia.Media.IBrush AdviceBrush(SlotInfo s) =>
+        s.Suggested ? UiTheme.AccentBrush
+        : s.MustBeEmpty ? UiTheme.WarnBrush
+        : UiTheme.MutedBrush;
+
+    /// <summary>节点名着色：与可视化编辑器同款（台词=accent、拒绝/结束=danger、跳转=success、
+    /// QST task 标题=accent、描述/触发器=muted，其余正文色）。</summary>
+    public static Avalonia.Media.IBrush Brush(SlotInfo s) => s.Kind switch
+    {
+        SlotKind.CnvSpeech => UiTheme.AccentBrush,          // 台词（可视化 type=1 同款）
+        SlotKind.CnvDecline or SlotKind.CnvEnd => UiTheme.DangerBrush,
+        SlotKind.CnvLink => UiTheme.OkBrush,                // 跳转
+        SlotKind.CnvUnknown => UiTheme.UnknownBrush,
+        SlotKind.QstTaskTitle => UiTheme.AccentBrush,       // task 标题（QstTaskRow 同款）
+        SlotKind.QstTaskDescription => UiTheme.MutedBrush,  // 描述行（QstTaskDescRow 同款）
+        SlotKind.QstIncentive or SlotKind.QstEvent => UiTheme.MutedBrush,
+        _ => UiTheme.TextBrush,
+    };
 }

@@ -114,7 +114,7 @@ internal sealed class NumPairBox : UserControl
         else
         {
             _valid = false;
-            src.Foreground = Brushes.Red;
+            src.Foreground = UiTheme.DangerBrush;
         }
         UpdateHint();
     }

@@ -154,21 +154,22 @@ public static class Census
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine($"═══ census ═══ 文件 {filesCn} cnv + {filesQs} qst，解析失败 {filesBad}，ScriptList 总数 {totalLists}");
+        sb.AppendLine(CliL.F("═══ census ═══ 文件 {0} cnv + {1} qst，解析失败 {2}，ScriptList 总数 {3}",
+            filesCn, filesQs, filesBad, totalLists));
 
         sb.AppendLine();
-        sb.AppendLine("── 条件集合 logic 字普查 ──");
+        sb.AppendLine(CliL.T("── 条件集合 logic 字普查 ──"));
         foreach (var (lg, n) in logic.OrderBy(k => k.Key))
-            sb.AppendLine($"logic={lg}: {n} 个列表");
-        sb.AppendLine("logic × 列表记录数：");
+            sb.AppendLine(CliL.F("logic={0}: {1} 个列表", lg, n));
+        sb.AppendLine(CliL.T("logic × 列表记录数："));
         foreach (var ((lg, len), n) in logicByLen.OrderBy(k => k.Key))
-            sb.AppendLine($"  logic={lg} × 长度 {len}: {n}");
+            sb.AppendLine(CliL.F("  logic={0} × 长度 {1}: {2}", lg, len, n));
 
         sb.AppendLine();
-        sb.AppendLine("── QST 本地化槽位配平（串表条数 vs 结构）──");
-        sb.AppendLine("T=task 数  I=incentives(OnAccept) 数  O=objective 数  E=events(OnComplete) 数  S=串表条数");
-        sb.AppendLine("基准 = 2(组名+任务名) + 2T(每 task 标题+描述) + O(每 objective 一条)");
-        sb.AppendLine("形状 (T,I,O,E) : S 取值 → extra = S-基准（extra 与哪个计数相等，就是那部分的额外预留槽）");
+        sb.AppendLine(CliL.T("── QST 本地化槽位配平（串表条数 vs 结构）──"));
+        sb.AppendLine(CliL.T("T=task 数  I=incentives(OnAccept) 数  O=objective 数  E=events(OnComplete) 数  S=串表条数"));
+        sb.AppendLine(CliL.T("基准 = 2(组名+任务名) + 2T(每 task 标题+描述) + O(每 objective 一条)"));
+        sb.AppendLine(CliL.T("形状 (T,I,O,E) : S 取值 → extra = S-基准（extra 与哪个计数相等，就是那部分的额外预留槽）"));
         foreach (var g in qstShapes
                      .GroupBy(s => (s.T, s.I, s.O, s.E))
                      .OrderBy(g => g.Key.T).ThenBy(g => g.Key.O).ThenBy(g => g.Key.I).ThenBy(g => g.Key.E))
@@ -176,10 +177,10 @@ public static class Census
             var (t, i, o, e) = g.Key;
             int baseV = 2 + 2 * t + o;
             var ss = g.Select(x => x.S).Distinct().OrderBy(v => v).ToList();
-            string sv = string.Join("/", ss.Select(v => $"{v}(extra {v - baseV})"));
-            sb.AppendLine($"  T={t} I={i} O={o} E={e} ×{g.Count()} : S = {sv}");
+            string sv = string.Join("/", ss.Select(v => CliL.F("{0}(extra {1})", v, v - baseV)));
+            sb.AppendLine(CliL.F("  T={0} I={1} O={2} E={3} ×{4} : S = {5}", t, i, o, e, g.Count(), sv));
         }
-        sb.AppendLine("残差统计（S - 基准 - 各计数）：");
+        sb.AppendLine(CliL.T("残差统计（S - 基准 - 各计数）："));
         foreach (var cand in new (string name, Func<(string file, int T, int I, int O, int E, int S), int> f)[]
                  {
                      ("E", s => s.E), ("I", s => s.I), ("T", s => s.T), ("O", s => s.O),
@@ -189,73 +190,75 @@ public static class Census
             var res = qstShapes.GroupBy(s => s.S - (2 + 2 * s.T + s.O) - cand.f(s))
                                .OrderByDescending(g => g.Count()).Take(3)
                                .Select(g => $"{g.Key}×{g.Count()}");
-            sb.AppendLine($"  S - 基准 - {cand.name} → {string.Join("  ", res)}");
+            sb.AppendLine(CliL.F("  S - 基准 - {0} → {1}", cand.name, string.Join("  ", res)));
         }
 
         sb.AppendLine();
-        sb.AppendLine("── CNV step unknown 字 × step 类型 ──");
+        sb.AppendLine(CliL.T("── CNV step unknown 字 × step 类型 ──"));
         foreach (var (type, su) in stepUnknown.OrderBy(k => k.Key))
         {
-            sb.AppendLine($"[step type {type} ({Names.CnvStepKind(type)})] n={su.Count}");
+            sb.AppendLine(CliL.F("[step type {0} ({1})] n={2}", type, Names.CnvStepKind(type), su.Count));
             var top = su.Values.OrderByDescending(k => k.Value).ToList();
             foreach (var (v, n) in top.Take(14))
                 sb.AppendLine($"    unknown=0x{v:X} ({v}) × {n}");
-            if (top.Count > 14) sb.AppendLine($"    … 共 {top.Count} 种取值");
+            if (top.Count > 14) sb.AppendLine(CliL.F("    … 共 {0} 种取值", top.Count));
         }
 
         void DumpTable(string title, IEnumerable<TypeCensus> rows, bool isCondition)
         {
             sb.AppendLine();
-            sb.AppendLine($"── {title} ──");
+            sb.AppendLine(CliL.F("── {0} ──", title));
             foreach (var tc in rows.OrderBy(r => r.Count).ThenBy(r => r.Lists).ThenByDescending(r => r.Lists))
             {
                 bool named = isCondition ? Names.ConditionClass(tc.Type).named : Names.ActionClass(tc.Type).named;
                 string name = isCondition ? Names.ConditionName(tc.Type) : Names.ActionName(tc.Type);
                 string spec = isCondition ? Scriptable.ConditionBodySpec(tc.Type) : Scriptable.ActionBodySpec(tc.Type);
-                sb.AppendLine($"type={tc.Type,2}  n={tc.Count,5}  lists={tc.Lists,4}  {name}  body={spec}{(named ? "" : "  ← 未命名")}");
+                sb.AppendLine(CliL.F("type={0,2}  n={1,5}  lists={2,4}  {3}  body={4}{5}",
+                    tc.Type, tc.Count, tc.Lists, name, spec, named ? "" : CliL.T("  ← 未命名")));
                 if (tc.SubTypes.Count > 1 || (tc.SubTypes.Count == 1 && tc.SubTypes.First().Key != 0))
                     sb.AppendLine($"    subType: {string.Join(" ", tc.SubTypes.OrderBy(k => k.Key).Select(k => $"sub{k.Key}×{k.Value}"))}");
                 if (isCondition && tc.Uids.Count > 0)
                 {
                     var topUid = tc.Uids.OrderBy(k => k.Key).ToList();
                     sb.AppendLine($"    uid: {string.Join(" ", topUid.Take(12).Select(k => (k.Key <= 6 ? $"0x{k.Key:X}" : k.Key.ToString()) + (k.Key <= 6 ? "" : $"") + $"×{k.Value}"))}" +
-                                  (topUid.Count > 12 ? $" …共{topUid.Count}种" : ""));
+                                  (topUid.Count > 12 ? CliL.F(" …共{0}种", topUid.Count) : ""));
                 }
-                sb.AppendLine($"    所在列表 logic: {string.Join(" ", tc.ListLogic.OrderBy(k => k.Key).Select(k => $"logic{k.Key}×{k.Value}"))}");
+                sb.AppendLine(CliL.F("    所在列表 logic: {0}", string.Join(" ", tc.ListLogic.OrderBy(k => k.Key).Select(k => $"logic{k.Key}×{k.Value}"))));
                 if (tc.CoNamed.Count > 0)
-                    sb.AppendLine($"    同列表共现: {string.Join(", ", tc.CoNamed.OrderByDescending(k => k.Value).Take(8).Select(k => $"{k.Key}×{k.Value}"))}");
+                    sb.AppendLine(CliL.F("    同列表共现: {0}", string.Join(", ", tc.CoNamed.OrderByDescending(k => k.Value).Take(8).Select(k => $"{k.Key}×{k.Value}"))));
                 var ns = tc.Numbers.Take(12).ToList();
                 if (ns.Count > 0)
-                    sb.AppendLine($"    U32(小值): {string.Join(" ", ns.Select(k => $"{k.Key}×{k.Value}"))}");
+                    sb.AppendLine(CliL.F("    U32(小值): {0}", string.Join(" ", ns.Select(k => $"{k.Key}×{k.Value}"))));
                 if (tc.BigNums.Count > 0)
                 {
                     var bn = tc.BigNums.Take(14).ToList();
-                    sb.AppendLine($"    U32 ≥0x10000(hash 形态, 共{tc.BigNums.Count}种, 前14): {string.Join(" ", bn.Select(k => $"0x{k.Key:X8}×{k.Value}"))}");
+                    sb.AppendLine(CliL.F("    U32 ≥0x10000(hash 形态, 共{0}种, 前14): {1}",
+                        tc.BigNums.Count, string.Join(" ", bn.Select(k => $"0x{k.Key:X8}×{k.Value}"))));
                 }
                 var bs = tc.Bytes.Take(8).ToList();
                 if (bs.Count > 0) sb.AppendLine($"    U8: {string.Join(" ", bs.Select(k => $"{k.Key}×{k.Value}"))}");
                 var ss = tc.Strings.OrderByDescending(k => k.Value).Take(10).ToList();
                 if (ss.Count > 0)
                 {
-                    sb.AppendLine($"    Str(前10, 共{tc.Strings.Count}种):");
+                    sb.AppendLine(CliL.F("    Str(前10, 共{0}种):", tc.Strings.Count));
                     foreach (var (s, n) in ss)
                         sb.AppendLine($"      \"{Trunc(s, 120)}\" × {n}");
                 }
                 var ps = tc.PathSets.OrderByDescending(k => k.Value).Take(5).ToList();
                 if (ps.Count > 0)
                 {
-                    sb.AppendLine("    P路径集(前5):");
+                    sb.AppendLine(CliL.T("    P路径集(前5):"));
                     foreach (var (s, n) in ps) sb.AppendLine($"      [{s}] × {n}");
                 }
                 var tl = tc.Trailings.Take(8).ToList();
-                if (tl.Count > 0) sb.AppendLine($"    P尾字: {string.Join(" ", tl.Select(k => $"{k.Key}×{k.Value}"))}");
+                if (tl.Count > 0) sb.AppendLine(CliL.F("    P尾字: {0}", string.Join(" ", tl.Select(k => $"{k.Key}×{k.Value}"))));
                 var ls = tc.Luas.OrderByDescending(k => k.Value).Take(5).ToList();
                 if (ls.Count > 0) sb.AppendLine($"    Lua: {string.Join(" | ", ls.Select(k => $"{k.Key}×{k.Value}"))}");
             }
         }
 
-        DumpTable("条件类型普查", cond.Values, true);
-        DumpTable("动作类型普查", act.Values, false);
+        DumpTable(CliL.T("条件类型普查"), cond.Values, true);
+        DumpTable(CliL.T("动作类型普查"), act.Values, false);
         return sb.ToString();
     }
 

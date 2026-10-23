@@ -17,7 +17,7 @@ internal sealed class NodeTextPanel : UserControl
     private readonly TextBlock _questIdText = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
     private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
-    private readonly TextEditor _main = NewEditor();
+    private readonly TextEditor _main = UiEditors.Editable();
     private readonly TextBlock _mainLabel = MkLabel("");
     private readonly TextBlock _hint = new()
     {
@@ -61,26 +61,6 @@ internal sealed class NodeTextPanel : UserControl
         Content = grid;
 
         _main.TextChanged += (_, _) => OnEdited(_main);
-    }
-
-    private static TextEditor NewEditor()
-    {
-        var editor = new TextEditor
-        {
-            WordWrap = true,
-            ShowLineNumbers = true,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 12,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            Background = Brushes.White,
-            Padding = new Thickness(4, 2, 4, 2),
-            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
-            LineNumbersMargin = new Thickness(4, 0, 6, 0),
-        };
-        editor.TextArea.Foreground = UiTheme.TextBrush;
-        editor.TextArea.Background = Brushes.White;
-        return editor;
     }
 
     private static TextBlock MkLabel(string text) => new() { Text = text };
@@ -152,10 +132,9 @@ internal sealed class NodeTextPanel : UserControl
             return;
         }
 
-        _hint.Text = SlotText.Hint(info) + " · " + SlotText.Role(info);
-        _hint.Foreground = info.Suggested ? UiTheme.AccentBrush
-            : info.MustBeEmpty ? UiTheme.WarnBrush
-            : UiTheme.MutedBrush;
+        // 建议词（肯定词，与本地化合并视图同源）· 节点名，配色与视图一致
+        _hint.Text = SlotText.Advice(info) + " · " + SlotText.Role(info);
+        _hint.Foreground = SlotText.AdviceBrush(info);
     }
 
     private static string GetText(LanguageBlock lang, int slot) =>

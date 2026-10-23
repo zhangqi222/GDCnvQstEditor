@@ -1023,8 +1023,8 @@ CnvQstEditor-cli.exe convert <spec.json> [-o out.qst]
 ### 15.2 模板
 
 ```bash
-CnvQstEditor-cli.exe sample qst                 # 打印到 stdout
-CnvQstEditor-cli.exe sample qst -o sample.json  # 写到文件
+CnvQstEditor-cli.exe sample qst                    # 释放内置 qst_full.json 到当前目录
+CnvQstEditor-cli.exe sample qst -o D:\mydir        # 释放到指定目录
 ```
 
 ### 15.3 查看与验证
