@@ -71,7 +71,6 @@ internal sealed class DocView : UserControl
         FontFamily = new FontFamily("Consolas"),
         FontSize = 12,
         TextWrapping = TextWrapping.NoWrap,
-        IsVisible = false,
     };
     private readonly TextBlock _jsonStatus = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Grid _jsonHost = new() { IsVisible = false };
@@ -79,6 +78,8 @@ internal sealed class DocView : UserControl
     private readonly Button _jsonReload = new() { Content = L.T("Reload") };
     private bool _jsonDirty;
     private bool _jsonBuilding;
+    /// <summary>最近一次装载/应用后的 JSON 文本，用于区分挂载初始化与真实编辑。</summary>
+    private string _jsonLoadedText = "";
 
     // DUMP 模式：只读文本
     private readonly TextBox _dumpBox = new()
@@ -108,6 +109,11 @@ internal sealed class DocView : UserControl
         _jsonBox.TextChanged += (_, _) =>
         {
             if (_jsonBuilding) return;
+            if (string.Equals(_jsonBox.Text ?? "", _jsonLoadedText, StringComparison.Ordinal))
+            {
+                _jsonDirty = false;
+                return;
+            }
             _jsonDirty = true;
             _jsonStatus.Text = L.T("JSON modified (not applied yet)");
         };
@@ -281,6 +287,7 @@ internal sealed class DocView : UserControl
             _jsonBox.Text = Doc.Cnv != null
                 ? JsonIO.Export(Doc.Cnv, Doc.Title)
                 : Doc.Qst != null ? JsonIO.Export(Doc.Qst, Doc.Title) : "";
+            _jsonLoadedText = _jsonBox.Text ?? "";
             _jsonDirty = false;
             _jsonStatus.Text = L.T("Click \"Apply JSON\" to write changes back to the document.");
         }

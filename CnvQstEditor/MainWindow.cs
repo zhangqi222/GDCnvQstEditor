@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using CnvQst;
 using CnvQst.Cli;
 
@@ -27,7 +28,7 @@ internal sealed class MainWindow : Window
     private MenuItem? _recentMenu;
     private Control? _toolbar;
     private readonly Dictionary<DocViewMode, MenuItem> _viewItems = new();
-    private readonly Dictionary<DocViewMode, ToggleButton> _viewButtons = new();
+    private readonly Dictionary<DocViewMode, RadioButton> _viewButtons = new();
     /// <summary>Alt+字母 打开对应顶级菜单（Avalonia 的内嵌 Menu 不处理 Alt 访问键，需显式绑定）。</summary>
     private readonly Dictionary<char, MenuItem> _accessMenus = new();
     private bool _forceClose;
@@ -235,21 +236,28 @@ internal sealed class MainWindow : Window
             Margin = new Thickness(4, 3, 4, 3),
             Background = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8)),
         });
+        var viewRow = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Dump })
         {
-            var b = new ToggleButton
+            var b = new RadioButton
             {
-                Content = ViewName(mode),
-                Padding = new Thickness(8, 2, 8, 2),
-                MinHeight = 26,
-                Margin = new Thickness(0, 0, 2, 0),
+                Content = ViewShortName(mode),
+                GroupName = "DocViewMode",
+                Theme = FindTheme("ButtonRadioButton"),
             };
-            b.Classes.Add("light");
-            b.Classes.Add("secondary");
+            b.Classes.Add("Small");
+            ToolTip.SetTip(b, ViewName(mode));
             b.Click += (_, _) => SetActiveView(mode);
-            toolbar.Children.Add(b);
+            viewRow.Children.Add(b);
             _viewButtons[mode] = b;
         }
+        var viewGroup = new Border
+        {
+            Theme = FindTheme("RadioButtonGroupBorder"),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = viewRow,
+        };
+        toolbar.Children.Add(viewGroup);
         Grid.SetRow(toolbar, 1);
         _root.Children.Add(toolbar);
         _toolbar = toolbar;
@@ -266,6 +274,19 @@ internal sealed class MainWindow : Window
         DocViewMode.Dump => L.T("DUMP view (read-only)"),
         _ => mode.ToString(),
     };
+
+    /// <summary>工具条按钮组用短名；完整名称（含只读）用于菜单与提示。</summary>
+    private static string ViewShortName(DocViewMode mode) => mode switch
+    {
+        DocViewMode.Visual => L.T("Visual"),
+        DocViewMode.Json => L.T("JSON"),
+        DocViewMode.Localization => L.T("Localization"),
+        DocViewMode.Dump => L.T("DUMP"),
+        _ => mode.ToString(),
+    };
+
+    private static ControlTheme? FindTheme(string key) =>
+        Application.Current?.TryFindResource(key, out object? value) == true ? value as ControlTheme : null;
 
     private void SetActiveView(DocViewMode mode)
     {
