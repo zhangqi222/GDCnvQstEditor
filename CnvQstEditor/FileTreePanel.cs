@@ -240,7 +240,7 @@ internal sealed class FileTreePanel : UserControl
 
     private static string LayerTag(GdLayer layer) => layer switch
     {
-        GdLayer.Base => L.T("游戏", "Base"),
+        GdLayer.Base => L.T("基础", "Base"),
         GdLayer.Dlc1 => "DLC1",
         GdLayer.Dlc2 => "DLC2",
         GdLayer.Dlc3 => "DLC3",

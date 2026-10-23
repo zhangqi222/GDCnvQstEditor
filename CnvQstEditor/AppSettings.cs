@@ -59,10 +59,11 @@ internal static class AppSettings
 
     public static void Load()
     {
+        string srcPath = File.Exists(FilePath) ? FilePath : LegacyFilePath;
+        if (!File.Exists(srcPath)) return;
         try
         {
-            if (!File.Exists(FilePath) && !File.Exists(LegacyFilePath)) return;
-            string json = StripJsonc(File.ReadAllText(File.Exists(FilePath) ? FilePath : LegacyFilePath));
+            string json = StripJsonc(File.ReadAllText(srcPath));
             var root = JsonNode.Parse(json);
             GameRoot = root?["GameRoot"]?.GetValue<string>() ?? "";
             Dlc1Dir = root?["Dlc1Dir"]?.GetValue<string>() ?? "";
@@ -82,12 +83,34 @@ internal static class AppSettings
             }
             if (RecentFiles.Count > MaxRecentFiles)
                 RecentFiles.RemoveRange(MaxRecentFiles, RecentFiles.Count - MaxRecentFiles);
+
+            // 升级迁移：旧版配置缺新键（如 v2.0.13 只有 GameRoot/RecentFiles）时立即补写一次
+            // 完整 schema 到新位置——否则升级用户会一直缺 DLC/MOD 目录键，界面上以为没保存过。
+            bool missingKeys = root != null &&
+                (root["GameRoot"] == null || root["Dlc1Dir"] == null || root["Dlc2Dir"] == null ||
+                 root["Dlc3Dir"] == null || root["ModDir"] == null || root["RecentFiles"] == null);
+            if (missingKeys || srcPath == LegacyFilePath)
+                Save();
         }
-        catch { /* 配置损坏时忽略，用默认值 */ }
+        catch
+        {
+            // 配置损坏：先把原文件留档为 .corrupt（避免随后任何 Save() 覆盖掉现场），再按默认值启动
+            try
+            {
+                if (File.Exists(srcPath))
+                    File.Copy(srcPath, srcPath + ".corrupt", overwrite: true);
+            }
+            catch { }
+        }
     }
 
-    public static void Save()
+    /// <summary>
+    /// 写盘：手写 JSONC 模板（注释落盘），先写临时文件再原子替换（旧配置保留为 .bak）。
+    /// 返回 null = 成功；否则返回错误消息（调用方决定是否提示——静默失败会让用户以为已保存）。
+    /// </summary>
+    public static string? Save()
     {
+        string tmp = FilePath + ".tmp";
         try
         {
             Directory.CreateDirectory(Dir);
@@ -114,9 +137,22 @@ internal static class AppSettings
                 "  /* 最近打开的文件：新的在前，最多 10 条。 */\n" +
                 "  \"RecentFiles\": " + recent + "\n" +
                 "}\n";
-            File.WriteAllText(FilePath, text);
+            File.WriteAllText(tmp, text);
+            if (File.Exists(FilePath))
+            {
+                string bak = FilePath + ".bak";
+                File.Delete(bak);
+                File.Replace(tmp, FilePath, bak);   // 原子替换；上一份配置留作 .bak
+            }
+            else
+                File.Move(tmp, FilePath);
+            return null;
         }
-        catch { /* 写失败不影响使用 */ }
+        catch (Exception ex)
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            return ex.Message;
+        }
     }
 
     /// <summary>记录一次成功打开 / 保存的文件（去重、置顶、截断）。</summary>

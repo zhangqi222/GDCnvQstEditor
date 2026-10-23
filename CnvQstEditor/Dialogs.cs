@@ -830,14 +830,18 @@ internal sealed class SettingsDialog : Window
 
         var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
         ok.IsDefault = true;
-        ok.Click += (_, _) =>
+        ok.Click += async (_, _) =>
         {
             AppSettings.GameRoot = _root.Text?.Trim() ?? "";
             AppSettings.Dlc1Dir = _dlc1.Text?.Trim() ?? "";
             AppSettings.Dlc2Dir = _dlc2.Text?.Trim() ?? "";
             AppSettings.Dlc3Dir = _dlc3.Text?.Trim() ?? "";
             AppSettings.ModDir = _mod.Text?.Trim() ?? "";
-            AppSettings.Save();
+            string? err = AppSettings.Save();
+            if (err != null)
+                await MsgBox.Show(this,
+                    L.F("设置已生效，但写入配置文件失败：{0}。配置可能在下次启动时丢失，请检查文件是否只读或被占用。", err),
+                    L.T("保存设置", "Save settings"), MsgButtons.Ok, warning: true);
             Close(true);
         };
         var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));

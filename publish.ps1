@@ -1,8 +1,9 @@
 ﻿# publish.ps1 — 一键打包两个单文件 EXE
 # 用法:  .\publish.ps1
-# 产物:  dist/CnvQstEditor.exe   GUI（带参数时也支持 CLI；需 .NET 8 Desktop Runtime x64）
-#        dist/CnvQstEditor-cli.exe     纯 CLI（需 .NET 8 Runtime x64）
-#        dist/lang/*.json              语言包（缺了只剩中文）
+# 产物:  dist/CnvQstEditor.exe       GUI（带参数时也支持 CLI；需 .NET 8 Desktop Runtime x64）
+#        dist/CnvQstEditor-cli.exe   纯 CLI（需 .NET 8 Runtime x64）
+# 语言包已内嵌进 EXE（单文件即可切换语言）；如需自定义/新增语言，在 EXE 旁自建 lang\
+# 目录放入 json（同名 code 优先于内嵌包），可用 GUI 菜单"帮助/语言→打开语言包目录"直达。
 # 两者均为配置 B / lite：框架依赖单文件。
 $ErrorActionPreference = "Stop"
 
@@ -15,7 +16,7 @@ $tmp = Join-Path $root ".publish-tmp"
 Write-Host "==> 打包 CnvQstEditor（GUI+CLI）与 CnvQstEditor-cli（纯 CLI）"
 Write-Host "    配置 B：框架依赖单文件，需目标机安装 .NET 8 运行时"
 
-# dist 可同时存放测试样本，发布时只覆盖两个 EXE 和 lang 目录，不清理其他文件
+# dist 可同时存放测试样本，发布时只覆盖两个 EXE，不清理其他文件
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
 if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 
@@ -39,11 +40,6 @@ try {
 
   Copy-Item (Join-Path $tmp "gui\CnvQstEditor.exe") (Join-Path $dist "CnvQstEditor.exe") -Force
   Copy-Item (Join-Path $tmp "cli\CnvQstEditor-cli.exe") (Join-Path $dist "CnvQstEditor-cli.exe") -Force
-
-  $langSrc = Join-Path $root "CnvQstEditor\lang"
-  $langDst = Join-Path $dist "lang"
-  New-Item -ItemType Directory -Path $langDst -Force | Out-Null
-  Copy-Item (Join-Path $langSrc "*.json") $langDst -Force
 }
 finally {
   if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }

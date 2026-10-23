@@ -68,28 +68,31 @@ internal static class L
         var baseline = new LangInfo { Code = BaselineCode, Name = "简体中文" };
         _languages.Add(baseline);
 
+        // ① exe 旁 lang\*.json：用户自定义/新增语言，优先于内嵌包（同名 code 覆盖）
         try
         {
             if (Directory.Exists(LangDir))
-            {
                 foreach (string file in Directory.EnumerateFiles(LangDir, "*.json").OrderBy(f => f))
-                {
-                    var info = TryLoad(file);
-                    if (info == null) continue;
-                    if (info.Code == BaselineCode)
-                    {
-                        baseline.Name = info.Name;
-                        // 基线包的 types 段（类型名/参数名中文名）也加载：TypePair 在中文界面下
-                        // 才能输出"原文（本地化）"配对，与表格的 L.Type() 显示保持一致。
-                        foreach (var kv in info.Types) baseline.Types[kv.Key] = kv.Value;
-                        continue;
-                    }
-                    _languages.RemoveAll(l => l.Code == info.Code);
-                    _languages.Add(info);
-                }
+                    Absorb(TryLoad(file), baseline, replaceExisting: true);
+        }
+        catch { /* 语言包目录不可读时跳过，由内嵌包兜底 */ }
+
+        // ② 内嵌语言包（CnvQstEditor.lang.*.json）：单文件发布兜底；磁盘已有同名 code 时不覆盖
+        try
+        {
+            var asm = typeof(L).Assembly;
+            var names = asm.GetManifestResourceNames()
+                .Where(n => n.StartsWith("CnvQstEditor.lang.", StringComparison.Ordinal)
+                         && n.EndsWith(".json", StringComparison.Ordinal))
+                .OrderBy(n => n, StringComparer.Ordinal);
+            foreach (string name in names)
+            {
+                using var stream = asm.GetManifestResourceStream(name);
+                if (stream == null) continue;
+                Absorb(TryLoad(stream, "embedded:" + name), baseline, replaceExisting: false);
             }
         }
-        catch { /* 语言包目录不可读时只用中文基准 */ }
+        catch { /* 内嵌资源不可读时只用已加载的包 */ }
 
         string want = BaselineCode;
         try
@@ -101,11 +104,44 @@ internal static class L
         _current = _languages.FirstOrDefault(l => l.Code == want) ?? baseline;
     }
 
+    /// <summary>
+    /// 吸收一个语言包。基线（zh-CN）包：Name 与 types 段并入基准（TypePair 在中文界面下
+    /// 才能输出"原文（本地化）"配对）；其它语言：replaceExisting=true 时覆盖同名 code
+    /// （磁盘后扫文件 / 磁盘对内嵌），false 时仅补缺（内嵌不覆盖磁盘自定义包）。
+    /// </summary>
+    private static void Absorb(LangInfo? info, LangInfo baseline, bool replaceExisting)
+    {
+        if (info == null) return;
+        if (info.Code == BaselineCode)
+        {
+            baseline.Name = info.Name;
+            foreach (var kv in info.Types) baseline.Types[kv.Key] = kv.Value;
+            return;
+        }
+        if (replaceExisting)
+        {
+            _languages.RemoveAll(l => l.Code == info.Code);
+            _languages.Add(info);
+        }
+        else if (!_languages.Any(l => l.Code == info.Code))
+            _languages.Add(info);
+    }
+
     private static LangInfo? TryLoad(string file)
     {
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(file), new JsonDocumentOptions
+            using var stream = File.OpenRead(file);
+            return TryLoad(stream, file);
+        }
+        catch { return null; }                                  // 单个语言包坏了不影响其它
+    }
+
+    private static LangInfo? TryLoad(Stream stream, string path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(stream, new JsonDocumentOptions
             {
                 AllowTrailingCommas = true,
                 CommentHandling = JsonCommentHandling.Skip,
@@ -113,8 +149,8 @@ internal static class L
             var root = doc.RootElement;
             var info = new LangInfo
             {
-                Path = file,
-                Code = root.TryGetProperty("code", out var c) ? c.GetString() ?? "?" : Path.GetFileNameWithoutExtension(file),
+                Path = path,
+                Code = root.TryGetProperty("code", out var c) ? c.GetString() ?? "?" : Path.GetFileNameWithoutExtension(path),
                 Name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "?" : "?",
             };
             ReadMap(root, "strings", info.Strings);
