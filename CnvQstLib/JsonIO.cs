@@ -142,6 +142,10 @@ public static class JsonIO
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         // 导出给人工编辑的本地 JSON：中文、单引号、<>& 等按原字符输出，不写成 \uXXXX
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        // 手写/编辑 JSON：允许注释与尾逗号；kind/format 及字段名大小写不敏感
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
     };
 
     // ---- 导出 ----
@@ -281,12 +285,32 @@ public static class JsonIO
     // ---- 导入（DTO → 模型 → 二进制）----
     public static byte[] ImportToBytes(string json)
     {
+        object model = ImportModel(json);
+        var report = model switch
+        {
+            CnvFile c => ModelChecks.Check(c),
+            QstFile q => ModelChecks.Check(q),
+            _ => throw new GdParseException("未知模型类型"),
+        };
+        if (report.HasErrors)
+            throw new GdParseException("节点与 languages 校验未通过：\n" + report.ToText());
+        return model switch
+        {
+            CnvFile c => c.Write(),
+            QstFile q => q.Write(),
+            _ => throw new GdParseException("未知模型类型"),
+        };
+    }
+
+    /// <summary>JSON → 模型（不写盘）。供 GUI 的 JSON 模式与 CLI 校验共用。</summary>
+    public static object ImportModel(string json)
+    {
         var dto = JsonSerializer.Deserialize<FileDto>(json, s_opts)
                   ?? throw new GdParseException("JSON 为空或格式不符");
-        return dto.Kind switch
+        return dto.Kind?.ToLowerInvariant() switch
         {
-            "cnv" => CnvFromDto(dto).Write(),
-            "qst" => QstFromDto(dto).Write(),
+            "cnv" => CnvFromDto(dto),
+            "qst" => QstFromDto(dto),
             _ => throw new GdParseException($"未知 Kind：{dto.Kind}（应为 cnv 或 qst）"),
         };
     }
@@ -314,10 +338,17 @@ public static class JsonIO
         for (int i = 0; i < dto.Steps.Count; i++)
         {
             var d = dto.Steps[i];
-            foreach (var ci in d.Children) steps[i].Children.Add(steps[ci]);
+            foreach (var ci in d.Children)
+            {
+                if (ci < 0 || ci >= steps.Length)
+                    throw new GdParseException($"节点 #{i} 的 children 含越界索引 {ci}（有效 0-{steps.Length - 1}）");
+                steps[i].Children.Add(steps[ci]);
+            }
             steps[i].Conditions = FromDto(d.Conditions, isCondition: true);
             steps[i].Actions = FromDto(d.Actions, isCondition: false);
         }
+        if (steps.Length > 0 && dto.Steps[0].Children.Count == 0 && dto.Steps.Count > 1)
+            throw new GdParseException("Steps[0] 没有 children：除根节点外的节点必须挂在 Children 树中");
         c.Languages = dto.Languages.Select(l => FromDto(l)).ToList();
         return c;
     }

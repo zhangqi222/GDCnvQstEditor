@@ -58,22 +58,15 @@ internal static class CnvNodeLabel
         5 => "🔹", 6 => "🛑", 7 => "↪", 8 => "🎲", _ => "❓",
     };
 
-    /// <summary>无 emoji 的类型名（根节点改用 Semi 图标时，文本不再重复图标语义）。</summary>
-    public static string KindName(uint type) => L.T(type switch
-    {
-        0 => "根", 1 => "台词", 2 => "继续选项", 3 => "接受选项", 4 => "拒绝选项",
-        5 => "通用", 6 => "结束对话", 7 => "跳转", 8 => "随机选项", _ => "未知类型",
-    });
-
     /// <summary>
-    /// 官方英文类型名 + 当前语言名括注："choice: accept（接受选项）"。
-    /// 括注与英文名相同时（英文界面）只显示英文。
+    /// 节点类型名：官方原文 + 语言包 types 段的本地化括注（无译文时只显示原文）。
+    /// 节点类型属于固定术语，见 <see cref="L.FixedTerms"/>（新增内置术语时同步登记）。
     /// </summary>
     public static string KindEnZh(uint type)
     {
         string en = Names.CnvStepKind(type);
-        string loc = KindName(type);
-        return string.Equals(en, loc, StringComparison.OrdinalIgnoreCase) ? en : $"{en}（{loc}）";
+        string loc = L.TypeName(en);
+        return string.Equals(loc, en, StringComparison.Ordinal) ? en : en + L.InParen(loc);
     }
 
     /// <summary>节点类型着色（台词=primary，拒绝/结束=danger，跳转=success，其余默认正文色）。</summary>
@@ -161,10 +154,10 @@ internal sealed class CnvRow : INotifyPropertyChanged
         Node = CnvNodeLabel.TreeLabel(Doc.Cnv!, Step);
         NodeBrush = CnvNodeLabel.KindBrush(Step.Type);
         var parts = new List<string>();
-        if ((Step.Unknown & 1) != 0) parts.Add(L.T("仅一次"));
-        if ((Step.Unknown & 2) != 0) parts.Add(L.T("总是显示"));
-        if ((Step.Unknown & 4) != 0) parts.Add(L.T("不重要"));
-        if (!Step.VoPath.IsEmpty) parts.Add(L.T("有配音"));
+        if ((Step.Unknown & 1) != 0) parts.Add(L.T("Once only"));
+        if ((Step.Unknown & 2) != 0) parts.Add(L.T("Always show"));
+        if ((Step.Unknown & 4) != 0) parts.Add(L.T("Unimportant"));
+        if (!Step.VoPath.IsEmpty) parts.Add(L.T("Has voice-over"));
         Attrs = string.Join("　", parts);
         Cond = ColoredLine.FromRecords(Step.Conditions);
         Act = ColoredLine.FromRecords(Step.Actions);
@@ -209,7 +202,7 @@ internal abstract class QstRowOwner
 internal sealed class QstRootOwner(QstFile q) : QstRowOwner
 {
     public override object OwnerObject => this;
-    public override string NodeLabel => SlotText(q, 0).Length > 0 ? SlotText(q, 0) : L.T("（任务组）");
+    public override string NodeLabel => SlotText(q, 0).Length > 0 ? SlotText(q, 0) : L.T("(quest group)");
     public override string? IconKey => "SemiIconHome";
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
@@ -223,12 +216,12 @@ internal sealed class QstQuestOwner(QstFile q) : QstRowOwner
 {
     public QstFile Q => q;
     public override object OwnerObject => q;
-    public override string NodeLabel => "🚩 " + (SlotText(q, 1).Length > 0 ? SlotText(q, 1) : L.T("（任务名）"));
+    public override string NodeLabel => "🚩 " + (SlotText(q, 1).Length > 0 ? SlotText(q, 1) : L.T("(quest name)"));
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override string IdText => "0x" + q.Id.ToString("X8");   // 引用标识统一十六进制（官方 Lua/编辑器惯例）
-    public override string IdTip => L.T("Quest ID：任务在存档中的引用标识（官方 QuestEditor 底部显示的 Quest ID）。", "Quest ID: reference id shown at the bottom of the official QuestEditor.");
+    public override string IdTip => L.T("Quest ID: reference id of the quest in save data (shown at the bottom of the official QuestEditor).");
     public override int? TextSlot => 1;
     // 任务名行：默认正文色（不再蓝色）
 }
@@ -256,14 +249,14 @@ internal sealed class QstTaskRow(QstFile q, QstTask t, int taskIndex) : QstRowOw
     public int TaskIndex => taskIndex;
 
     public override object OwnerObject => t;
-    public override string NodeLabel => "📋 [" + (taskIndex + 1) + "] " + (Label(q, taskIndex).Length > 0 ? Label(q, taskIndex) : L.T("（无标题）"));
+    public override string NodeLabel => "📋 [" + (taskIndex + 1) + "] " + (Label(q, taskIndex).Length > 0 ? Label(q, taskIndex) : L.T("(untitled)"));
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;
     public override bool CanDelete => true;
     public override string SubText => "";   // 描述改为任务节点下的固定描述行，不再以斜体重复显示
     public override string IdText => "0x" + t.UnknownA8.ToString("X8");   // 引用标识统一十六进制
-    public override string IdTip => L.T("uid：task 的引用标识，引擎按此引用 task。", "uid: task reference id used by the engine.");
+    public override string IdTip => L.T("uid: reference id of the task; the engine references tasks by this value.");
     public override int? TextSlot => TitleSlotOf(q, taskIndex);
     public override IBrush NodeBrush => UiTheme.AccentBrush;   // task 名：primary 色
 
@@ -281,14 +274,14 @@ internal sealed class QstEventRow(QstFile q, QstTask ownerTask, QstEvent e, int 
     public QstEvent E => e;
     public int TextSlotIndex => slot;
     public override object OwnerObject => e;
-    public override string NodeLabel => "➳ " + L.T("事件") + " #" + (no + 1);
+    public override string NodeLabel => "➳ " + L.T("Event") + " #" + (no + 1);
     public override bool HasScript => true;
     public override ScriptList? Conditions => e.Conditions;
     public override ScriptList? Actions => e.Actions;
     public override bool CanDelete => true;
     // 事件本身没有落盘 uid（官方运行时分配）；flags 非 0 时在此提示
     public override string IdText => e.Unknown != 0 ? L.F("flags {0}", e.Unknown) : "";
-    public override string IdTip => L.T("事件无落盘 uid（官方运行时分配）；此处显示 flags。", "Events have no stored uid (assigned at runtime); flags shown here.");
+    public override string IdTip => L.T("Events have no persisted uid (assigned at runtime); flags are shown here.");
     public override int? TextSlot => slot;
 }
 
@@ -297,7 +290,7 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public QstTask OwnerTask => ownerTask;
     public QstObjective O => o;
     public override object OwnerObject => o;
-    public override string NodeLabel => SlotText(q, slot).Length > 0 ? SlotText(q, slot) : L.T("（目标）");
+    public override string NodeLabel => SlotText(q, slot).Length > 0 ? SlotText(q, slot) : L.T("(objective)");
     // 目标节点：Semi 放大镜图标（文本不再重复 emoji 语义）
     public override string? IconKey => "SemiIconSearch";
     public override bool HasScript => true;
@@ -306,7 +299,7 @@ internal sealed class QstObjectiveRow(QstFile q, QstTask ownerTask, QstObjective
     public override bool CanDelete => true;
     // Objective ID（官方编辑器同款：对话/任务的条件动作按此 ID 引用目标），第二列常显，十六进制
     public override string IdText => "0x" + o.Unknown0.ToString("X8");
-    public override string IdTip => L.T("Objective ID：对话/任务的条件与动作按此 ID 引用该目标（=objective 的 uid）。", "Objective ID: conditions/actions reference this objective by id (= objective uid).");
+    public override string IdTip => L.T("Objective ID: conditions and actions reference this objective by id (= objective uid).");
     public override int? TextSlot => slot;
 }
 
@@ -318,7 +311,7 @@ internal sealed class QstTaskDescRow(QstFile q, QstTask t, int taskIndex) : QstR
     private int Slot => QstTaskRow.TitleSlotOf(q, taskIndex) + 1;
 
     public override object OwnerObject => t;
-    public override string NodeLabel => "📝 " + (SlotText(q, Slot).Length > 0 ? SlotText(q, Slot) : L.T("（无描述）", "(no description)"));
+    public override string NodeLabel => "📝 " + (SlotText(q, Slot).Length > 0 ? SlotText(q, Slot) : L.T("(no description)"));
     public override bool HasScript => false;
     public override ScriptList? Conditions => null;
     public override ScriptList? Actions => null;

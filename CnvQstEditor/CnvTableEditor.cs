@@ -99,7 +99,7 @@ internal sealed class CnvTableEditor : UserControl
             Columns =
             {
                 // 序号列（=Step.Index，与跳转节点 LinkId / 节点编辑对话框编号同一套编号）
-                new TemplateColumn<CnvRow>(L.T("序号", "No."),
+                new TemplateColumn<CnvRow>(L.T("#"),
                     CellBorder(b =>
                     {
                         var tb = OneLine();
@@ -109,11 +109,11 @@ internal sealed class CnvTableEditor : UserControl
                     }, OnCellDoubleTap, "0"),
                     width: GridLength.Auto),
                 new HierarchicalExpanderColumn<CnvRow>(
-                    new TemplateColumn<CnvRow>(L.T("节点", "Node"),
+                    new TemplateColumn<CnvRow>(L.T("Node"),
                         CellBorder(b => b.Child = TreeGridShared.NodeCellContent(), OnCellDoubleTap, "1"),
                         width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
-                new TemplateColumn<CnvRow>(L.T("属性", "Attrs"),
+                new TemplateColumn<CnvRow>(L.T("Fields"),
                     CellBorder(b =>
                     {
                         var tb = OneLine();
@@ -121,7 +121,7 @@ internal sealed class CnvTableEditor : UserControl
                         b.Child = tb;
                     }, OnCellDoubleTap, "2"),
                     width: new GridLength(TreeGridShared.ColAttrs, GridUnitType.Star)),
-                new TemplateColumn<CnvRow>(L.T("条件", "Conditions"),
+                new TemplateColumn<CnvRow>(L.T("Condition"),
                     CellBorder(b =>
                     {
                         // 单行显示：水平排列，段间 " | "（生成端已拼入），超宽裁剪
@@ -132,7 +132,7 @@ internal sealed class CnvTableEditor : UserControl
                         b.Child = items;
                     }, OnCellDoubleTap, "3"),
                     width: new GridLength(TreeGridShared.ColCond, GridUnitType.Star)),
-                new TemplateColumn<CnvRow>(L.T("动作", "Actions"),
+                new TemplateColumn<CnvRow>(L.T("Action"),
                     CellBorder(b =>
                     {
                         var items = new ItemsControl { MaxHeight = 18, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top };
@@ -227,26 +227,26 @@ internal sealed class CnvTableEditor : UserControl
         // 复制单元格固定在菜单最上方（列只影响复制内容）
         if (CellText(row, col) != null)
         {
-            cm.Items.Add(TreeGridShared.Mi(L.T("复制单元格", "Copy Cell"), () => CopyCell()));
+            cm.Items.Add(TreeGridShared.Mi(L.T("Copy cell"), () => CopyCell()));
             cm.Items.Add(new Separator());
         }
 
         // 菜单以行为准。
         bool isRoot = ReferenceEquals(row.Step, _cnv.Root);
-        cm.Items.Add(TreeGridShared.Mi(L.T("＋添加子节点", "+ Add Child"), () => _ = AddChild()));
+        cm.Items.Add(TreeGridShared.Mi(L.T("+ Add child"), () => _ = AddChild()));
         if (!isRoot)
         {
-            cm.Items.Add(TreeGridShared.Mi(L.T("－删除子树", "- Delete"), DeleteStep));
+            cm.Items.Add(TreeGridShared.Mi(L.T("- Delete subtree"), DeleteStep));
             cm.Items.Add(new Separator());
-            cm.Items.Add(TreeGridShared.Mi("↑ " + L.T("上移", "Up"), () => MoveStep(-1)));
-            cm.Items.Add(TreeGridShared.Mi("↓ " + L.T("下移", "Down"), () => MoveStep(1)));
+            cm.Items.Add(TreeGridShared.Mi("↑ " + L.T("Move up"), () => MoveStep(-1)));
+            cm.Items.Add(TreeGridShared.Mi("↓ " + L.T("Move down"), () => MoveStep(1)));
         }
 
         // 节点编辑 / 编辑条件 / 编辑动作：同一组（分割线隔开），CNV 每个节点都有条件/动作列表
         cm.Items.Add(new Separator());
-        cm.Items.Add(TreeGridShared.Mi(L.T("节点编辑", "Edit Node"), () => _ = EditNodeProps()));
-        cm.Items.Add(TreeGridShared.Mi(L.T("编辑条件", "Edit Conditions"), () => _ = EditScript(row, isCondition: true)));
-        cm.Items.Add(TreeGridShared.Mi(L.T("编辑动作", "Edit Actions"), () => _ = EditScript(row, isCondition: false)));
+        cm.Items.Add(TreeGridShared.Mi(L.T("Node editor"), () => _ = EditNodeProps()));
+        cm.Items.Add(TreeGridShared.Mi(L.T("Edit condition"), () => _ = EditScript(row, isCondition: true)));
+        cm.Items.Add(TreeGridShared.Mi(L.T("Edit action"), () => _ = EditScript(row, isCondition: false)));
         return cm;
     }
 
@@ -376,7 +376,7 @@ internal sealed class CnvTableEditor : UserControl
         if (s == null) return;
         if (s == _cnv.Root)
         {
-            Gui.Warn(TreeGridShared.OwnerOf(this), L.T("不能删除根节点。", "The root node cannot be deleted."), L.T("删除", "Delete"));
+            Gui.Warn(TreeGridShared.OwnerOf(this), L.T("The root node cannot be deleted."), L.T("Delete"));
             return;
         }
         if (!_cnv.RemoveSubtree(s)) return;

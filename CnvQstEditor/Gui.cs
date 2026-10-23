@@ -87,20 +87,20 @@ internal static class MsgBox
         switch (buttons)
         {
             case MsgButtons.Ok:
-                MakeBtn(L.T("确定", "OK"), MsgResult.Ok, true);
+                MakeBtn(L.T("OK"), MsgResult.Ok, true);
                 break;
             case MsgButtons.OkCancel:
-                MakeBtn(L.T("确定", "OK"), MsgResult.Ok, true);
-                MakeBtn(L.T("取消", "Cancel"), MsgResult.Cancel, false);
+                MakeBtn(L.T("OK"), MsgResult.Ok, true);
+                MakeBtn(L.T("Cancel"), MsgResult.Cancel, false);
                 break;
             case MsgButtons.YesNo:
-                MakeBtn(L.T("是", "Yes"), MsgResult.Yes, true);
-                MakeBtn(L.T("否", "No"), MsgResult.No, false);
+                MakeBtn(L.T("yes"), MsgResult.Yes, true);
+                MakeBtn(L.T("no"), MsgResult.No, false);
                 break;
             case MsgButtons.YesNoCancel:
-                MakeBtn(L.T("是", "Yes"), MsgResult.Yes, true);
-                MakeBtn(L.T("否", "No"), MsgResult.No, false);
-                MakeBtn(L.T("取消", "Cancel"), MsgResult.Cancel, false);
+                MakeBtn(L.T("yes"), MsgResult.Yes, true);
+                MakeBtn(L.T("no"), MsgResult.No, false);
+                MakeBtn(L.T("Cancel"), MsgResult.Cancel, false);
                 break;
         }
 

@@ -120,7 +120,8 @@ public static class CliApp
           view      <文件.cnv|qst>                 查看：以树形文本显示对话/任务内容
           convert   <文件> [-o 输出]                转换：.json → QST/CNV，或 QST/CNV → .json
                                                    （省略 -o 时输出到输入同目录；help convert 看详情）
-          verify    <文件|目录>                    验证：检查结构、文本槽与读写字节一致（推荐先运行）
+          verify    <文件|目录>                    验证：结构 / languages 对齐 / 读写字节一致（推荐先运行）
+                                                   （目录同时校验 .cnv、.qst、.json）
           txt       <文件|目录> [-o 目录] [--flat]  导出官方本地化 TXT（供翻译/本地化使用）
           sample    cnv|qst [-o 模板.json]         生成 JSON 模板，可照模板编写 convert 输入
           help      [命令]                         显示帮助；help dev 查看开发工具
@@ -137,6 +138,8 @@ public static class CliApp
                            详见 JSON转CNV.md / JSON转QST.md，模板见 sample 命令。
           省略 -o 时：输出到输入文件同目录，按目标格式生成同名文件。
           转换方向由输入扩展名决定，输出格式由 JSON 声明决定，无需 --format。
+          转换前先校验 JSON：languages 的每个语言块必须与节点/文本槽数对齐，
+          不符时列出缺/多行及可填文字的槽位，且不生成文件。
         兼容别名：json、make。
         """;
 
@@ -226,31 +229,24 @@ public static class CliApp
 
         string format;
         byte[] data;
+        var report = ModelChecks.CheckJson(text, out format, out object? model);
+        foreach (var issue in report.Issues)
+            @out.WriteLine((issue.IsError ? "错误：" : "提示：") + issue.Message);
+        if (report.Kind.Length == 0 || report.HasErrors || model == null)
+        {
+            @out.WriteLine("JSON 校验未通过，未生成文件。");
+            return 2;
+        }
+        @out.WriteLine("JSON 校验通过：" + ModelChecks.Summary(report));
         try
         {
-            using var doc = JsonDocument.Parse(text, new JsonDocumentOptions
+            data = model switch
             {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip,
-            });
-            JsonElement kindEl = default;
-            bool isModel = doc.RootElement.ValueKind == JsonValueKind.Object
-                           && TryProp(doc.RootElement, "kind", out kindEl);
-            if (isModel)
-            {
-                // 全保真模型（json 命令导出）与手写 spec 都是 JSON，用 kind/format 区分。
-                format = kindEl.GetString()?.ToLowerInvariant() ?? "";
-                if (format is not ("cnv" or "qst"))
-                    throw new SpecException("JSON 模型的 kind 必须是 cnv 或 qst。");
-                data = JsonIO.ImportToBytes(text);
-            }
-            else
-            {
-                data = Spec.Build(text, out format);
-            }
+                CnvFile c => c.Write(),
+                QstFile q => q.Write(),
+                _ => throw new GdParseException("未知模型类型"),
+            };
         }
-        catch (SpecException e) { @out.WriteLine($"JSON 规范有误：{e.Message}"); return 2; }
-        catch (JsonException e) { @out.WriteLine($"JSON 解析失败：{e.Message}"); return 2; }
         catch (GdParseException e) { @out.WriteLine($"转换失败：{e.Message}"); return 2; }
 
         outPath ??= DefaultBinaryPath(input, format);
@@ -276,7 +272,9 @@ public static class CliApp
 
         string check = format == "qst" ? CheckQst(data) : CheckCnv(data);
         @out.WriteLine($"已转换 {input} → {outPath}（format={format}，{data.Length} 字节）");
-        @out.WriteLine(check == "OK" ? "三检查通过：铺满 / locOffset / round-trip" : $"校验失败：{check}");
+        @out.WriteLine(check == "OK"
+            ? "校验通过：铺满 / locOffset / round-trip / languages 对齐"
+            : $"校验失败：{check}");
         return check == "OK" ? 0 : 1;
     }
 
@@ -373,18 +371,20 @@ public static class CliApp
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
         string path = args[1];
         int pass = 0, fail = 0;
-        foreach (string file in BatchOps.EnumerateFiles(path))
+        foreach (string file in BatchOps.EnumerateFiles(path, includeJson: true))
         {
             var item = BatchOps.Inspect(file, path);
             if (item.AllOk)
             {
                 pass++;
-                @out.WriteLine($"PASS  {item.Rel}");
+                @out.WriteLine($"PASS  {item.Rel}  （{item.Summary}）");
             }
             else
             {
                 fail++;
-                @out.WriteLine($"FAIL  {item.Rel}  {item.FailReason}");
+                @out.WriteLine($"FAIL  {item.Rel}");
+                foreach (string line in item.FailReason.Split('\n'))
+                    @out.WriteLine("      " + line);
             }
         }
         @out.WriteLine($"\n通过 {pass}，失败 {fail}。");
@@ -557,6 +557,8 @@ public static class CliApp
         if (!c.Valid) return c.Error ?? "解析失败";
         if (!c.Tiled) return "记录未铺满文件";
         if (!c.LocOffsetMatches) return "本地化偏移不符";
+        var report = ModelChecks.Check(c);
+        if (!report.Ok) return report.ToText();
         return c.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
     }
 
@@ -566,6 +568,8 @@ public static class CliApp
         if (!q.Valid) return q.Error ?? "解析失败";
         if (!q.Tiled) return "记录未铺满文件";
         if (!q.LocOffsetMatches) return "本地化偏移不符";
+        var report = ModelChecks.Check(q);
+        if (!report.Ok) return report.ToText();
         return q.Write().SequenceEqual(data) ? "OK" : "round-trip 不一致";
     }
 

@@ -7,8 +7,7 @@
   - `CnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
   - 两个程序的命令完全一致，下文统一用 `CnvQstEditor-cli.exe` 示例。
 - 配套示例：
-  - [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json) —— 根节点、层级、全部节点类型、条件/动作、配音、flags、跳转。
-  - [`JSON示例/cnv_all_conditions_actions.json`](JSON示例/cnv_all_conditions_actions.json) —— 30 种条件 + 27 个可用动作各写一次。
+  - [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json) —— **单个文件覆盖全部内容**：顶层字段、节点字段、全部节点类型、30 种条件、27 个可用动作、`languages` 语言块、配音、flags、跳转，每个字段都带就地说明。
 - QST 任务文件的写法见 [`JSON转QST.md`](JSON转QST.md)；两种文件共用同一套条件/动作系统。
 
 > 目标：读完本文后，你可以不依赖 GUI，直接写出合法的 CNV JSON，并生成可被游戏/官方 ConversationEditor 读取的 `.cnv`。
@@ -129,7 +128,9 @@ CnvQstEditor-cli.exe verify hello.cnv
   "logic": "AND",
   "cond": [],
   "act": [],
-  "lang": "enUS",
+  "languages": [
+    { "tag": "enUS", "texts": ["Alex", "你好。", "再见。"] }
+  ],
   "rows": [ /* … */ ]
 }
 ```
@@ -145,7 +146,8 @@ CnvQstEditor-cli.exe verify hello.cnv
 | `logic` | string / u32 | 否 | `"AND"` | 根节点条件列表的关系：`"AND"`=0，`"OR"`=1。 |
 | `cond` | array | 否 | `[]` | 根节点条件列表。 |
 | `act` | array | 否 | `[]` | 根节点动作列表。 |
-| `lang` | string | 否 | `"enUS"` | 本地化块标签。也可写 `language`（仅当没有 `lang` 时生效）。 |
+| `languages` | array | 否 | — | 显式语言块，见 §3.2。写了就以它为准，`speaker`/`text` 仅作回退。 |
+| `lang` | string | 否 | `"enUS"` | 单语言块标签（旧写法）。仅在**没有** `languages` 时生效；也可写 `language`。 |
 | `rows` | array | **是** | — | 根节点以下的对话节点；缺失直接报错。 |
 
 ### 3.1 `id`：本文件自有 ID
@@ -154,12 +156,47 @@ CnvQstEditor-cli.exe verify hello.cnv
 - 显式写 `id`（包括 `0`）时原样使用。
 - 本文件的 `id` 只标识这个对话文件；条件/动作里引用的其它文件路径和任务/目标 ID 属于**引用 ID**，工具不会生成或改写，必须照抄目标文件。
 
-### 3.2 `lang` 与本地化
+### 3.2 `languages` 与本地化
 
-- 只生成一个语言块，标签由 `lang` 指定，默认 `enUS`。
-- 所有 `speaker` / `text` 按节点顺序写入该语言块。
-- JSON 不支持多语言；需要多语言时用 GUI 处理。
-- `lang` 只是标签字符串，不会校验是否为官方语言代码。
+推荐用 `languages` 显式描述语言块，可以把多语言写在一个 JSON 里：
+
+```json
+"languages": [
+  {
+    "tag": "enUS",
+    "texts": ["Alex", "你终于来了。{^n}路上还顺利吗？", "继续", "", "再见。"]
+  }
+]
+```
+
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `tag` | string | 语言标签。官方 6 种：`enUS` / `enGB` / `es` / `fr` / `de` / `it`；其它标签会有提示，游戏可能忽略该块。 |
+| `texts` | array | 文本行数组；**行数必须与节点数严格对齐**，见下方规则。 |
+
+对齐规则（CNV 的本地化槽以节点为基准）：
+
+- 行数必须等于 `1 + rows.Length`：槽 0 = 根节点（即 `speaker`），槽 1 = `rows[0]`，槽 2 = `rows[1]`……
+- `link` 节点同样占一行，通常写空串 `""`；空串是合法文本。
+- 每个语言块的 `texts` 行数必须相同。
+- 行数不符时 `convert` 会直接报错并拒绝生成，例如：
+
+```text
+节点 16 个，languages[enUS] 有 14 行，缺 2 行；文本行数必须与节点数一致。
+可填文字的节点行（1 起）：1-16。缺少的行中可填文字：15-16。
+```
+
+- **游戏内换行写 `{^n}`**（字面量四个字符），例如 `"你终于来了。{^n}路上还顺利吗？"`。
+  不要写 JSON 转义的 `\n`：那会写入真正的换行字节，不符合官方文本约定。
+- 写了 `languages` 后，`speaker` / `text` 仍然必须写（用于结构定义），但输出以 `languages` 为准。
+- 只写一个语言块时，也可以继续用旧写法 `"lang": "enUS"`，此时文本从 `speaker`/`text` 自动收集。
+
+```json
+// 旧写法：单语言，标签默认 enUS
+"lang": "enUS"
+```
+
+- 标签只是字符串；除官方 6 种外会给出提示，但不会阻止生成。
 
 ### 3.3 根节点的条件/动作
 
@@ -713,7 +750,7 @@ CNV：
 
 - 文件内字符串为 UTF-8；JSON 源文件也建议 UTF-8。
 - 中文、日文、重音字符都可以直接写。
-- JSON 转义 `\n` 会写入真正的换行。CNV 文本是否允许换行由游戏/官方编辑器决定；本地化 TXT 流程使用 `{^n}` 表示换行，但 JSON 里直接写 `\n` 会原样写入。
+- JSON 转义 `\n` 会写入真正的换行字节；游戏内换行约定用字面量 `{^n}`，推荐在 `text` / `languages.texts` 里都写 `{^n}`。
 - 路径中的反斜杠需要 JSON 转义（`\\`）；建议直接用 `/`。
 
 ---
@@ -801,7 +838,13 @@ CNV：
 }
 ```
 
-完整版（含全部类型）见 [`JSON示例/cnv_all_conditions_actions.json`](JSON示例/cnv_all_conditions_actions.json)。
+完整示例（覆盖全部字段、全部节点类型、30 种条件、27 个动作与 `languages`）见 [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json)，可直接运行：
+
+```bash
+CnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o demo.cnv
+```
+
+该文件顶部有字段总览，正文每个字段都有就地注释；`languages` 的每一行都标注了对应节点。
 
 ---
 
@@ -881,7 +924,7 @@ CnvQstEditor.exe convert hello.json -o hello.cnv
 1. **只有一棵树**：所有 `rows` 都挂在根节点下；不能创建多个根。
 2. **行顺序必须是前序**：文本槽按行顺序写，节点按树展平；手工调换行会破坏文本对应关系。
 3. **嵌套深度**：上限 512；实际对话建议控制在几十层以内。
-4. **单语言块**：JSON 只生成一个语言块；多语言请用 GUI。
+4. **语言块行数必须对齐节点**：显式 `languages` 的每个块行数 = `1 + rows.Length`；多语言时各块行数一致。
 5. **link 目标**：写的是展平序号（1 起行号，0 为根），请确认目标存在。
 
 ### 15.2 条件/动作限制
@@ -914,6 +957,7 @@ CnvQstEditor.exe convert hello.json -o hello.cnv
 - [ ] `rows` 按前序排列。
 - [ ] 每个 `link` 的目标在 `0..rows.Length`。
 - [ ] 条件/动作类型名拼写正确；类型名是对象第一个非元数据键。
+- [ ] 写了 `languages` 时，每个块的 `texts` 行数 = `1 + rows.Length`，且 `link` 行留空；换行用 `{^n}`。
 - [ ] 条件需要比较的写了 `cmp`；布尔/任务步骤条件保持默认。
 - [ ] 没有手写 `subType`；`HasItem` 的 `CompleteOnly`、`HasQuestObjective` 的 `Objective` 按本文写法即可。
 - [ ] P 形态用对象写 `KillCount`，不是位置数组。

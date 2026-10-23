@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CnvQst;
 
 namespace CnvQstEditor;
 
@@ -9,24 +10,24 @@ internal sealed class LangInfo
     public string Code = "zh-CN";
     public string Name = "简体中文";
     public string Path = "";
-    /// <summary>中文原文 → 该语言译文。基线语言（zh-CN）为空表。</summary>
+    /// <summary>英文 key → 该语言译文。英文包为恒等映射。</summary>
     public Dictionary<string, string> Strings = new();
     /// <summary>条件/动作等"类型"的显示名：官方英文名 → 该语言名。</summary>
     public Dictionary<string, string> Types = new();
 }
 
 /// <summary>
-/// UI 本地化。**以中文为基准（key = 中文原文）**，语言包是 exe 旁 `lang/*.json`，放进去即生效：
+/// UI 本地化。**以英文为 key，中文（zh-CN）为默认语言**，语言包是 exe 旁 `lang/*.json`，放进去即生效：
 ///
 /// {
-///   "code": "en",
-///   "name": "English",
-///   "strings": { "打开": "Open", "已保存 {0}": "Saved {0}" },
-///   "types":   { "HasFaction": "Faction reputation" }
+///   "code": "zh-CN",
+///   "name": "简体中文",
+///   "strings": { "Open": "打开", "Saved {0}": "已保存 {0}" },
+///   "types":   { "HasFaction": "阵营声望" }
 /// }
 ///
-/// · 缺 key 时回退中文原文，因此语言包可以逐步补全，不会出现空标签；
-/// · 新增语言只需复制一份 json 改 code/name/strings；中文包（zh-CN）作为键清单模板；
+/// · key 缺译文时回退 key 本身（英文），因此语言包可以逐步补全，不会出现空标签；
+/// · 默认语言 zh-CN；英文包 en.json 保留恒等映射，作为可用 key 清单；
 /// · 选择持久化到 %APPDATA%\CnvQstEditor\lang.txt（存语言 code）。
 /// </summary>
 internal static class L
@@ -56,28 +57,37 @@ internal static class L
 
     public static string DisplayName => _current.Name;
 
-    public static bool IsBaseline => _current.Code == BaselineCode;
-
     /// <summary>语言包目录（exe 旁的 lang/）。</summary>
     public static string LangDir => Path.Combine(AppContext.BaseDirectory, "lang");
+
+    /// <summary>
+    /// 固定术语清单：动作 / 条件 / 节点类型等官方术语**不进入 strings 字典**（不整体翻译），
+    /// 中文界面由语言包 types 段括注。后期发现新的内置固定文本直接加入即可。
+    /// </summary>
+    public static readonly HashSet<string> FixedTerms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "root", "speech", "continue", "accept", "decline", "generic", "end", "link", "random", "selector",
+    };
+
+    static L()
+    {
+        for (uint t = 0; t < 30; t++) FixedTerms.Add(Names.ConditionName(t));
+        for (uint t = 0; t < 29; t++)
+        {
+            string name = Names.ActionName(t);
+            if (!name.StartsWith("Type", StringComparison.Ordinal)) FixedTerms.Add(name);
+        }
+        for (uint t = 0; t <= 8; t++) FixedTerms.Add(Names.CnvStepKind(t));
+        FixedTerms.Add("unknown kind");
+    }
+
+    public static bool IsFixedTerm(string label) => FixedTerms.Contains(label);
 
     public static void Load()
     {
         _languages.Clear();
-        // 中文基准包始终在列（即使文件缺失也保底可用）
-        var baseline = new LangInfo { Code = BaselineCode, Name = "简体中文" };
-        _languages.Add(baseline);
 
-        // ① exe 旁 lang\*.json：用户自定义/新增语言，优先于内嵌包（同名 code 覆盖）
-        try
-        {
-            if (Directory.Exists(LangDir))
-                foreach (string file in Directory.EnumerateFiles(LangDir, "*.json").OrderBy(f => f))
-                    Absorb(TryLoad(file), baseline, replaceExisting: true);
-        }
-        catch { /* 语言包目录不可读时跳过，由内嵌包兜底 */ }
-
-        // ② 内嵌语言包（CnvQstEditor.lang.*.json）：单文件发布兜底；磁盘已有同名 code 时不覆盖
+        // ① 内嵌语言包（CnvQstEditor.lang.*.json）：单文件发布兜底
         try
         {
             var asm = typeof(L).Assembly;
@@ -89,10 +99,23 @@ internal static class L
             {
                 using var stream = asm.GetManifestResourceStream(name);
                 if (stream == null) continue;
-                Absorb(TryLoad(stream, "embedded:" + name), baseline, replaceExisting: false);
+                Absorb(TryLoad(stream, "embedded:" + name), overlay: false);
             }
         }
-        catch { /* 内嵌资源不可读时只用已加载的包 */ }
+        catch { /* 内嵌资源不可读时只用磁盘包 */ }
+
+        // ② exe 旁 lang\*.json：用户自定义/新增语言，覆盖内嵌包
+        try
+        {
+            if (Directory.Exists(LangDir))
+                foreach (string file in Directory.EnumerateFiles(LangDir, "*.json").OrderBy(f => f))
+                    Absorb(TryLoad(file), overlay: true);
+        }
+        catch { /* 语言包目录不可读时跳过，由内嵌包兜底 */ }
+
+        // 中文基准包始终在列（即使文件缺失也保底可用）
+        if (!_languages.Any(l => l.Code == BaselineCode))
+            _languages.Add(new LangInfo { Code = BaselineCode, Name = "简体中文" });
 
         string want = BaselineCode;
         try
@@ -101,30 +124,34 @@ internal static class L
             if (File.Exists(cfg)) want = File.ReadAllText(cfg).Trim();
         }
         catch { }
-        _current = _languages.FirstOrDefault(l => l.Code == want) ?? baseline;
+        _current = _languages.FirstOrDefault(l => l.Code == want)
+                ?? _languages.First(l => l.Code == BaselineCode);
     }
 
     /// <summary>
-    /// 吸收一个语言包。基线（zh-CN）包：Name 与 types 段并入基准（TypePair 在中文界面下
-    /// 才能输出"原文（本地化）"配对）；其它语言：replaceExisting=true 时覆盖同名 code
-    /// （磁盘后扫文件 / 磁盘对内嵌），false 时仅补缺（内嵌不覆盖磁盘自定义包）。
+    /// 吸收一个语言包：overlay=true（磁盘）覆盖同名 code 的译文；false（内嵌）只补缺，
+    /// 不覆盖已有包。同一 code 的 strings/types 按键合并，便于增量语言包。
     /// </summary>
-    private static void Absorb(LangInfo? info, LangInfo baseline, bool replaceExisting)
+    private static void Absorb(LangInfo? info, bool overlay)
     {
         if (info == null) return;
-        if (info.Code == BaselineCode)
+        var target = _languages.FirstOrDefault(l => l.Code == info.Code);
+        if (target == null)
         {
-            baseline.Name = info.Name;
-            foreach (var kv in info.Types) baseline.Types[kv.Key] = kv.Value;
+            _languages.Add(info);
             return;
         }
-        if (replaceExisting)
+        if (overlay)
         {
-            _languages.RemoveAll(l => l.Code == info.Code);
-            _languages.Add(info);
+            target.Name = info.Name;
+            target.Path = info.Path;
         }
-        else if (!_languages.Any(l => l.Code == info.Code))
-            _languages.Add(info);
+        foreach (var kv in info.Strings)
+            if (overlay || !target.Strings.ContainsKey(kv.Key))
+                target.Strings[kv.Key] = kv.Value;
+        foreach (var kv in info.Types)
+            if (overlay || !target.Types.ContainsKey(kv.Key))
+                target.Types[kv.Key] = kv.Value;
     }
 
     private static LangInfo? TryLoad(string file)
@@ -188,29 +215,17 @@ internal static class L
     // 取词
     // ------------------------------------------------------------------
 
-    /// <summary>按中文原文取当前语言译文；没有译文时回退中文原文。</summary>
-    public static string T(string zh) =>
-        IsBaseline ? zh : _current.Strings.TryGetValue(zh, out var v) && v.Length > 0 ? v : zh;
-
-    /// <summary>兼容旧的"中英成对"写法：优先查语言包，其次用给定的英文兜底。</summary>
-    public static string T(string zh, string en) =>
-        IsBaseline ? zh : _current.Strings.TryGetValue(zh, out var v) && v.Length > 0 ? v : en;
+    /// <summary>按英文 key 取当前语言译文；没有译文时回退 key（英文）。</summary>
+    public static string T(string key) =>
+        _current.Strings.TryGetValue(key, out var v) && v.Length > 0 ? v : key;
 
     /// <summary>带占位符的文案：先翻译再格式化（key 里用 {0} {1}）。</summary>
-    public static string F(string zh, params object?[] args) => string.Format(T(zh), args);
+    public static string F(string key, params object?[] args) => string.Format(T(key), args);
 
     /// <summary>
-    /// 类型名（条件/动作/节点类型等）：中文基准给中文名，其它语言给官方英文原名。
-    /// 例如 Type("HasFaction", "阵营声望") → 中文界面显示"阵营声望"，英文界面显示"HasFaction"。
-    /// </summary>
-    public static string Type(string official, string zh) =>
-        IsBaseline ? (ZhAlias(official) ?? zh)
-                   : _current.Types.TryGetValue(official, out var v) && v.Length > 0 ? v : official;
-
-    /// <summary>
-    /// 类型名"原文（本地化）"配对显示（条件/动作名等，经由 Names.DisplayNameResolver 进入）：
-    /// 本地化名取自当前语言包 types 段（zh-CN 基准包同样带中文名）；
-    /// 无译文或与原文相同 → 只显示原文。传入的 label 可能带"（推断）"后缀，查找前剥离、结果后补回。
+    /// 类型名配对显示（条件/动作名等，经由 Names.DisplayNameResolver 进入）：
+    /// 固定术语以官方原文为主，语言包 types 段有译文时括注为"原文（本地化）"；
+    /// 无译文（如英文界面）只显示原文。传入的 label 可能带推断后缀，查找前剥离、结果后补回。
     /// </summary>
     public static string TypePair(string label)
     {
@@ -219,125 +234,123 @@ internal static class L
         if (label.EndsWith(inferred, StringComparison.Ordinal))
         {
             label = label[..^inferred.Length];
-            suffix = inferred;
+            suffix = T("(inferred)");
         }
-        string loc = _current.Types.TryGetValue(label, out var v) && v.Length > 0 ? v : label;
-        return string.Equals(loc, label, StringComparison.Ordinal) ? label + suffix : $"{label}（{loc}）" + suffix;
+        string loc = TypeName(label);
+        return string.Equals(loc, label, StringComparison.Ordinal)
+            ? label + suffix
+            : label + InParen(loc) + suffix;
     }
 
-    /// <summary>中文别名表（来自各语言包的 types 反向不可用，故中文侧从 en 包同名字段读）。</summary>
-    private static readonly Dictionary<string, string> _zhAlias = new();
+    /// <summary>本地化的括号包裹："({0})"——中文为全角括号，英文为半角。</summary>
+    public static string InParen(string text) => string.Format(T("({0})"), text);
 
-    private static string? ZhAlias(string official) => _zhAlias.TryGetValue(official, out var v) ? v : null;
+    /// <summary>标签后的冒号：中文全角"："，英文半角":"。</summary>
+    public static string Colon => T(":");
 
-    /// <summary>供外部登记中文别名（由语言包 types 段在加载后反查填充）。</summary>
-    public static void RegisterZhAliases(IEnumerable<KeyValuePair<string, string>> pairs)
-    {
-        foreach (var kv in pairs) _zhAlias[kv.Key] = kv.Value;
-    }
+    /// <summary>固定术语在非中文界面下的本地化名：无译文时回退原文。</summary>
+    public static string TypeName(string official) =>
+        _current.Types.TryGetValue(official, out var v) && v.Length > 0 ? v : official;
 
     /// <summary>语言切换菜单文案。</summary>
-    public static string MenuLanguage => T("语言(&L)", "&Language");
+    public static string MenuLanguage => T("_Language");
 
-    public static string WindowTitle => T("CnvQstEditor — Grim Dawn 对话 / 任务编辑器");
+    public static string WindowTitle => T("CnvQstEditor — Grim Dawn conversation / quest editor");
 
-    // 主菜单（键即中文原文，英文取自语言包）
-    public static string MFile => T("文件(&F)");
-    public static string MNew => T("新建(&N)");
-    public static string MImport => T("导入(&I)");
-    public static string MExport => T("导出(&E)");
-    public static string MBatch => T("批量(&B)");
-    public static string MTools => T("工具(&T)");
-    public static string MView => T("视图(&V)");
-    public static string MHelp => T("帮助(&H)");
+    // 主菜单（下划线为 Avalonia 访问键：Alt+F 打开文件菜单）
+    public static string MFile => T("_File");
+    public static string MNew => T("_New");
+    public static string MImport => T("_Import");
+    public static string MExport => T("_Export");
+    public static string MBatch => T("_Batch");
+    public static string MTools => T("_Tools");
+    public static string MView => T("_View");
+    public static string MHelp => T("_Help");
 
-    public static string OpenTitle => T("打开");
-    public static string OpenDirBatch => T("打开目录（批量）");
-    public static string Save => T("保存");
-    public static string SaveAs => T("另存为");
-    public static string CloseTab => T("关闭页签");
-    public static string Exit => T("退出");
-    public static string NewConversationMenu => T("新建对话（CNV v6）");
-    public static string NewQuestMenu => T("新建任务（QST2 v9）");
-    public static string ImportTxtToActive => T("TXT 回填到当前文件");
-    public static string ImportJsonNewTab => T("JSON 导入为新页签");
-    public static string ExportTxtOfficial => T("TXT（官方本地化）");
+    public static string OpenTitle => T("Open");
+    public static string OpenDirBatch => T("Open folder (batch)");
+    public static string Save => T("Save");
+    public static string SaveAs => T("Save as");
+    public static string CloseTab => T("Close tab");
+    public static string Exit => T("Exit");
+    public static string NewConversationMenu => T("New conversation (CNV v6)");
+    public static string NewQuestMenu => T("New quest (QST2 v9)");
+    public static string ImportTxtToActive => T("Backfill TXT into current file");
+    public static string ImportJsonNewTab => T("Import JSON as new tab");
+    public static string ExportTxtOfficial => T("TXT (official localization)");
     public static string ExportJson => T("JSON");
-    public static string ExportDump => T("dump 树形文本");
-    public static string BatchPanel => T("批量面板");
-    public static string VerifyCurrent => T("校验当前文件");
-    public static string Anchors => T("anchors 类型锚定工作台");
-    public static string ReloadCurrent => T("重新加载当前文件");
-    public static string About => T("关于");
-    public static string ExpandAll => T("展开全部");
-    public static string CollapseAll => T("折叠全部");
-    public static string Filter => T("过滤节点");
-    public static string OpenLangFolder => T("打开语言包目录");
+    public static string ExportDump => T("dump tree text");
+    public static string BatchPanel => T("Batch panel");
+    public static string VerifyCurrent => T("Verify current file");
+    public static string Anchors => T("anchors (type anchoring workbench)");
+    public static string ReloadCurrent => T("Reload current file");
+    public static string About => T("About");
+    public static string ExpandAll => T("Expand all");
+    public static string CollapseAll => T("Collapse all");
+    public static string Filter => T("Filter nodes");
 
-    public static string NewConversationBtn => T("新建对话");
-    public static string NewQuestBtn => T("新建任务");
-    public static string ExportTxtBtn => T("导出 TXT");
-    public static string ExportJsonBtn => T("导出 JSON");
-    public static string ImportTxtBtn => T("导入 TXT");
-    public static string BatchBtn => T("批量");
-    public static string VerifyBtn => T("校验");
-    public static string OpenBtn => T("打开");
-    public static string SaveBtn => T("保存");
+    public static string NewConversationBtn => T("New conversation");
+    public static string NewQuestBtn => T("New quest");
+    public static string ExportTxtBtn => T("Export TXT");
+    public static string ExportJsonBtn => T("Export JSON");
+    public static string ImportTxtBtn => T("Import TXT");
+    public static string BatchBtn => T("Batch");
+    public static string VerifyBtn => T("Verify");
+    public static string OpenBtn => T("Open");
+    public static string SaveBtn => T("Save");
     public static string DumpBtn => T("dump");
 
-    public static string AboutTitle => T("关于");
+    public static string AboutTitle => T("About");
     public static string AboutBody => T(
-        "CnvQstEditor —— Grim Dawn .cnv / .qst 编辑器\n\n" +
-        "查看、编辑、新建、导入导出与批量处理；格式依据 Game.dll 加载器逆向与 447 个样本验证。\n\n" +
-        "保存前自动执行三检查（记录铺满 / 本地化偏移 / round-trip 字节一致），结构合法不等于语义正确，\n" +
-        "标黄的未知语义字段改完请在游戏或官方编辑器中验证。");
+        "CnvQstEditor — Grim Dawn .cnv / .qst editor\n\n" +
+        "View, edit, create, import/export and batch-process; the format is based on reverse-engineering the Game.dll loader and 447 verified samples.\n\n" +
+        "Three checks run before saving (records tile the file / localization offset / round-trip bytes). A structurally valid file is not necessarily semantically correct;\n" +
+        "after changing yellow unknown-semantics fields, verify in game or the official editor.");
 
     /// <summary>关于对话框的许可证摘要（只列名称与许可证类型，不展示全文）。</summary>
     public static string AboutLicense => T(
-        "许可证：MIT —— 本项目及所用 Avalonia、Avalonia.Controls.DataGrid、Avalonia.Controls.TreeDataGrid、Semi.Avalonia 第三方组件均为 MIT。\n" +
-        "完整许可文本见程序目录或仓库根目录的 LICENSE 文件。",
         "License: MIT — this project and its third-party components (Avalonia, Avalonia.Controls.DataGrid, Avalonia.Controls.TreeDataGrid, Semi.Avalonia) are all MIT.\n" +
         "See LICENSE in the program directory or repository root for the full text.");
 
     // 新建向导
-    public static string NewConversationTitle => T("新建对话（CNV v6）");
-    public static string NewConversationSpeaker => T("说话人名");
-    public static string NewConversationFirst => T("首句台词");
-    public static string NewConversationEnd => T("结束语（可空）");
-    public static string Create => T("创建");
-    public static string Cancel => T("取消");
-    public static string Confirm => T("确定");
-    public static string SpeakerRequired => T("说话人名不能为空。");
-    public static string NewQuestTitle => T("新建任务（QST2 v9）");
-    public static string NewQuestGroup => T("任务组名");
-    public static string NewQuestName => T("任务名");
-    public static string NewQuestTaskTitle => T("Task 标题");
-    public static string NewQuestTaskDesc => T("Task 描述");
-    public static string QuestNameRequired => T("任务名不能为空。");
+    public static string NewConversationTitle => T("New conversation (CNV v6)");
+    public static string NewConversationSpeaker => T("Speaker name");
+    public static string NewConversationFirst => T("First line");
+    public static string NewConversationEnd => T("Closing line (optional)");
+    public static string Create => T("Create");
+    public static string Cancel => T("Cancel");
+    public static string Confirm => T("OK");
+    public static string SpeakerRequired => T("Speaker name cannot be empty.");
+    public static string NewQuestTitle => T("New quest (QST2 v9)");
+    public static string NewQuestGroup => T("Quest group");
+    public static string NewQuestName => T("Quest name");
+    public static string NewQuestTaskTitle => T("Task title");
+    public static string NewQuestTaskDesc => T("Task description");
+    public static string QuestNameRequired => T("Quest name cannot be empty.");
 
     public static string EmptyHint => T(
-        "从左侧选择节点开始查看 / 编辑，或直接把 .cnv / .qst 文件（目录也可以）拖进窗口。\n\n" +
-        "· 导出可另存 TXT / JSON / dump 树形文本\n" +
-        "· 导入可回填官方本地化 TXT 或 JSON\n" +
-        "· 保存前自动三检查，并生成 .bak 备份");
+        "Select a node on the left to view / edit, or drag a .cnv / .qst file (or folder) into the window.\n\n" +
+        "· Export to TXT / JSON / dump tree text\n" +
+        "· Import can backfill official localization TXT or JSON\n" +
+        "· Three checks run before saving, and a .bak backup is created");
 
-    public static string LocStringTable => T("本地化字符串表");
+    public static string LocStringTable => T("Localization string table");
 
     // 状态栏
-    public static string StatusSaving => T("● 未保存");
-    public static string StatusReadonly(string reason) => F("只读：{0}", reason);
-    public static string StatusReady => T("就绪");
+    public static string StatusSaving => T("● Unsaved");
+    public static string StatusReadonly(string reason) => F("Read-only: {0}", reason);
+    public static string StatusReady => T("Ready");
 
     // 通用
-    public static string Ok => T("确定");
-    public static string Warning => T("提示");
-    public static string Error => T("错误");
-    public static string Close => T("关闭");
-    public static string Apply => T("应用");
-    public static string Add => T("添加");
-    public static string Delete => T("删除");
-    public static string Copy => T("复制");
-    public static string MoveUp => T("上移");
-    public static string MoveDown => T("下移");
-    public static string Language => T("语言");
+    public static string Ok => T("OK");
+    public static string Warning => T("Notice");
+    public static string Error => T("Error");
+    public static string Close => T("Close");
+    public static string Apply => T("Apply");
+    public static string Add => T("Add");
+    public static string Delete => T("Delete");
+    public static string Copy => T("Copy");
+    public static string MoveUp => T("Move up");
+    public static string MoveDown => T("Move down");
+    public static string Language => T("Language");
 }

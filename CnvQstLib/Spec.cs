@@ -177,10 +177,23 @@ public static class Spec
         foreach (var (step, target) in links)
             step.LinkId = (uint)Math.Clamp(target, 0, flat.Count - 1);
 
-        var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
-        foreach (var t in texts) lang.Texts.Add(new GdString(t));
-        while (lang.Texts.Count < flat.Count) lang.Texts.Add(new GdString(""));
-        c.Languages.Add(lang);
+        var explicitLanguages = ReadLanguages(root);
+        if (explicitLanguages != null)
+        {
+            foreach (var lang in explicitLanguages)
+            {
+                if (lang.Texts.Count != flat.Count)
+                    throw new SpecException(ModelChecks.CnvMismatchMessage(c, lang));
+                c.Languages.Add(lang);
+            }
+        }
+        else
+        {
+            var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
+            foreach (var t in texts) lang.Texts.Add(new GdString(t));
+            while (lang.Texts.Count < flat.Count) lang.Texts.Add(new GdString(""));
+            c.Languages.Add(lang);
+        }
         return c;
     }
 
@@ -256,10 +269,51 @@ public static class Spec
         int want = QstFile.LocalizedTextCount(q.Tasks.Count, q.ObjectiveCount, q.IncentiveCount, q.EventCount);
         while (texts.Count < want) texts.Add("");
 
-        var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
-        foreach (var s in texts) lang.Texts.Add(new GdString(s));
-        q.Languages.Add(lang);
+        var explicitLanguages = ReadLanguages(root);
+        if (explicitLanguages != null)
+        {
+            foreach (var lang in explicitLanguages)
+            {
+                if (lang.Texts.Count != want)
+                    throw new SpecException(ModelChecks.QstMismatchMessage(q, lang));
+                q.Languages.Add(lang);
+            }
+        }
+        else
+        {
+            var lang = new LanguageBlock { Tag = new GdString(Str(root, "lang") ?? Str(root, "language") ?? "enUS") };
+            foreach (var s in texts) lang.Texts.Add(new GdString(s));
+            q.Languages.Add(lang);
+        }
         return q;
+    }
+
+    /// <summary>
+    /// 可选的显式语言块：{ "languages": [ { "tag": "enUS", "texts": ["…", ""] } ] }。
+    /// 提供时按 texts 原样写入（必须以节点/槽位数为准对齐），不再从 speaker/text 字段推导；
+    /// 未提供时沿用单语言 "lang" 推导（旧写法保持兼容）。
+    /// </summary>
+    private static List<LanguageBlock>? ReadLanguages(JsonElement root)
+    {
+        if (!root.TryGetProperty("languages", out var arr)) return null;
+        if (arr.ValueKind != JsonValueKind.Array)
+            throw new SpecException("\"languages\" 必须是数组，例如 [ { \"tag\": \"enUS\", \"texts\": [\"…\"] } ]");
+        var list = new List<LanguageBlock>();
+        int i = 0;
+        foreach (var item in arr.EnumerateArray())
+        {
+            i++;
+            if (item.ValueKind != JsonValueKind.Object)
+                throw new SpecException($"languages 第 {i} 项必须是对象");
+            if (!item.TryGetProperty("texts", out var tv) || tv.ValueKind != JsonValueKind.Array)
+                throw new SpecException($"languages 第 {i} 项缺少 \"texts\" 数组");
+            var lang = new LanguageBlock { Tag = new GdString(Str(item, "tag") ?? "enUS") };
+            foreach (var t in tv.EnumerateArray())
+                lang.Texts.Add(new GdString(t.ValueKind == JsonValueKind.String ? t.GetString() ?? "" : ""));
+            list.Add(lang);
+        }
+        if (list.Count == 0) throw new SpecException("\"languages\" 为空数组：至少需要 1 个语言块");
+        return list;
     }
 
     private static QstEvent ParseEvent(JsonElement e, int taskIndex)

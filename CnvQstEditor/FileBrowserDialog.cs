@@ -14,7 +14,7 @@ namespace CnvQstEditor;
 internal sealed class FileBrowserDialog : Window
 {
     private readonly FileTreePanel _panel;
-    private readonly TextBox _picked = new() { IsReadOnly = true, Watermark = L.T("（未选择文件）", "(No file selected)") };
+    private readonly TextBox _picked = new() { IsReadOnly = true, Watermark = L.T("(no file selected)") };
     private readonly Button _ok;
     private string? _result;
     private string? _resultRel;
@@ -35,7 +35,7 @@ internal sealed class FileBrowserDialog : Window
         _ok.IsEnabled = false;
         _ok.Click += (_, _) => Accept();
         var cancel = preview
-            ? DialogChrome.Cancel(this, L.T("关闭", "Close"))
+            ? DialogChrome.Cancel(this, L.T("Close"))
             : DialogChrome.Cancel(this);
 
         _panel = new FileTreePanel();
@@ -47,22 +47,20 @@ internal sealed class FileBrowserDialog : Window
         rules.Children.Add(new TextBlock
         {
             Text = scopeText ?? (subDir == "database"
-                ? L.T("浏览范围：各层 database\\ 下的记录文件（.dbr/.tpl）", "Scope: record files (.dbr/.tpl) under each layer's database\\")
-                : L.T("浏览范围：各层 resources\\ 下的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
-                    "Scope: resources under each layer's resources\\ (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)")),
+                ? L.T("Scope: record files (.dbr/.tpl) under each layer's database\\")
+                : L.T("Scope: resources (qst, cnv, wav, ogg, tex, fx, anm, lua, etc.) under each layer's resources\\")),
             Foreground = UiTheme.AccentBrush,
             TextWrapping = TextWrapping.Wrap,
         });
         rules.Children.Add(new TextBlock
         {
-            Text = L.T("加载覆盖顺序：游戏根 → DLC1 → DLC2 → DLC3 → MOD；同名文件以高层为准。",
-                "Override order: game root → DLC1 → DLC2 → DLC3 → MOD; higher layers win for same-name files."),
+            Text = L.T("Override order: game root → DLC1 → DLC2 → DLC3 → MOD; higher layers win for same-name files."),
             Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
         });
         rules.Children.Add(DialogChrome.Caption(preview
-            ? L.T("预览模式：只读浏览各层文件；双击目录展开，无需选择。", "Preview mode: browse files across layers; double-click folders to expand. No selection needed.")
-            : L.T("双击文件或选中后点击确定。", "Double-click a file, or select it and click OK.")));
+            ? L.T("Preview mode: browse files across layers; double-click folders to expand. No selection needed.")
+            : L.T("Double-click a file, or select one and click OK.")));
 
         var grid = new Grid { Margin = new Thickness(16) };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -77,7 +75,7 @@ internal sealed class FileBrowserDialog : Window
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var pickedRow = new DockPanel { Margin = new Thickness(0, 8, 0, 8) };
-            var pickedLabel = new TextBlock { Text = L.T("路径", "Path") + "：", VerticalAlignment = VerticalAlignment.Center };
+            var pickedLabel = new TextBlock { Text = L.T("Path") + L.Colon, VerticalAlignment = VerticalAlignment.Center };
             DockPanel.SetDock(pickedLabel, Dock.Left);
             pickedRow.Children.Add(pickedLabel);
             pickedRow.Children.Add(_picked);
@@ -160,7 +158,7 @@ internal sealed class FileBrowserDialog : Window
         if (AppSettings.Gd.IsEmpty)
         {
             Gui.Warn(owner,
-                L.T("未配置游戏目录，请先在 工具→设置… 中配置（游戏根目录 / DLC / MOD）。", "Game folders are not configured. Set them in Tools → Settings… first (game root / DLC / MOD)."),
+                L.T("Game folders are not configured. Set them in Tools → Settings… first (game root / DLC / MOD)."),
                 title);
             return null;
         }
@@ -179,7 +177,7 @@ internal sealed class FileBrowserDialog : Window
         if (AppSettings.Gd.IsEmpty)
         {
             Gui.Warn(owner,
-                L.T("未配置游戏目录，请先在 工具→设置… 中配置（游戏根目录 / DLC / MOD）。", "Game folders are not configured. Set them in Tools → Settings… first (game root / DLC / MOD)."),
+                L.T("Game folders are not configured. Set them in Tools → Settings… first (game root / DLC / MOD)."),
                 title);
             return;
         }

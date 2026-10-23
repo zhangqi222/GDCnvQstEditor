@@ -44,7 +44,7 @@ internal sealed class FileTreePanel : UserControl
 
     public FileTreePanel()
     {
-        _refreshBtn = DialogChrome.Button(L.T("重新扫描", "Rescan"), primary: false);
+        _refreshBtn = DialogChrome.Button(L.T("Rescan"), primary: false);
         _refreshBtn.Click += (_, _) => _ = BindAsync(_subDir, _filter, null, force: true);
 
         _tree.SelectionChanged += (_, _) => SelectionChanged?.Invoke();
@@ -79,7 +79,7 @@ internal sealed class FileTreePanel : UserControl
         _buildingTip.Children.Add(ring);
         _buildingTip.Children.Add(new TextBlock
         {
-            Text = L.T("正在扫描各层文件…", "Scanning layers…"),
+            Text = L.T("Scanning layers…"),
             Foreground = UiTheme.MutedBrush,
             Margin = new Thickness(0, 10, 0, 0),
         });
@@ -132,8 +132,7 @@ internal sealed class FileTreePanel : UserControl
 
         if (install.IsEmpty)
         {
-            ShowMessage(L.T("未配置任何可用的游戏目录（每层须含 database 或 resources）。请先在 工具→设置… 中配置。",
-                "No usable game folders configured (each layer needs database and/or resources). Set them in Tools → Settings… first."));
+            ShowMessage(L.T("No usable game folders configured (each layer needs database and/or resources). Set them in Tools → Settings… first."));
             _refreshBtn.IsEnabled = true;
             return;
         }
@@ -226,7 +225,7 @@ internal sealed class FileTreePanel : UserControl
         }
 
         int count = _index.Files.Keys.Count(k => k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        _countText.Text = L.F("共 {0} 个文件（合并后）", count);
+        _countText.Text = L.F("{0} files (merged)", count);
 
         var root = MakeDirNode(_subDir, _subDir);
         _tree.Items.Add(root);
@@ -240,7 +239,7 @@ internal sealed class FileTreePanel : UserControl
 
     private static string LayerTag(GdLayer layer) => layer switch
     {
-        GdLayer.Base => L.T("基础", "Base"),
+        GdLayer.Base => L.T("Base"),
         GdLayer.Dlc1 => "DLC1",
         GdLayer.Dlc2 => "DLC2",
         GdLayer.Dlc3 => "DLC3",
@@ -375,7 +374,7 @@ internal sealed class FileTreePanel : UserControl
             item.Items.Add(node);
         }
         if (item.Items.Count == 0)
-            item.Items.Add(new TreeViewItem { Header = L.T("（空）", "(empty)"), IsEnabled = false });
+            item.Items.Add(new TreeViewItem { Header = L.T("(empty)"), IsEnabled = false });
     }
 
     // ------------------------------------------------------------------
@@ -460,13 +459,13 @@ internal sealed class FileTreePanel : UserControl
             var files = panel.CollectFilePathsForTest();
             int dbr = files.Count(p => p.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase));
             if (dbr != 2)
-                return L.F("文件树自测失败：期望 2 个 .dbr 节点，实际 {0}（{1}）", dbr, string.Join(", ", files));
+                return L.F("File-tree self-test failed: expected 2 .dbr nodes, got {0} ({1})", dbr, string.Join(", ", files));
             // 展开箭头可用性：树中每个目录节点必须带非空子项，否则用户点不开（叶子锁死）
             var dirs = panel.CollectDirRelPathsForTest();
             var locked = dirs.Where(d => !panel.DirExpandableForTest(d) && panel.IndexForTest?.Files.Keys
                 .Any(k => k.StartsWith(d + "\\", StringComparison.OrdinalIgnoreCase)) == true).ToList();
             if (locked.Count > 0)
-                return L.F("文件树自测失败：目录缺占位子项（展开箭头不可用）：{0}", string.Join(", ", locked));
+                return L.F("File-tree self-test failed: folder lacks a placeholder child (expand arrow unavailable): {0}", string.Join(", ", locked));
             var idx = panel.IndexForTest;
             var shared = idx?.Find(@"database\records\shared.dbr");
             if (shared == null) return "文件树自测失败：索引缺少 shared.dbr";

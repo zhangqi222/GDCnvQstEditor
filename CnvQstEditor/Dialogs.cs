@@ -134,14 +134,14 @@ internal sealed class StringListDialog : Window
 
         _grid.Columns.Add(new DataGridTextColumn
         {
-            Header = L.T("序号", "#"),
+            Header = L.T("#"),
             Binding = new Binding(nameof(PathRow.Num)),
             IsReadOnly = true,
             Width = new DataGridLength(48),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
-            Header = L.T("路径", "Path"),
+            Header = L.T("Path"),
             Binding = new Binding(nameof(PathRow.S)) { Mode = BindingMode.TwoWay },
             Width = new DataGridLength(1, DataGridLengthUnitType.Star),
         });
@@ -172,7 +172,7 @@ internal sealed class StringListDialog : Window
         root.Children.Add(footer);
 
         var top = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
-        top.Children.Add(DialogChrome.Caption(L.T("每行一项，在表格单元格中直接编辑；按钮可增删行。")));
+        top.Children.Add(DialogChrome.Caption(L.T("One item per line; edit directly in the cell. Use the buttons to add or remove rows.")));
         var btnRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         btnRow.Children.Add(add);
         btnRow.Children.Add(del);
@@ -189,7 +189,7 @@ internal sealed class StringListDialog : Window
         for (int i = 0; i < _rows.Count; i++) _rows[i].Num = i + 1;
         _grid.ItemsSource = null;
         _grid.ItemsSource = _rows;
-        Title = L.F("{0}（{1} 项）", _baseTitle, _rows.Count);
+        Title = L.F("{0} ({1} items)", _baseTitle, _rows.Count);
     }
 
     private sealed class PathRow
@@ -209,14 +209,14 @@ internal sealed class LuaParamsDialog : Window
     public LuaParamsDialog(ScriptField field)
     {
         _field = field;
-        DialogChrome.Init(this, L.F("Lua 参数（{0} 项）", field.Params!.Count), 1040, 480);
+        DialogChrome.Init(this, L.F("Lua parameters ({0})", field.Params!.Count), 1040, 480);
         _grid.Columns.Add(NumCol("u32 A", p => p.A, (p, v) => p.A = v));
         _grid.Columns.Add(NumCol("u8 B", p => p.B, (p, v) => p.B = (byte)v, max: 255));
         _grid.Columns.Add(NumCol("u32 C", p => p.C, (p, v) => p.C = v));
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("字符串"), Binding = new Binding(nameof(LuaRow.S)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("String"), Binding = new Binding(nameof(LuaRow.S)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
 
-        var add = new Button { Content = L.T("添加参数"), MinWidth = 100, Margin = new Thickness(0, 0, 6, 0) };
-        var del = new Button { Content = L.T("删除所选"), MinWidth = 100 };
+        var add = new Button { Content = L.T("Add parameter"), MinWidth = 100, Margin = new Thickness(0, 0, 6, 0) };
+        var del = new Button { Content = L.T("Delete selected"), MinWidth = 100 };
         add.Click += (_, _) => { _field.Params!.Add(new LuaParam()); Reload(); };
         del.Click += (_, _) =>
         {
@@ -265,7 +265,7 @@ internal sealed class LuaParamsDialog : Window
     private void Reload()
     {
         _grid.ItemsSource = _field.Params!.Select(p => new LuaRow(p)).ToList();
-        Title = L.F("Lua 参数（{0} 项）", _field.Params!.Count);
+        Title = L.F("Lua parameters ({0})", _field.Params!.Count);
     }
 
     private sealed class LuaRow
@@ -308,7 +308,7 @@ internal sealed class NewConversationDialog : Window
 
         Content = Layout(
             DialogChrome.Heading(L.NewConversationTitle),
-            DialogChrome.Caption(L.T("首句与结束语可以先留空，稍后在表格里补。")),
+            DialogChrome.Caption(L.T("First line and closing line can be left empty and filled in the table later.")),
             DialogChrome.FieldRow(L.NewConversationSpeaker, sp),
             DialogChrome.FieldRow(L.NewConversationFirst, ft),
             DialogChrome.FieldRow(L.NewConversationEnd, et),
@@ -367,7 +367,7 @@ internal sealed class NewQuestDialog : Window
         root.Children.Add(footer);
         var stack = new StackPanel();
         stack.Children.Add(DialogChrome.Heading(L.NewQuestTitle));
-        stack.Children.Add(DialogChrome.Caption(L.T("会生成一个含单个 Task 的 QST2 v9 骨架，之后可在表格里增删。")));
+        stack.Children.Add(DialogChrome.Caption(L.T("Generates a QST2 v9 skeleton with a single task; add / remove more in the table.")));
         stack.Children.Add(DialogChrome.FieldRow(L.NewQuestGroup, g));
         stack.Children.Add(DialogChrome.FieldRow(L.NewQuestName, n));
         stack.Children.Add(DialogChrome.FieldRow(L.NewQuestTaskTitle, t));
@@ -384,7 +384,7 @@ internal sealed class ImportTxtPreviewDialog : Window
 
     public ImportTxtPreviewDialog(DocSession doc, string txtPath)
     {
-        DialogChrome.Init(this, L.F("TXT 回填预览 — {0}", Path.GetFileName(txtPath)), 960, 620);
+        DialogChrome.Init(this, L.F("TXT backfill preview — {0}", Path.GetFileName(txtPath)), 960, 620);
         var model = (object?)doc.Cnv ?? doc.Qst!;
         var preview = BatchOps.BuildImportPreview(model, txtPath);
         bool countOk = doc.PrimaryLanguage.Texts.Count == TextExport.SplitTxt(BatchOps.ReadTextAuto(txtPath)).Count;
@@ -396,9 +396,9 @@ internal sealed class ImportTxtPreviewDialog : Window
             CanUserSortColumns = false,
             HeadersVisibility = DataGridHeadersVisibility.Column,
         };
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("行"), Binding = new Binding(nameof(PreviewRow.Idx)), Width = new DataGridLength(60) });
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("txt 行"), Binding = new Binding(nameof(PreviewRow.New)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("当前文本"), Binding = new Binding(nameof(PreviewRow.Cur)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Line"), Binding = new Binding(nameof(PreviewRow.Idx)), Width = new DataGridLength(60) });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("TXT line"), Binding = new Binding(nameof(PreviewRow.New)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Current text"), Binding = new Binding(nameof(PreviewRow.Cur)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
 
         var rows = new List<PreviewRow>();
         foreach (var (idx, line, cur) in preview)
@@ -408,15 +408,15 @@ internal sealed class ImportTxtPreviewDialog : Window
         var info = new TextBlock
         {
             Text = countOk
-                ? L.F("行数匹配：{0} 行。红色行是将被替换的内容。", preview.Count)
-                : L.T("行数不匹配：txt 与本地化表不一致，禁止回填（游戏按行号位置回填文本）。"),
+                ? L.F("Line count matches: {0} rows. Red rows will be replaced.", preview.Count)
+                : L.T("Line count mismatch between TXT and the localization table — backfill is blocked (the game fills text by line position)."),
             Foreground = countOk ? UiTheme.TextBrush : UiTheme.DangerBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 8),
         };
 
         var cancel = DialogChrome.Cancel(this);
-        var apply = DialogChrome.Button(L.T("应用回填"), primary: true, minWidth: 120);
+        var apply = DialogChrome.Button(L.T("Apply backfill"), primary: true, minWidth: 120);
         apply.IsEnabled = countOk;
         apply.Click += (_, _) =>
         {
@@ -452,13 +452,13 @@ internal sealed class ScriptListDialog : Window
         _doc = doc;
         _original = original;
         _work = original.Clone();
-        DialogChrome.Init(this, isCondition ? L.T("编辑条件", "Edit Conditions") : L.T("编辑动作", "Edit Actions"), 980, 640);
+        DialogChrome.Init(this, isCondition ? L.T("Edit condition") : L.T("Edit action"), 980, 640);
 
         var banner = new TextBlock
         {
             Text = isCondition
-                ? L.T("⚑ 条件 —— 全部满足时，这段内容才会出现 / 生效")
-                : L.T("⚡ 动作 —— 条件满足后要执行的效果"),
+                ? L.T("⚑ Conditions — all must match for this content to appear")
+                : L.T("⚡ Actions — effects executed when conditions match"),
             Foreground = isCondition ? UiTheme.AccentBrush : UiTheme.OkBrush,
             FontWeight = FontWeight.SemiBold,
             Padding = new Thickness(12, 8, 8, 8),
@@ -472,12 +472,12 @@ internal sealed class ScriptListDialog : Window
         var logicRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
         if (!isCondition)
         {
-            logicRow.Children.Add(DialogChrome.Caption(L.T("动作按顺序执行（格式上没有 AND/OR 关系逻辑）。")));
+            logicRow.Children.Add(DialogChrome.Caption(L.T("Actions run in order (no AND/OR logic by format).")));
         }
 
-        var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
+        var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         _editor = new ScriptListEditor(_doc, _work, isCondition, () => { });
@@ -515,9 +515,9 @@ internal sealed class CnvNodeDialog : Window
     private readonly CnvStep _step;
     private readonly CnvFile _cnv;
     private readonly ComboBox _type = new() { MinWidth = 200 };
-    private readonly CheckBox _once = new() { Content = L.T("仅一次") };
-    private readonly CheckBox _always = new() { Content = L.T("总是显示") };
-    private readonly CheckBox _unimportant = new() { Content = L.T("不重要") };
+    private readonly CheckBox _once = new() { Content = L.T("Once only") };
+    private readonly CheckBox _always = new() { Content = L.T("Always show") };
+    private readonly CheckBox _unimportant = new() { Content = L.T("Unimportant") };
     private readonly TextBox _voPath = new() { MinWidth = 320 };
     private readonly ComboBox _link = new() { MinWidth = 320 };
 
@@ -529,8 +529,8 @@ internal sealed class CnvNodeDialog : Window
         _cnv = c;
         _step = s;
         string title = isNew
-            ? L.T($"添加节点  [{s.Index}]", $"Add Node  [{s.Index}]")
-            : L.T($"节点编辑  [{s.Index}]", $"Node Edit  [{s.Index}]");
+            ? L.F("Add node  [{0}]", s.Index)
+            : L.F("Node editor  [{0}]", s.Index);
         DialogChrome.Init(this, title, 540, 320);
 
         // 类型名"原文（本地化）"（如 speech（台词）），与表格节点列一致
@@ -565,42 +565,42 @@ internal sealed class CnvNodeDialog : Window
         // 切换类型为"跳转"时实时启用跳转目标下拉（仅跳转节点有 LinkId 字段）
         _type.SelectionChanged += (_, _) => _link.IsEnabled = _type.SelectedIndex == (int)Names.StepLink;
 
-        var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
+        var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(DialogChrome.FieldRow(L.T("类型") + ":", _type));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("Kind") + L.Colon, _type));
         stack.Children.Add(new TextBlock
         {
-            Text = L.T("台词文本请在主界面底部编辑器中修改（选中节点行后编辑）。"),
+            Text = L.T("Edit dialogue text in the bottom editor of the main window (select a node row first)."),
             Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 0),
         });
         var flagsRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 6, 0, 6) };
-        var flagsLabel = new TextBlock { Text = L.T("显示开关") + ":", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var flagsLabel = new TextBlock { Text = L.T("Display switches") + L.Colon, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         flagsRow.Children.Add(flagsLabel);
         flagsRow.Children.Add(_once);
         flagsRow.Children.Add(_always);
         flagsRow.Children.Add(_unimportant);
         stack.Children.Add(flagsRow);
-        var voBrowse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false, minWidth: 88);
+        var voBrowse = DialogChrome.Button(L.T("Browse…"), primary: false, minWidth: 88);
         voBrowse.Margin = new Thickness(6, 0, 0, 0);
         voBrowse.IsEnabled = c.Version >= 6;
         voBrowse.Click += async (_, _) =>
         {
             string? rel = await FileBrowserDialog.Pick(this, "resources",
-                L.T("选择配音文件", "Select voice file"), new[] { "wav", "ogg" }, _voPath.Text);
+                L.T("Choose voice-over file"), new[] { "wav", "ogg" }, _voPath.Text);
             if (rel != null) _voPath.Text = rel.Replace('\\', '/');
         };
         var voRow = new DockPanel();
         DockPanel.SetDock(voBrowse, Dock.Right);
         voRow.Children.Add(voBrowse);
         voRow.Children.Add(_voPath);
-        stack.Children.Add(DialogChrome.FieldRow(L.T("配音文件") + ":", voRow));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("跳转到") + ":", _link));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("Voice file") + L.Colon, voRow));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("Jump to") + L.Colon, _link));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
@@ -642,13 +642,13 @@ internal sealed class QuestPropsDialog : Window
 {
     // 任务文件 Id：引用标识，固定十六进制单框（官方 QuestEditor 底部同款显示）
     private readonly NumPairBox _uid = new(0, mode: NumBoxMode.HexOnly);
-    private readonly CheckBox _primary = new() { Content = L.T("主线任务 Primary（bit0）", "Primary (bit0)") };
-    private readonly CheckBox _secondary = new() { Content = L.T("支线任务 Secondary（bit1）", "Secondary (bit1)") };
-    private readonly CheckBox _repeatable = new() { Content = L.T("可重复 Repeatable（bit2）", "Repeatable (bit2)") };
+    private readonly CheckBox _primary = new() { Content = L.T("Primary quest (bit0)") };
+    private readonly CheckBox _secondary = new() { Content = L.T("Secondary quest (bit1)") };
+    private readonly CheckBox _repeatable = new() { Content = L.T("Repeatable (bit2)") };
 
     internal QuestPropsDialog(QstFile q)
     {
-        DialogChrome.Init(this, L.T("任务属性", "Quest Properties"), 380, 260);
+        DialogChrome.Init(this, L.T("Quest properties"), 380, 260);
         _uid.SetValue(q.Id);
         uint f = q.Unknown10;
         _primary.IsChecked = (f & 1) != 0;
@@ -658,9 +658,9 @@ internal sealed class QuestPropsDialog : Window
         _primary.IsCheckedChanged += (_, _) => { if (_primary.IsChecked == true) _secondary.IsChecked = false; };
         _secondary.IsCheckedChanged += (_, _) => { if (_secondary.IsChecked == true) _primary.IsChecked = false; };
 
-        var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
+        var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
@@ -670,7 +670,7 @@ internal sealed class QuestPropsDialog : Window
         stack.Children.Add(_repeatable);
         stack.Children.Add(new TextBlock
         {
-            Text = L.T("组名 / 任务名请在主界面底部编辑器中修改（选中对应行后编辑）。"),
+            Text = L.T("Edit the group / quest names in the bottom editor of the main window (select the row first)."),
             Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0),
@@ -703,27 +703,27 @@ internal sealed class QstFieldsDialog : Window
     internal QstFieldsDialog(QstRowOwner row)
     {
         // uid 行在官方编辑器无编辑入口 → NumPairBox 只读展示（十六进制单框）；flags 为计数类小值走十进制单框
-        DialogChrome.Init(this, L.T("节点编辑", "Edit Node") + "  " + row.NodeLabel, 660, 0, SizeToContent.Height);
+        DialogChrome.Init(this, L.T("Node editor") + "  " + row.NodeLabel, 660, 0, SizeToContent.Height);
         switch (row)
         {
             case QstTaskRow tr:
-                _nums.Add((L.T("uid（引用标识）", "uid (referenced by)"), new NumPairBox(tr.T.UnknownA8, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
-                _nums.Add((L.T("flags（暂只有 None）", "flags (only None)"), new NumPairBox(tr.T.UnknownAC)));
-                _flags.Add((L.T("isBlocker（阻断后续任务，v≥8）", "isBlocker (blocks next tasks, v>=8)"), Check(tr.T.Flag8)));
-                _flags.Add((L.T("dontPropagate（不向上传递，v≥9）", "dontPropagate (don't propagate, v>=9)"), Check(tr.T.Flag9)));
+                _nums.Add((L.T("uid (reference id)"), new NumPairBox(tr.T.UnknownA8, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
+                _nums.Add((L.T("flags (only None)"), new NumPairBox(tr.T.UnknownAC)));
+                _flags.Add((L.T("isBlocker (blocks subsequent tasks, v≥8)"), Check(tr.T.Flag8)));
+                _flags.Add((L.T("dontPropagate (do not propagate upward, v≥9)"), Check(tr.T.Flag9)));
                 break;
             case QstObjectiveRow or:
-                _nums.Add((L.T("uid", "uid"), new NumPairBox(or.O.Unknown0, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
-                _nums.Add((L.T("flags", "flags"), new NumPairBox(or.O.Unknown1)));
+                _nums.Add((L.T("uid"), new NumPairBox(or.O.Unknown0, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
+                _nums.Add((L.T("flags"), new NumPairBox(or.O.Unknown1)));
                 break;
             case QstEventRow er:
-                _nums.Add((L.T("flags", "flags"), new NumPairBox(er.E.Unknown)));
+                _nums.Add((L.T("flags"), new NumPairBox(er.E.Unknown)));
                 break;
         }
 
-        var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
+        var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
-        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
@@ -731,7 +731,7 @@ internal sealed class QstFieldsDialog : Window
         foreach (var (lab, cb) in _flags) { cb.Content = lab; stack.Children.Add(cb); }
         stack.Children.Add(new TextBlock
         {
-            Text = L.T("文本内容请在主界面底部编辑器中修改（选中行后编辑）。"),
+            Text = L.T("Edit text in the bottom editor of the main window (select the row first)."),
             Foreground = UiTheme.MutedBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 0),
@@ -780,27 +780,27 @@ internal sealed class SettingsDialog : Window
         public required TextBlock Status;
     }
 
-    private readonly TextBox _root = new() { Watermark = @"例如 G:\GRIM DAWN", MinWidth = 320 };
-    private readonly TextBox _dlc1 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX1", @"Auto-filled: <root>\GDX1"), MinWidth = 320 };
-    private readonly TextBox _dlc2 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX2", @"Auto-filled: <root>\GDX2"), MinWidth = 320 };
-    private readonly TextBox _dlc3 = new() { Watermark = L.T(@"自动填充：<根目录>\GDX3", @"Auto-filled: <root>\GDX3"), MinWidth = 320 };
-    private readonly TextBox _mod = new() { Watermark = L.T(@"可选；如 G:\GD\MODS\我的MOD", @"Optional; e.g. G:\GD\MODS\MyMod"), MinWidth = 320 };
+    private readonly TextBox _root = new() { Watermark = L.T(@"e.g. G:\GRIM DAWN"), MinWidth = 320 };
+    private readonly TextBox _dlc1 = new() { Watermark = L.T(@"Auto-filled: <root>\GDX1"), MinWidth = 320 };
+    private readonly TextBox _dlc2 = new() { Watermark = L.T(@"Auto-filled: <root>\GDX2"), MinWidth = 320 };
+    private readonly TextBox _dlc3 = new() { Watermark = L.T(@"Auto-filled: <root>\GDX3"), MinWidth = 320 };
+    private readonly TextBox _mod = new() { Watermark = L.T(@"Optional; e.g. G:\GD\MODS\MyMod"), MinWidth = 320 };
     private readonly DirRow _rootRow, _dlc1Row, _dlc2Row, _dlc3Row, _modRow;
 
     internal SettingsDialog()
     {
-        DialogChrome.Init(this, L.T("设置", "Settings"), 720, 0, SizeToContent.Height);
+        DialogChrome.Init(this, L.T("Settings"), 720, 0, SizeToContent.Height);
         _root.Text = AppSettings.GameRoot;
         _dlc1.Text = AppSettings.Dlc1Dir;
         _dlc2.Text = AppSettings.Dlc2Dir;
         _dlc3.Text = AppSettings.Dlc3Dir;
         _mod.Text = AppSettings.ModDir;
 
-        _rootRow = MakeRow(_root, withBrowse: true, L.T("选择游戏根目录", "Select game root folder"));
+        _rootRow = MakeRow(_root, withBrowse: true, L.T("Choose game root folder"));
         _dlc1Row = MakeRow(_dlc1, withBrowse: false, null);
         _dlc2Row = MakeRow(_dlc2, withBrowse: false, null);
         _dlc3Row = MakeRow(_dlc3, withBrowse: false, null);
-        _modRow = MakeRow(_mod, withBrowse: true, L.T("选择 MOD 目录", "Select MOD folder"));
+        _modRow = MakeRow(_mod, withBrowse: true, L.T("Select MOD folder"));
 
         // 游戏根目录输入后自动填充 GDX1/2/3 完整路径（可再手工修改；再次改动根目录会重新填充）
         _root.TextChanged += (_, _) =>
@@ -828,7 +828,7 @@ internal sealed class SettingsDialog : Window
         _mod.TextChanged += (_, _) => UpdateAll();
         UpdateAll();
 
-        var ok = DialogChrome.Button(L.T("确定", "OK"), primary: true);
+        var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
         ok.Click += async (_, _) =>
         {
@@ -840,49 +840,40 @@ internal sealed class SettingsDialog : Window
             string? err = AppSettings.Save();
             if (err != null)
                 await MsgBox.Show(this,
-                    L.F("设置已生效，但写入配置文件失败：{0}。配置可能在下次启动时丢失，请检查文件是否只读或被占用。", err),
-                    L.T("保存设置", "Save settings"), MsgButtons.Ok, warning: true);
+                    L.F("Settings are in effect, but writing the config file failed: {0}. They may be lost on next start — check whether the file is read-only or locked.", err),
+                    L.T("Save settings"), MsgButtons.Ok, warning: true);
             Close(true);
         };
-        var cancel = DialogChrome.Cancel(this, L.T("取消", "Cancel"));
+        var cancel = DialogChrome.Cancel(this, L.T("Cancel"));
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(DialogChrome.FieldRow(L.T("游戏根目录", "Game root folder"), _rootRow.Host));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC1 目录", "DLC1 folder"), _dlc1Row.Host));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 目录", "DLC2 folder"), _dlc2Row.Host));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC3 目录", "DLC3 folder"), _dlc3Row.Host));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("MOD 目录", "MOD folder"), _modRow.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("Game root folder"), _rootRow.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC1 folder"), _dlc1Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 folder"), _dlc2Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("DLC3 folder"), _dlc3Row.Host));
+        stack.Children.Add(DialogChrome.FieldRow(L.T("MOD folder"), _modRow.Host));
 
         // 预览内置文件树：database 仅 .dbr；resources 排除 ARZ / ARC / DBR
         var previewRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-        var prevDb = DialogChrome.Button(L.T("预览 database 文件", "Preview database files"), primary: false);
+        var prevDb = DialogChrome.Button(L.T("Preview database files"), primary: false);
         prevDb.Click += async (_, _) => await FileBrowserDialog.Preview(this,
-            "database", L.T("预览 database 文件", "Preview database files"), null, new[] { "dbr", "tpl" }, null);
-        var prevRes = DialogChrome.Button(L.T("预览 resources 文件", "Preview resources files"), primary: false);
+            "database", L.T("Preview database files"), null, new[] { "dbr", "tpl" }, null);
+        var prevRes = DialogChrome.Button(L.T("Preview resources files"), primary: false);
         prevRes.Click += async (_, _) => await FileBrowserDialog.Preview(this,
-            "resources", L.T("预览 resources 文件", "Preview resources files"),
-            L.T("浏览范围：各层 resources\\ 下除 ARZ / ARC / DBR 外的资源（qst,cnv,wav,ogg,tex,fx,anm,lua 等）",
-                "Scope: resources under each layer's resources\\ excluding ARZ / ARC / DBR (qst,cnv,wav,ogg,tex,fx,anm,lua, etc.)"),
+            "resources", L.T("Preview resources files"),
+            L.T("Scope: resources\\ in each layer, excluding ARZ / ARC / DBR (qst, cnv, wav, ogg, tex, fx, anm, lua, etc.)"),
             null, new[] { "arz", "arc", "dbr" });
         previewRow.Children.Add(prevDb);
         previewRow.Children.Add(prevRes);
         stack.Children.Add(previewRow);
         stack.Children.Add(new TextBlock
         {
-            Text = L.T(
-                "加载顺序：游戏根目录 → DLC1 → DLC2 → DLC3 → MOD，后者覆盖前者同名文件，新增文件同样生效；" +
-                "每层须含 database 或 resources 之一。填写游戏根目录后自动填充 GDX1/2/3 完整路径（可修改）。",
-                "Load order: game root → DLC1 → DLC2 → DLC3 → MOD; later layers override same-name files " +
-                "and add new ones. Each layer needs a database and/or resources subfolder. " +
-                "GDX1/2/3 paths are auto-filled from the game root (editable)."),
+            Text = L.T("Load order: game root → DLC1 → DLC2 → DLC3 → MOD; later layers override same-name files and add new ones. Each layer needs a database and/or resources subfolder. GDX1/2/3 paths are auto-filled from the game root (editable)."),
             Foreground = UiTheme.TextBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 8, 0, 2),
         });
-        stack.Children.Add(DialogChrome.Caption(L.T(
-            "说明：浏览资源时按上述覆盖规则合并显示各层 database / resources 下的文件（文件名带来源标签）。配置保存于 %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json。",
-            "Resource browsing merges database / resources across layers by the override rules above " +
-            "(filenames carry a source tag). Settings are stored in %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json.")));
+        stack.Children.Add(DialogChrome.Caption(L.T("Note: the browser merges files from each layer's database / resources folder using the override rules above (source tag shown by name). Config is saved to %USERPROFILE%\\.CnvQstEditor\\CnvQstEditor.json.")));
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
@@ -899,7 +890,7 @@ internal sealed class SettingsDialog : Window
         host.Children.Add(box);
         if (withBrowse)
         {
-            var browse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false);
+            var browse = DialogChrome.Button(L.T("Browse…"), primary: false);
             browse.Margin = new Thickness(8, 0, 0, 0);
             browse.SetValue(Grid.ColumnProperty, 1);
             browse.Click += async (_, _) =>

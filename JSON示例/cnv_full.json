@@ -1,93 +1,162 @@
 // ============================================================================
-// JSON → CNV 完整示例（JSONC：允许 // 与 /* */ 注释、允许尾逗号）
+// JSON → CNV 全量示例（JSONC：允许 // 与 /* */ 注释，允许尾逗号）
 //
-// 生成命令（在仓库根目录执行，二选一）：
-//   dotnet CnvQstTool/bin/Debug/net8.0/CnvQstTool.dll make JSON示例/cnv_full.jsonc -o 输出.cnv
-//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll make JSON示例/cnv_full.jsonc -o 输出.cnv
+// 本文件同时覆盖：全部顶层字段、全部节点字段、7 种节点类型、30 种条件、
+// 27 个可用动作、hints（link/flags/vo）、以及 languages 多语言块。
+// 生成命令（仓库根目录）：
+//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll convert JSON示例/cnv_full.json -o 输出.cnv
+//   CnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o 输出.cnv
+// 生成后可用 verify 回读校验：
+//   CnvQstEditor-cli.exe verify 输出.cnv
 //
-// 本文件演示：根节点、层级、全部节点类型（speech/continue/accept/decline/end/link/random）、
-// 条件（AND/OR、比较符、官方字段名/位置参数）、动作、配音路径、flags。
-// 条件/动作的 30/27 种类型全表见 JSON示例/cnv_all_conditions_actions.jsonc 与文档 JSON转CNV.md。
+// ----------------------------------------------------------------------------
+// 字段总览（下文每个字段都有更详细的就地注释）
+// ----------------------------------------------------------------------------
+// 顶层：
+//   format     string  必填  "cnv"（生成 .cnv）或 "qst"（生成 .qst，见另一文档）
+//   version    u32     可选  ≥5；5=无 vo，6=有 vo（推荐）
+//   id         u32     可选  本文件自有 ID；省略=按 speaker 的 FNV1 计算；写 0 就是 0
+//   speaker    string  可选  根节点文本（通常是说话人名），占本地化槽 0
+//   flags      u32     可选  根节点开关（bit0 仅一次 / bit1 总是显示 / bit2 不重要）
+//   vo         string  可选  根节点配音路径，仅 version>=6 写入
+//   logic      string  可选  根条件关系 "AND"/"OR"（默认 AND）
+//   cond       array   可选  根条件列表
+//   act        array   可选  根动作列表
+//   languages  array   可选  显式语言块；写了就以它为准，text/speaker 仅作回退
+//   rows       array   必填  根以下的对话节点（深度前序顺序）
 //
-// 每个设置项的注释格式为：选项1（中文）:用途。选项2（中文）:用途。
+// languages[] 每项：
+//   tag        string  必填  语言标签（官方 6 种：enUS/enGB/es/fr/de/it）
+//   texts      array   必填  文本行；行数必须等于「1(根) + rows 条数」，缺/多行都会报错
+//
+// rows[] 每项：
+//   level      int     必填  ≥1；父节点 = 之前最近的 level-1 行；不能跳级
+//   kind       string  必填  root/speech/continue/accept/decline/generic/end/link/random(selector)，或数字 0-8
+//   text       string  可选  节点文本；空串也占一行本地化槽
+//   flags      u32     可选  节点开关（同根节点）
+//   vo         string  可选  配音路径（同根节点）
+//   link       int     可选  仅 kind=link：目标展平序号；0=根，1..rows.Length=行号，省略=自指
+//   logic      string  可选  本节点条件关系 "AND"/"OR"
+//   cond       array   可选  本节点条件列表
+//   act        array   可选  本节点动作列表
+//
+// cond[] 四种写法（可混用）：
+//   A {"官方类型名": [位置参数…], "cmp": 比较符}
+//   B {"官方类型名": {"官方字段名": 值…}, "cmp": 比较符}
+//   C {"type": 类型号, "args": [位置参数…] 或 {"字段":值…}, "cmp": 比较符}
+//   D type 与具名类型同时出现时，type 优先
+//   比较符 cmp：0 "<" / 1 "<=" / 2 "="（默认）/ 3 ">=" / 4 ">" / 5 "!="
+//   条件类型号 0-29；动作类型号 1-28（0、16 不可用，共 27 个）。
+//   动作没有 cmp；同一节点的动作按数组顺序执行。
+//
+// ----------------------------------------------------------------------------
+// 换行写法：游戏内换行用字面量 {^n} 表示（下方第 1 行文本有示例）。
+// 不要写 JSON 转义的 \n —— 会写入真正的换行字节，官方文本约定不用它。
+// ----------------------------------------------------------------------------
+// languages 写法要点：
+//   · 显式 languages 存在时，以 texts 为准；speaker/text 字段仍必须写，但不会覆盖 languages。
+//   · 每一行文本必须与「节点」一一对齐：槽 0 = 根(speaker)，槽 1 = rows[0]，槽 2 = rows[1]……
+//   · link 节点也会占一行，通常留空；空串是合法文本。
+//   · 想加多语言时，在 languages 里再放一个 { "tag": "enGB", "texts": [ … ] }，
+//     每个语言块的 texts 行数都必须相同；可以用 GUI 的「本地化文本」视图检查。
 // ============================================================================
 {
-  // 格式："cnv"（对话）:生成 .cnv 文件。"qst"（任务）:生成 .qst 文件（另一个文档）。
   "format": "cnv",
 
-  // 版本：5（旧版）:无 vo 配音路径字段。6（推荐）:支持 vo 配音路径；语料主流为 6。
+  // 版本：5=旧版（无 vo 字段）；6=支持 vo 配音路径（推荐）。
   "version": 6,
 
-  // 对话 id（u32）：省略:由工具按 FNV1(speaker) 自动计算。0..4294967295:显式指定。
-  // 同一说话人的多段对话建议显式给不同 id，避免工具/运行时按 id 去重。
+  // 对话 id（u32）：省略时按 FNV1(speaker) 自动计算；显式写（含 0）则原样使用。
+  // 同一说话人的多段对话建议显式给不同 id。
   "id": 0,
 
-  // 根节点文本（本地化槽 0，通常是说话人名）：任意字符串。
+  // 根节点文本（本地化槽 0，通常是说话人名）。
   "speaker": "Alex",
 
-  // 根节点 flags（u32）：0:无。1（OnceOnly）:仅一次。2（AlwaysShow）:总是显示。4（Unimportant）:不重要。
-  // 1/2/4 可相加；高位保留，未知时保持 0。
+  // 根节点 flags（u32）：0=无；1=OnceOnly 仅一次；2=AlwaysShow 总是显示；4=Unimportant 不重要。
+  // 1/2/4 可按位相加；高位保留，未知时写 0。
   "flags": 0,
 
-  // 根节点配音文件（version>=6 才写入）：""（无配音）:留空。其它:相对 resources 的音频路径，如 conversations/alex_01.ogg。
+  // 根节点配音路径（仅 version>=6 写入）：""=无配音；其它填相对 resources 的路径。
   "vo": "",
 
-  // 根节点条件关系："AND"（全部满足）:所有条件都成立才通过。0:同 AND。
-  //               "OR"（任一满足）:任意一个条件成立即通过。1:同 OR。根节点没有条件时可省略。
+  // 根节点条件关系："AND" 全部满足（默认，0）；"OR" 任一满足（1）。
   "logic": "AND",
 
-  // 根节点条件列表：[]（无条件）:对话入口不设门槛。数组:每个元素是一条条件（写法见下方 rows[].cond）。
-  "cond": [],
+  // 根节点条件列表：[]=进入对话不设门槛；数组元素写法见 rows[].cond。
+  "cond": [
+    // HasToken：TokenName（字符串）+ HasToken（布尔）。
+    { "HasToken": ["MET_ALEX", true] }
+  ],
 
-  // 根节点动作列表：[]（无动作）:进入对话时不执行效果。数组:每个元素是一个动作，按顺序执行。
-  "act": [],
+  // 根节点动作列表：[]=不执行；数组按顺序执行。
+  "act": [
+    // GiveToken：TokenName（字符串）。
+    { "GiveToken": ["MET_ALEX"] }
+  ],
 
-  // 对话节点。数组顺序 = 文件中的深度前序顺序 = 本地化文本槽顺序。
-  // 根节点由 speaker/text 单独给出，不在 rows 中。
+  // --------------------------------------------------------------------------
+  // languages：显式语言块。本文件演示 1 个语言块（enUS）。
+  // 行数 = 1(根) + 11(rows) = 12 行；每行注释标出对应的节点。
+  // --------------------------------------------------------------------------
+  "languages": [
+    {
+      "tag": "enUS",
+      "texts": [
+        "Alex",                        // 槽 0  = 根（speaker）
+        "你终于来了。{^n}路上还顺利吗？", // 槽 1  = rows[0] speech
+        "继续",                        // 槽 2  = rows[1] continue
+        "我接受。",                    // 槽 3  = rows[2] accept
+        "以后再说。",                  // 槽 4  = rows[3] decline
+        "结束",                        // 槽 5  = rows[4] end
+        "",                            // 槽 6  = rows[5] link（跳转节点，文本通常留空）
+        "随机问候",                    // 槽 7  = rows[6] random
+        "随机结果 A",                  // 槽 8  = rows[7] speech
+        "随机结果 B",                  // 槽 9  = rows[8] speech
+        "随机结束",                    // 槽 10 = rows[9] end
+        "全类型条件/动作目录"           // 槽 11 = rows[10] speech（下方全量表）
+      ]
+    }
+    // 多语言示例：复制上面的对象，改 tag 与 texts 即可（每个块的 texts 行数必须相同）。
+    // { "tag": "enGB", "texts": [ "Alex", "You finally arrived.{^n}Was the road kind?", … ] }
+  ],
+
+  // 对话节点。数组顺序 = 文件中的深度前序顺序 = 本地化槽顺序（槽 0 是根）。
   "rows": [
     // ------------------------------------------------------------------------
-    // 第 1 行：根的直接子节点，普通台词；演示条件 AND、比较符、动作、配音。
+    // rows[0]：根的直接子节点，普通台词；演示条件 AND、比较符、动作、配音、{^n} 换行。
     // ------------------------------------------------------------------------
     {
-      // level（层级）：1:根的直接子节点。2:上一行 level=1 的子节点。3:上一行 level=2 的子节点，依此类推。
-      // 父节点 = 本行之前最近一个 level 小 1 的行；层级不能跳级（level=2 前必须有 level=1）。
+      // level（层级）：1=根的直接子节点；2=上一 level=1 行的子节点，依此类推。
+      // 父节点 = 本行之前最近一个 level 小 1 的行；不能跳级。
       "level": 1,
 
-      // kind（节点类型）：speech（台词）:普通对话节点。continue（继续选项）:玩家选择"继续"。
-      //                  accept（接受选项）:玩家选择"接受"。decline（拒绝选项）:玩家选择"拒绝"。
-      //                  end（结束）:结束对话。link（跳转）:跳到同一文件的另一节点。
-      //                  selector（选择器）:随机/选择节点，官方枚举名 Random。random（随机）:同 selector。
-      //                  generic（通用）:类型 5，官方未命名。也可直接写数字 0–8。
+      // kind（节点类型）：speech 台词 / continue 继续 / accept 接受 / decline 拒绝 /
+      // end 结束 / link 跳转 / random（selector）随机 / generic 通用 / root 根样式（一般不用）。
+      // 也可直接写数字 0-8。
       "kind": "speech",
 
-      // text（节点文本）：任意字符串，会占用一条本地化槽。""（空文本）:允许，link 节点可留空。
-      "text": "你终于来了。",
+      // text（节点文本）：任意字符串；空串也占一行槽位。游戏内换行写 {^n}。
+      "text": "你终于来了。{^n}路上还顺利吗？",
 
-      // flags（节点标志）：0:无。1（OnceOnly）:仅显示一次。2（AlwaysShow）:总是显示。
-      //                    4（Unimportant）:不重要。可相加（如 3 = 仅一次 + 总是显示）。高位保留，未知时写 0。
+      // flags（节点开关）：0 无；1 仅一次；2 总是显示；4 不重要；可相加（如 3）。
       "flags": 0,
 
-      // vo（配音路径，version>=6）：""（无配音）:不写路径。其它:相对 resources 的音频路径。
+      // vo（配音路径，version>=6）：""=无配音；其它填相对 resources 的路径。
       "vo": "conversations/alex_01.ogg",
 
-      // logic（条件关系，仅本节点条件有效）："AND"（全部满足）:默认。0:同 AND。"OR"（任一满足）:1:同 OR。
+      // logic（本节点条件关系）："AND" 全部满足（默认，0）；"OR" 任一满足（1）。
       "logic": "AND",
 
-      // cond（条件列表）：[]（无条件）:本节点始终可用。数组:每条条件见下方示例。
+      // cond（条件列表）：[]=本节点始终可用。
       "cond": [
-        // 具名 + 位置参数写法：{"官方类型名": [字段1, 字段2, ...], "cmp": 比较符}
-        // HasToken：body = 字符串 TokenName + 布尔 HasToken。
-        // cmp 对该类布尔条件无实际语义，官方固定存 "="（2）；显式写出便于阅读。
-        { "HasToken": ["MY_TOKEN", true], "cmp": "=" },
-
-        // HasFaction：字符串 FactionName + 数值 Value；cmp 决定数值比较方向。
-        // cmp 可用："<"（小于）:0。"<="（小于等于）:1。"="（等于）:2（默认）。">="（大于等于）:3。
-        //          ">"（大于）:4。"!="（不等于）:5。也可直接写数字 0–5。
+        // 写法 A：具名 + 位置参数。HasFaction：FactionName（字符串）+ Value（数值）。
+        // cmp 决定数值比较方向：">=" 表示阵营声望达到或超过 5000。
         { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
 
-        // 具名 + 具名参数写法（字段名按官方弹窗）：任务/目标引用用文件内落盘的 uid（u32）。
-        // HasQuestObjective：Quest（.qst 相对路径）+ Task（task uid）+ Objective（objective uid）+ Satisfied（布尔）。
-        // 该类型默认 bodyVersion=1，会多出 Task/Objective 两个字段；不要手工写 subType=0。
+        // 写法 B：具名 + 具名参数（字段名大小写不敏感）。
+        // HasQuestObjective：Quest（.qst 路径）+ Task（task uid）+ Objective（objective uid）+ Satisfied（布尔）。
+        // Task/Objective 必须与目标 QST 文件里落盘的 uid 完全一致。
         {
           "HasQuestObjective": {
             "Quest": "quests/example.qst",
@@ -98,22 +167,22 @@
           "cmp": "="
         }
 
-        // 原始类型号写法（探测未知类型/需要精确控制时）：
+        // 写法 C/D（原始类型号，探测未知类型或需要精确控制时）：
         // { "type": 6, "subType": 1, "args": ["SURVIVORS", 5000], "cmp": ">=" }
-        // subType 可省略；省略时按官方默认（HasFaction/HasItem/HasQuestObjective/LuaScript/CheckRandomValue = 1，其余 0）。
+        // subType 可省略；省略时按官方默认（HasFaction/HasItem/HasQuestObjective/LuaScript/CheckRandomValue=1，其余=0）。
       ],
 
-      // act（动作列表）：[]（无动作）:本节点不产生效果。数组:按顺序执行；动作没有 AND/OR，也没有 cmp。
+      // act（动作列表）：按顺序执行；没有 AND/OR，也没有 cmp。
       "act": [
-        // GiveMoney：数值 MoneyAmount（金币数量）。
+        // GiveMoney：MoneyAmount（u32）。
         { "GiveMoney": [500] },
 
-        // GiveExperience：数值 Experience（经验值）。
+        // GiveExperience：Experience（u32）。
         { "GiveExperience": [1200] }
       ]
     },
 
-    // 第 2 行：第 1 行的子节点（level=2），玩家"继续"选项。
+    // rows[1]：rows[0] 的子节点（level=2），玩家「继续」选项。
     {
       "level": 2,
       "kind": "continue",
@@ -123,7 +192,7 @@
       "act": []
     },
 
-    // 第 3 行：第 2 行的子节点（level=3），玩家"接受"选项；演示任务动作与物品动作。
+    // rows[2]：rows[1] 的子节点（level=3），玩家「接受」选项；演示任务与物品动作。
     {
       "level": 3,
       "kind": "accept",
@@ -131,15 +200,15 @@
       "flags": 0,
       "cond": [],
       "act": [
-        // BeginQuestTask：QuestFile（.qst 相对路径）+ Task（文件内 task uid）。
+        // BeginQuestTask：QuestFile（.qst 路径）+ Task（task uid）。
         { "BeginQuestTask": ["quests/example.qst", 305419896] },
 
-        // GiveItem：ItemRecord（.dbr 相对路径）+ NumItems（数量，u32）。
+        // GiveItem：ItemRecord（.dbr 路径）+ NumItems（u32）。
         { "GiveItem": ["records/items/gear/example.dbr", 1] }
       ]
     },
 
-    // 第 4 行：第 2 行的另一个子节点（level=3），"拒绝"选项。
+    // rows[3]：rows[1] 的另一个子节点（level=3），「拒绝」选项。
     {
       "level": 3,
       "kind": "decline",
@@ -149,7 +218,7 @@
       "act": []
     },
 
-    // 第 5 行：第 2 行的子节点（level=3），结束节点。
+    // rows[4]：rows[1] 的子节点（level=3），结束节点。
     {
       "level": 3,
       "kind": "end",
@@ -159,9 +228,9 @@
       "act": []
     },
 
-    // 第 6 行：根的直接子节点（level=1），link 跳转；link=5 表示跳到 rows 的第 5 行。
-    // link（目标行号）：1..rows.Length:rows 的 1 起序号。0:根节点。省略:自指（本行）。
-    // 注意：这里的目标是"本地化槽/展平节点"的序号，不是数组下标；工具会自动换算。
+    // rows[5]：根的直接子节点（level=1），link 跳转。
+    // link=5 表示跳到 rows 的第 5 行（rows[4] 的 end）；0=根；省略=自指。
+    // 注意 link 的目标是展平节点序号（1 起行号），不是数组下标。
     {
       "level": 1,
       "kind": "link",
@@ -172,7 +241,7 @@
       "act": []
     },
 
-    // 第 7 行：根的直接子节点（level=1），random/selector 节点；其子节点为随机分支。
+    // rows[6]：根的直接子节点（level=1），random/selector 节点；子节点是随机分支。
     {
       "level": 1,
       "kind": "random",
@@ -182,7 +251,7 @@
       "act": []
     },
 
-    // 第 8 行：第 7 行的子节点（level=2），演示条件 OR 与"具名参数 + 数值比较"。
+    // rows[7]：rows[6] 的子节点（level=2），演示条件 OR 与数值比较。
     {
       "level": 2,
       "kind": "speech",
@@ -190,16 +259,16 @@
       "flags": 0,
       "logic": "OR",
       "cond": [
-        // IsDifficulty：数值 0（Normal）:普通难度。1（Epic）:精英难度。2（Legendary）:终极难度。
+        // IsDifficulty：0 Normal（普通）/ 1 Epic（精英）/ 2 Legendary（终极）。
         { "IsDifficulty": [2], "cmp": "=" },
 
-        // HasMoney：数值 MoneyAmount。
+        // HasMoney：MoneyAmount（金币），">" 表示大于 1000。
         { "HasMoney": [1000], "cmp": ">" }
       ],
       "act": []
     },
 
-    // 第 9 行：第 7 行的另一个子节点（level=2）。
+    // rows[8]：rows[6] 的另一个子节点（level=2）。
     {
       "level": 2,
       "kind": "speech",
@@ -209,7 +278,7 @@
       "act": []
     },
 
-    // 第 10 行：第 7 行的子节点（level=2），结束随机分支。
+    // rows[9]：rows[6] 的子节点（level=2），结束随机分支。
     {
       "level": 2,
       "kind": "end",
@@ -217,6 +286,217 @@
       "flags": 0,
       "cond": [],
       "act": []
+    },
+
+    // ------------------------------------------------------------------------
+    // rows[10]：全类型目录，把 30 种条件与 27 个可用动作各写一次，便于查表。
+    // 条件 logic=OR（任一满足即可，仅演示）；动作按数组顺序执行。
+    // 每个条目的注释给出：类型号、官方名、字段顺序、取值说明。
+    // ------------------------------------------------------------------------
+    {
+      "level": 1,
+      "kind": "speech",
+      "text": "全类型条件/动作目录",
+      "flags": 0,
+      "logic": "OR",
+
+      "cond": [
+        // type 0 OnQuest：QuestFile（任务文件串）+ OnQuest（布尔）。
+        { "OnQuest": ["quests/example.qst", true] },
+
+        // type 1 QuestTaskComplete：QuestFile + Task（task uid）+ TaskComplete（布尔）。
+        { "QuestTaskComplete": ["quests/example.qst", 305419896, true] },
+
+        // type 2 HasExperience：Experience（u32），常配 cmp。
+        { "HasExperience": [10000], "cmp": ">=" },
+
+        // type 3 IsLevel：IsLevel（u32），常配 cmp。
+        { "IsLevel": [10], "cmp": ">=" },
+
+        // type 4 IsDifficulty：0 普通 / 1 精英 / 2 终极。
+        { "IsDifficulty": [2], "cmp": "=" },
+
+        // type 5 IsHardcore：布尔。
+        { "IsHardcore": [false] },
+
+        // type 6 HasFaction：FactionName（字符串）+ Value（u32），默认 bodyVersion=1。
+        { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+        // type 7 HasToken：TokenName（字符串）+ HasToken（布尔）。
+        { "HasToken": ["TOKEN_A", true] },
+
+        // type 8 HasMoney：MoneyAmount（u32），常配 cmp。
+        { "HasMoney": [1000], "cmp": ">=" },
+
+        // type 9 HasItem：ItemRecord（.dbr）+ ItemCount（u32）+ CompleteOnly（布尔）；
+        // 默认 bodyVersion=1，CompleteOnly 才会真正落盘。
+        { "HasItem": ["records/items/gear/example.dbr", 1, false], "cmp": ">=" },
+
+        // type 10 HasKilled：MonsterRecords（路径列表）+ KillCount（尾字 u32）。P 形态。
+        // 也可写 {"paths": [...], "trailing": 3}；位置数组写法无法设置 KillCount。
+        { "HasKilled": { "MonsterRecords": ["records/monsters/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 11 HasQuestObjective：Quest + Task（u32）+ Objective（u32）+ Satisfied（布尔）。
+        // 默认 bodyVersion=1，Task/Objective 才会落盘。
+        {
+          "HasQuestObjective": {
+            "Quest": "quests/example.qst",
+            "Task": 305419896,
+            "Objective": 2271560481,
+            "Satisfied": true
+          }
+        },
+
+        // type 12 LuaScript（条件形态）：call（调用名）+ args（字符串数组）+ tail（Evaluate 尾部）。
+        // tail 为原始 u32/u32/u8/u32/字符串，未完全解码；没把握时可整体省略。
+        {
+          "LuaScript": {
+            "call": "gd.example.check()",
+            "args": ["arg1", "arg2"],
+            "tail": { "t0": 0, "t1": 0, "t2": 0, "t3": 0, "text": "TRUE" }
+          }
+        },
+
+        // type 13 KnowsPlayer：布尔。
+        { "KnowsPlayer": [true] },
+
+        // type 14 OnQuestTask：QuestFile + Task（u32）+ OnTask（布尔）。
+        { "OnQuestTask": ["quests/example.qst", 305419896, true] },
+
+        // type 15 UsedQuestItem：ItemRecord（.dbr）+ NumUsed（u32）。
+        { "UsedQuestItem": ["records/items/quest/example.dbr", 1], "cmp": ">=" },
+
+        // type 16 HasKilledProxy：ProxyRecords（路径列表）+ KillCount（尾字 u32）。P 形态。
+        { "HasKilledProxy": { "ProxyRecords": ["records/proxies/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 17 WaitForCompletion：无字段；{} / [] / 省略 args 均可。
+        { "WaitForCompletion": {} },
+
+        // type 18 ServerHasToken：TokenName + HasToken（布尔）。
+        { "ServerHasToken": ["TOKEN_B", true] },
+
+        // type 19 QuestBlocked：QuestFile + 布尔；官方弹窗两个字段同名 QuestBlocked，
+        // 位置写法最直观（首字段文件串，第二字段布尔）。
+        { "QuestBlocked": ["quests/example.qst", false] },
+
+        // type 20 AnyoneHasToken：TokenName + HasToken（布尔）。
+        { "AnyoneHasToken": ["TOKEN_C", false] },
+
+        // type 21 CheckRandomValue：Name（字符串）+ Value（u32），默认 bodyVersion=1。
+        { "CheckRandomValue": ["roll", 50], "cmp": "<=" },
+
+        // type 22 OwnsDLC：DLC_ID（u32）。
+        { "OwnsDLC": [1], "cmp": "=" },
+
+        // type 23 HasTribute：TributeAmount（u32）。
+        { "HasTribute": [10], "cmp": ">=" },
+
+        // type 24 EarnedDevotion：DevotionAmount（u32）。
+        { "EarnedDevotion": [20], "cmp": ">=" },
+
+        // type 25 HasMastery：MasteryName（u32 下标 0-29，对应 SkillClass01-30）+ HasMastery（布尔）。
+        { "HasMastery": [0, true] },
+
+        // type 26 IsChallenge：0 普通老兵 / 1 精英老兵 / 2 终极老兵。
+        { "IsChallenge": [2], "cmp": ">=" },
+
+        // type 27 HasBuff：BuffName（.dbr 路径）+ HasBuff（布尔）。
+        { "HasBuff": ["records/buffs/example.dbr", true] },
+
+        // type 28 HasKilledMonsterClass：MonsterClass1 + MonsterClass2 + KillCount（三个 u32）。
+        // 前两值枚举：0 Common / 1 Champion / 2 Hero / 3 Boss / 4 Quest / 5 SuperBoss。
+        { "HasKilledMonsterClass": [0, 5, 1], "cmp": ">=" },
+
+        // type 29 HasKilledFaction：Faction1 + Faction2 + KillCount（三个 u32）。
+        // 枚举：0 None / 1 Alone / 2 GenericMonster / 3 Player / 4 Survivors / 5 Aetherials /
+        // 6 Cthonians / 7 Outlaws / 8 Beasts / 9 User0…（官方下拉可继续滚动）。
+        { "HasKilledFaction": [4, 5, 100], "cmp": ">=" }
+      ],
+
+      "act": [
+        // type 1 BeginQuestTask：QuestFile + Task（task uid）。
+        { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 2 CompleteQuest：QuestFile。
+        { "CompleteQuest": ["quests/example.qst"] },
+
+        // type 3 CompleteQuestTask：QuestFile + Task（task uid）。
+        { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 4 GiveMoney：MoneyAmount（u32）。
+        { "GiveMoney": [500] },
+
+        // type 5 GiveFaction：FactionType（字符串）+ Amount（u32）。
+        { "GiveFaction": ["SURVIVORS", 100] },
+
+        // type 6 GiveItem：ItemRecord（.dbr）+ NumItems（u32）。
+        { "GiveItem": ["records/items/gear/example.dbr", 1] },
+
+        // type 7 GiveLevel：NumLevels（u32）。
+        { "GiveLevel": [1] },
+
+        // type 8 GiveExperience：Experience（u32）。
+        { "GiveExperience": [1000] },
+
+        // type 9 GiveToken：TokenName（字符串）。
+        { "GiveToken": ["TOKEN_A"] },
+
+        // type 10 RemoveToken：TokenName（字符串）。
+        { "RemoveToken": ["TOKEN_A"] },
+
+        // type 11 LuaScript（动作形态）：call + args；没有条件版的 tail。
+        { "LuaScript": { "call": "gd.example.run()", "args": ["arg1"] } },
+
+        // type 12 DebugPrint：Text（字符串）。
+        { "DebugPrint": ["hello"] },
+
+        // type 13 PlaySound：SoundRecord（.dbr 路径）。
+        { "PlaySound": ["records/sounds/example.dbr"] },
+
+        // type 14 PlayAnimation：AnimationType（u32 枚举）；语料中 9=Chat。
+        { "PlayAnimation": [9] },
+
+        // type 15 GiveSkillPoint：NumSkillpoints（u32）。
+        { "GiveSkillPoint": [1] },
+
+        // type 17 Notification：Tag（本地化标签字符串）。
+        { "Notification": ["tagExample"] },
+
+        // type 18 GiveAttribPoint：NumAttributePoints（u32）。
+        { "GiveAttribPoint": [1] },
+
+        // type 19 ScriptEvent：ScriptEvent（字符串，通常 EV_ 前缀）。
+        { "ScriptEvent": ["EV_EXAMPLE"] },
+
+        // type 20 GiveRandomItem：ItemRecord（.dbr）+ NumItems（u32）。
+        { "GiveRandomItem": ["records/items/gear/example.dbr", 2] },
+
+        // type 21 GenerateRandomValue：Name + Min（u32）+ Max（u32）。
+        { "GenerateRandomValue": ["roll", 1, 100] },
+
+        // type 22 CastSkill：SkillRecord（.dbr）。
+        { "CastSkill": ["records/skills/example.dbr"] },
+
+        // type 23 UnlockFaction：FactionType（字符串）。
+        { "UnlockFaction": ["SURVIVORS"] },
+
+        // type 24 SetFaction：FactionType（字符串）+ Value（u32）。
+        { "SetFaction": ["SURVIVORS", 1000] },
+
+        // type 25 GiveDevotion：NumDevotionPoints（u32）。
+        { "GiveDevotion": [1] },
+
+        // type 26 GiveTribute：TributeAmount（u32）。
+        { "GiveTribute": [10] },
+
+        // type 27 UnlockTutorial：TutorialPage（u32）。
+        { "UnlockTutorial": [1] },
+
+        // type 28 PlayVideo：Video path（路径字符串）+ AllowSkip（布尔）。
+        { "PlayVideo": ["video/intro.ivf", false] }
+
+        // type 0 / 16 不可用（工厂返回 null），不要写入。
+      ]
     }
   ]
 }

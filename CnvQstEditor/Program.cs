@@ -105,6 +105,15 @@ internal static class Program
                     main.OpenSmokeTab(Creation.NewConversation("Smoke", "你好，冒烟测试。", "再见。"));
                     main.OpenSmokeTab(Creation.NewQuest("SmokeGroup", "SmokeQuest", "任务一", "这是冒烟测试任务。"));
 
+                    string? viewErr = main.SmokeTestViews();
+                    if (viewErr != null)
+                    {
+                        failure = new Exception(viewErr);
+                        Console.WriteLine(viewErr);
+                        main.Close();
+                        return;
+                    }
+
                     // 文件树公共组件自测：临时两层迷你树，断言文件节点建立 + MOD 覆盖生效。
                     string? ftErr = await FileTreePanel.SelfTestAsync();
                     if (ftErr != null)
@@ -157,7 +166,7 @@ internal static class Program
         }
         catch
         {
-            return "(日志写入失败)";
+            return "(log write failed)";
         }
     }
 
@@ -168,9 +177,10 @@ internal static class Program
         try
         {
             string msg = ex.ToString();
+            string detail = msg.Length > 1200 ? msg[..1200] + "…" + L.F("(see {0})", log) : msg;
             _ = MsgBox.Show(null,
-                "程序遇到未预期的错误：\n\n" + (msg.Length > 1200 ? msg[..1200] + "…（详见 " + log + "）" : msg) + "\n\n" + log,
-                "CnvQstEditor 错误", MsgButtons.Ok, warning: true);
+                L.T("The program encountered an unexpected error:") + "\n\n" + detail + "\n\n" + log,
+                L.T("CnvQstEditor error"), MsgButtons.Ok, warning: true);
         }
         catch
         {

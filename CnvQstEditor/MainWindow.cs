@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -25,6 +26,10 @@ internal sealed class MainWindow : Window
     private Menu? _menu;
     private MenuItem? _recentMenu;
     private Control? _toolbar;
+    private readonly Dictionary<DocViewMode, MenuItem> _viewItems = new();
+    private readonly Dictionary<DocViewMode, ToggleButton> _viewButtons = new();
+    /// <summary>Alt+字母 打开对应顶级菜单（Avalonia 的内嵌 Menu 不处理 Alt 访问键，需显式绑定）。</summary>
+    private readonly Dictionary<char, MenuItem> _accessMenus = new();
     private bool _forceClose;
 
     public MainWindow()
@@ -36,7 +41,7 @@ internal sealed class MainWindow : Window
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
-        _tabs.SelectionChanged += (_, _) => UpdateStatus();
+        _tabs.SelectionChanged += (_, _) => { UpdateStatus(); UpdateViewChecks(); };
 
         var status = new Border
         {
@@ -59,6 +64,7 @@ internal sealed class MainWindow : Window
 
         Content = _root;
         BuildChrome();
+        InstallShortcuts();
         UpdateStatus();
 
         AddHandler(DragDrop.DragOverEvent, (_, e) =>
@@ -127,13 +133,17 @@ internal sealed class MainWindow : Window
     {
         if (_menu != null) _root.Children.Remove(_menu);
         if (_toolbar != null) _root.Children.Remove(_toolbar);
+        _viewItems.Clear();
+        _viewButtons.Clear();
+        _accessMenus.Clear();
 
         var menu = new Menu();
 
         var file = MkMenu(L.MFile);
+        _accessMenus['F'] = file;
         file.Items.Add(MkItem(L.OpenTitle, new KeyGesture(Key.O, KeyModifiers.Control), () => _ = OpenViaDialog()));
-        file.Items.Add(MkItem(L.OpenDirBatch, new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null)));
-        _recentMenu = MkMenu(L.T("最近打开", "Recent Files"));
+        file.Items.Add(MkItem(L.OpenDirBatch, new KeyGesture(Key.B, KeyModifiers.Control | KeyModifiers.Shift), () => ShowBatch(null)));
+        _recentMenu = MkMenu(L.T("Recent files"));
         file.Items.Add(_recentMenu);
         file.Items.Add(new Separator());
         file.Items.Add(MkItem(L.Save, new KeyGesture(Key.S, KeyModifiers.Control), () => _ = SaveActive()));
@@ -143,29 +153,51 @@ internal sealed class MainWindow : Window
         file.Items.Add(MkItem(L.Exit, null, Close));
 
         var newMenu = MkMenu(L.MNew);
+        _accessMenus['N'] = newMenu;
         newMenu.Items.Add(MkItem(L.NewConversationMenu, new KeyGesture(Key.N, KeyModifiers.Control), () => _ = NewConversation()));
         newMenu.Items.Add(MkItem(L.NewQuestMenu, new KeyGesture(Key.N, KeyModifiers.Control | KeyModifiers.Shift), () => _ = NewQuest()));
 
         var import = MkMenu(L.MImport);
+        _accessMenus['I'] = import;
         import.Items.Add(MkItem(L.ImportTxtToActive, null, () => _ = ImportTxtToActive()));
         import.Items.Add(MkItem(L.ImportJsonNewTab, null, () => _ = ImportJson()));
 
         var export = MkMenu(L.MExport);
+        _accessMenus['E'] = export;
         export.Items.Add(MkItem(L.ExportTxtOfficial, new KeyGesture(Key.E, KeyModifiers.Control), () => _ = ExportActive("txt")));
         export.Items.Add(MkItem(L.ExportJson, null, () => _ = ExportActive("json")));
         export.Items.Add(MkItem(L.ExportDump, null, () => _ = ExportActive("dump")));
 
         var batch = MkMenu(L.MBatch);
+        _accessMenus['B'] = batch;
         batch.Items.Add(MkItem(L.BatchPanel, new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null)));
 
+        var viewMenu = MkMenu(L.MView);
+        _accessMenus['V'] = viewMenu;
+        foreach (var (mode, gesture) in new (DocViewMode, KeyGesture)[]
+        {
+            (DocViewMode.Visual, new KeyGesture(Key.D1, KeyModifiers.Control)),
+            (DocViewMode.Json, new KeyGesture(Key.D2, KeyModifiers.Control)),
+            (DocViewMode.Localization, new KeyGesture(Key.D3, KeyModifiers.Control)),
+            (DocViewMode.Dump, new KeyGesture(Key.D4, KeyModifiers.Control)),
+        })
+        {
+            var item = MkItem(ViewName(mode), gesture, () => SetActiveView(mode));
+            item.ToggleType = MenuItemToggleType.CheckBox;
+            viewMenu.Items.Add(item);
+            _viewItems[mode] = item;
+        }
+
         var tools = MkMenu(L.MTools);
+        _accessMenus['T'] = tools;
         tools.Items.Add(MkItem(L.VerifyCurrent, new KeyGesture(Key.F5), VerifyActive));
         tools.Items.Add(MkItem(L.Anchors, null, ShowAnchors));
         tools.Items.Add(MkItem(L.ReloadCurrent, new KeyGesture(Key.R, KeyModifiers.Control), () => _ = ReloadActive()));
         tools.Items.Add(new Separator());
-        tools.Items.Add(MkItem(L.T("设置…", "Settings…"), null, () => _ = ShowSettings()));
+        tools.Items.Add(MkItem(L.T("Settings…"), null, () => _ = ShowSettings()));
 
         var lang = MkMenu(L.MenuLanguage);
+        _accessMenus['L'] = lang;
         foreach (var info in L.Languages)
         {
             var code = info.Code;
@@ -174,13 +206,11 @@ internal sealed class MainWindow : Window
             item.IsChecked = code == L.Code;
             lang.Items.Add(item);
         }
-        lang.Items.Add(new Separator());
-        lang.Items.Add(MkItem(L.OpenLangFolder, null, OpenLangFolder));
-
         var help = MkMenu(L.MHelp);
+        _accessMenus['H'] = help;
         help.Items.Add(MkItem(L.About, new KeyGesture(Key.F1), ShowAbout));
 
-        foreach (var m in new[] { file, newMenu, import, export, batch, tools, lang, help }) menu.Items.Add(m);
+        foreach (var m in new[] { file, newMenu, import, export, batch, viewMenu, tools, lang, help }) menu.Items.Add(m);
         Grid.SetRow(menu, 0);
         _root.Children.Add(menu);
         _menu = menu;
@@ -195,13 +225,68 @@ internal sealed class MainWindow : Window
             (L.VerifyCurrent, VerifyActive),
             (L.BatchPanel, () => ShowBatch(null)),
             (L.ReloadCurrent, () => _ = ReloadActive()),
-            (L.T("设置…", "Settings…"), () => _ = ShowSettings()),
+            (L.T("Settings…"), () => _ = ShowSettings()),
         })
             toolbar.Children.Add(ToolBtn(label, action));
+
+        toolbar.Children.Add(new Border
+        {
+            Width = 1,
+            Margin = new Thickness(4, 3, 4, 3),
+            Background = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8)),
+        });
+        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Dump })
+        {
+            var b = new ToggleButton
+            {
+                Content = ViewName(mode),
+                Padding = new Thickness(8, 2, 8, 2),
+                MinHeight = 26,
+                Margin = new Thickness(0, 0, 2, 0),
+            };
+            b.Classes.Add("light");
+            b.Classes.Add("secondary");
+            b.Click += (_, _) => SetActiveView(mode);
+            toolbar.Children.Add(b);
+            _viewButtons[mode] = b;
+        }
         Grid.SetRow(toolbar, 1);
         _root.Children.Add(toolbar);
         _toolbar = toolbar;
         RefreshRecentMenu();
+        UpdateViewChecks();
+    }
+
+    /// <summary>四种文档视图的显示名（菜单与工具条共用）。</summary>
+    private static string ViewName(DocViewMode mode) => mode switch
+    {
+        DocViewMode.Visual => L.T("Visual editor"),
+        DocViewMode.Json => L.T("JSON editor"),
+        DocViewMode.Localization => L.T("Localization text (read-only)"),
+        DocViewMode.Dump => L.T("DUMP view (read-only)"),
+        _ => mode.ToString(),
+    };
+
+    private void SetActiveView(DocViewMode mode)
+    {
+        if (Active is { } view) view.SetView(mode);
+        UpdateViewChecks();
+    }
+
+    /// <summary>当前页签的视图模式同步到菜单勾选与工具条按钮。</summary>
+    private void UpdateViewChecks()
+    {
+        var mode = Active?.Mode;
+        foreach (var (m, item) in _viewItems)
+        {
+            item.IsChecked = mode == m;
+            item.IsEnabled = mode != null;
+        }
+        foreach (var (m, b) in _viewButtons)
+        {
+            b.IsChecked = mode == m;
+            b.IsEnabled = mode != null;
+        }
     }
 
     /// <summary>“最近打开”子菜单：按配置顺序列出现存文件，附“清除历史记录”。</summary>
@@ -215,7 +300,7 @@ internal sealed class MainWindow : Window
             .ToList();
         if (paths.Count == 0)
         {
-            var empty = MkItem(L.T("（无最近打开的文件）", "(No recent files)"), null, () => { });
+            var empty = MkItem(L.T("(no recent files)"), null, () => { });
             empty.IsEnabled = false;
             _recentMenu.Items.Add(empty);
         }
@@ -228,7 +313,7 @@ internal sealed class MainWindow : Window
             }
         }
         _recentMenu.Items.Add(new Separator());
-        var clear = MkItem(L.T("清除历史记录", "Clear History"), null, () =>
+        var clear = MkItem(L.T("Clear history"), null, () =>
         {
             AppSettings.ClearRecent();
             RefreshRecentMenu();
@@ -248,10 +333,61 @@ internal sealed class MainWindow : Window
         return b;
     }
 
-    private static MenuItem MkMenu(string header) => new() { Header = header };
+    private static MenuItem MkMenu(string header) => new() { Header = AccessHeader(header) };
+
+    /// <summary>Avalonia 的访问键用下划线（_F），而语言包沿用 Windows 习惯的 "(&amp;F)"：统一转换。</summary>
+    private static string AccessHeader(string header) => header.Replace("(&", "(_").Replace("&", "_");
 
     private static MenuItem MkItem(string header, KeyGesture? hotkey, Action onClick) =>
         new() { Header = header, HotKey = hotkey, Command = new RelayCommand(onClick) };
+
+    /// <summary>
+    /// 菜单项的 HotKey 在 Avalonia 中只负责显示手势，不注册按键。这里在窗口级补齐真正的快捷键，
+    /// 与菜单/工具条走同一批动作；菜单里仍显示手势方便发现。
+    /// </summary>
+    private void InstallShortcuts()
+    {
+        void Bind(KeyGesture gesture, Action action) =>
+            KeyBindings.Add(new KeyBinding { Gesture = gesture, Command = new RelayCommand(action) });
+
+        Bind(new KeyGesture(Key.O, KeyModifiers.Control), () => _ = OpenViaDialog());
+        Bind(new KeyGesture(Key.B, KeyModifiers.Control | KeyModifiers.Shift), () => ShowBatch(null));
+        Bind(new KeyGesture(Key.S, KeyModifiers.Control), () => _ = SaveActive());
+        Bind(new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift), () => _ = SaveActiveAs());
+        Bind(new KeyGesture(Key.W, KeyModifiers.Control), () => _ = CloseTab(null));
+        Bind(new KeyGesture(Key.N, KeyModifiers.Control), () => _ = NewConversation());
+        Bind(new KeyGesture(Key.N, KeyModifiers.Control | KeyModifiers.Shift), () => _ = NewQuest());
+        Bind(new KeyGesture(Key.E, KeyModifiers.Control), () => _ = ExportActive("txt"));
+        Bind(new KeyGesture(Key.B, KeyModifiers.Control), () => ShowBatch(null));
+        Bind(new KeyGesture(Key.F5), VerifyActive);
+        Bind(new KeyGesture(Key.R, KeyModifiers.Control), () => _ = ReloadActive());
+        Bind(new KeyGesture(Key.F1), ShowAbout);
+        Bind(new KeyGesture(Key.L, KeyModifiers.Control), () => Active?.ToggleLocalization());
+        Bind(new KeyGesture(Key.D1, KeyModifiers.Control), () => SetActiveView(DocViewMode.Visual));
+        Bind(new KeyGesture(Key.D2, KeyModifiers.Control), () => SetActiveView(DocViewMode.Json));
+        Bind(new KeyGesture(Key.D3, KeyModifiers.Control), () => SetActiveView(DocViewMode.Localization));
+        Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
+
+        // 菜单标签里的访问键（文件(F) 等）在 Avalonia 内嵌 Menu 中不生效，按 Alt+字母 直接展开菜单。
+        Bind(new KeyGesture(Key.F, KeyModifiers.Alt), () => OpenAccessMenu('F'));
+        Bind(new KeyGesture(Key.N, KeyModifiers.Alt), () => OpenAccessMenu('N'));
+        Bind(new KeyGesture(Key.I, KeyModifiers.Alt), () => OpenAccessMenu('I'));
+        Bind(new KeyGesture(Key.E, KeyModifiers.Alt), () => OpenAccessMenu('E'));
+        Bind(new KeyGesture(Key.B, KeyModifiers.Alt), () => OpenAccessMenu('B'));
+        Bind(new KeyGesture(Key.V, KeyModifiers.Alt), () => OpenAccessMenu('V'));
+        Bind(new KeyGesture(Key.T, KeyModifiers.Alt), () => OpenAccessMenu('T'));
+        Bind(new KeyGesture(Key.L, KeyModifiers.Alt), () => OpenAccessMenu('L'));
+        Bind(new KeyGesture(Key.H, KeyModifiers.Alt), () => OpenAccessMenu('H'));
+    }
+
+    private void OpenAccessMenu(char key)
+    {
+        if (!_accessMenus.TryGetValue(key, out var item)) return;
+        foreach (var other in _accessMenus.Values)
+            if (!ReferenceEquals(other, item)) other.IsSubMenuOpen = false;
+        item.IsSubMenuOpen = true;
+        item.Focus();
+    }
 
     /// <summary>语言切换：重建菜单 + 各页签标题与内容。</summary>
     private void OnLanguageChanged()
@@ -267,18 +403,8 @@ internal sealed class MainWindow : Window
         UpdateStatus();
     }
 
-    private void OpenLangFolder()
-    {
-        try
-        {
-            Directory.CreateDirectory(L.LangDir);
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(L.LangDir) { UseShellExecute = true });
-        }
-        catch (Exception e) { Gui.Warn(this, L.F("无法打开语言包目录：{0}", e.Message), L.Warning); }
-    }
-
     private void ShowAbout() =>
-        Gui.Info(this, L.AboutBody + "\n\n" + L.F("版本：{0}", AppInfo.Version) + "\n\n" + L.AboutLicense, L.AboutTitle);
+        Gui.Info(this, L.AboutBody + "\n\n" + L.F("Version: {0}", AppInfo.Version) + "\n\n" + L.AboutLicense, L.AboutTitle);
 
     private void UpdateStatus()
     {
@@ -286,7 +412,7 @@ internal sealed class MainWindow : Window
         // 文档状态统一在这一条最外层状态栏展示：摘要 + 未保存前缀 + 只读说明（原页内状态行已并入）
         string text = v?.Doc.Summary ?? L.StatusReady;
         if (v != null && v.Doc.Dirty) text = L.StatusSaving + "   " + text;
-        if (v != null && v.Doc.ReadOnly) text += "   .   " + L.StatusReadonly(v.Doc.LoadError ?? L.T("完整性检查未过"));
+        if (v != null && v.Doc.ReadOnly) text += "   .   " + L.StatusReadonly(v.Doc.LoadError ?? L.T("Integrity check failed"));
         _statusDoc.Text = text;
         _statusDoc.Foreground = v?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
         _statusLang.Text = L.DisplayName;
@@ -305,8 +431,8 @@ internal sealed class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
-                new FilePickerFileType(L.T("Grim Dawn 对话 / 任务")) { Patterns = new[] { "*.cnv", "*.qst" } },
-                new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } },
+                new FilePickerFileType(L.T("Grim Dawn conversation / quest")) { Patterns = new[] { "*.cnv", "*.qst" } },
+                new FilePickerFileType(L.T("All files")) { Patterns = new[] { "*" } },
             },
         });
         if (files.Count == 0) return;
@@ -319,7 +445,7 @@ internal sealed class MainWindow : Window
         {
             AppSettings.RemoveRecent(path);
             RefreshRecentMenu();
-            Gui.Warn(this, L.F("文件不存在：{0}", path), L.T("打开"));
+            Gui.Warn(this, L.F("File not found: {0}", path), L.T("Open"));
             return;
         }
         foreach (TabItem page in _tabs.Items)
@@ -340,13 +466,30 @@ internal sealed class MainWindow : Window
         }
         catch (Exception e)
         {
-            Gui.Warn(this, L.F("打开失败：{0}", e.Message), L.T("打开"));
+            Gui.Warn(this, L.F("Open failed: {0}", e.Message), L.T("Open"));
         }
         await Task.CompletedTask;
     }
 
     /// <summary>冒烟测试专用：内存新建文档页签（不落盘、不弹框）。</summary>
     public void OpenSmokeTab(object model) => AddTab(DocSession.FromModel(model, null));
+
+    /// <summary>冒烟测试专用：依次切换四种视图并检查 JSON 模式确实生成含 languages 的模型。</summary>
+    public string? SmokeTestViews()
+    {
+        var view = Active;
+        if (view == null) return "视图自测失败：没有活动页签";
+        foreach (var mode in Enum.GetValues<DocViewMode>())
+        {
+            view.SetView(mode);
+            if (view.Mode != mode) return $"视图自测失败：切换到 {mode} 后 Mode={view.Mode}";
+        }
+        view.SetView(DocViewMode.Json);
+        string json = view.Doc.Cnv != null ? JsonIO.Export(view.Doc.Cnv, view.Doc.Title) : JsonIO.Export(view.Doc.Qst!, view.Doc.Title);
+        if (!json.Contains("\"Languages\"")) return "视图自测失败：JSON 模式未包含 Languages";
+        view.SetView(DocViewMode.Visual);
+        return null;
+    }
 
     private void AddTab(DocSession doc)
     {
@@ -356,6 +499,7 @@ internal sealed class MainWindow : Window
             if (_tabs.SelectedItem is TabItem sel) SetTabHeader(sel, view);
             UpdateStatus();
         };
+        view.ModeChanged += UpdateViewChecks;
         var page = new TabItem { Content = view };
         SetTabHeader(page, view);
         _tabs.Items.Add(page);
@@ -371,7 +515,7 @@ internal sealed class MainWindow : Window
         if (view.Doc.Dirty)
         {
             var r = await MsgBox.Show(this,
-                L.F("{0} 有未保存修改，保存后再关闭？", view.Doc.Title),
+                L.F("{0} has unsaved changes. Save before closing?", view.Doc.Title),
                 L.CloseTab, MsgButtons.YesNoCancel, warning: true);
             if (r == MsgResult.Cancel) return false;
             if (r == MsgResult.Yes && !await DoSave(view, saveAs: false)) return false;
@@ -413,7 +557,7 @@ internal sealed class MainWindow : Window
         var doc = view.Doc;
         if (doc.ReadOnly)
         {
-            Gui.Warn(this, L.T("该文件为只读（解析或完整性检查未通过），不能保存。"), L.Save);
+            Gui.Warn(this, L.T("This file is read-only (parsing or integrity check failed) and cannot be saved."), L.Save);
             return false;
         }
         string? path = doc.FilePath;
@@ -423,11 +567,11 @@ internal sealed class MainWindow : Window
             {
                 Title = L.Save,
                 SuggestedFileName = path != null ? System.IO.Path.GetFileName(path)
-                    : doc.Cnv != null ? L.T("未命名对话.cnv") : L.T("未命名任务.qst"),
+                    : doc.Cnv != null ? L.T("Untitled conversation.cnv") : L.T("Untitled quest.qst"),
                 DefaultExtension = doc.Cnv != null ? "cnv" : "qst",
                 FileTypeChoices = new[]
                 {
-                    new FilePickerFileType(doc.Cnv != null ? L.T("Grim Dawn 对话") : L.T("Grim Dawn 任务"))
+                    new FilePickerFileType(doc.Cnv != null ? L.T("Grim Dawn conversation") : L.T("Grim Dawn quest"))
                         { Patterns = new[] { doc.Cnv != null ? "*.cnv" : "*.qst" } },
                 },
             });
@@ -446,7 +590,7 @@ internal sealed class MainWindow : Window
             AppSettings.AddRecent(path);
             RefreshRecentMenu();
         }
-        Gui.Info(this, L.F("已保存 {0}（三检查通过，原文件已备份为 .bak）。", path), L.Save);
+        Gui.Info(this, L.F("Saved {0} (three-check passed; original backed up as .bak).", path), L.Save);
         return true;
     }
 
@@ -459,20 +603,20 @@ internal sealed class MainWindow : Window
         var view = Active;
         if (view?.Doc.ReadOnly != false)
         {
-            Gui.Warn(this, L.T("请先打开一个可编辑的 .cnv / .qst 页签。"), L.ImportTxtToActive);
+            Gui.Warn(this, L.T("Open an editable .cnv / .qst tab first."), L.ImportTxtToActive);
             return;
         }
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = L.ImportTxtToActive,
             AllowMultiple = false,
-            FileTypeFilter = new[] { new FilePickerFileType("TXT") { Patterns = new[] { "*.txt" } }, new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } } },
+            FileTypeFilter = new[] { new FilePickerFileType("TXT") { Patterns = new[] { "*.txt" } }, new FilePickerFileType(L.T("All files")) { Patterns = new[] { "*" } } },
         });
         if (files.Count == 0) return;
         var preview = new ImportTxtPreviewDialog(view.Doc, files[0].Path.LocalPath);
         if (await preview.ShowDialog<bool>(this) != true || !preview.Applied) return;
         view.RefreshAll();
-        Gui.Info(this, L.T("回填完成（尚未保存，请检查后保存）。"), L.ImportTxtToActive);
+        Gui.Info(this, L.T("Backfill applied (not saved yet — review and save)."), L.ImportTxtToActive);
     }
 
     private async Task ImportJson()
@@ -481,7 +625,7 @@ internal sealed class MainWindow : Window
         {
             Title = L.ImportJsonNewTab,
             AllowMultiple = false,
-            FileTypeFilter = new[] { new FilePickerFileType("JSON") { Patterns = new[] { "*.json" } }, new FilePickerFileType(L.T("全部文件")) { Patterns = new[] { "*" } } },
+            FileTypeFilter = new[] { new FilePickerFileType("JSON") { Patterns = new[] { "*.json" } }, new FilePickerFileType(L.T("All files")) { Patterns = new[] { "*" } } },
         });
         if (files.Count == 0) return;
         try
@@ -494,22 +638,22 @@ internal sealed class MainWindow : Window
                 QstFile q => q.Valid,
                 _ => false,
             };
-            if (!valid) { Gui.Warn(this, L.T("JSON 反序列化后无法解析，文件可能被改坏。"), L.ImportJsonNewTab); return; }
+            if (!valid) { Gui.Warn(this, L.T("The imported JSON cannot be parsed; the file may be corrupted."), L.ImportJsonNewTab); return; }
             AddTab(DocSession.FromModel(model, null));
         }
         catch (Exception e)
         {
-            Gui.Warn(this, L.F("导入失败：{0}", e.Message), L.ImportJsonNewTab);
+            Gui.Warn(this, L.F("Import failed: {0}", e.Message), L.ImportJsonNewTab);
         }
     }
 
     private async Task ExportActive(string kind)
     {
         var view = Active;
-        if (view == null) { Gui.Warn(this, L.T("请先打开一个文件。"), L.MExport); return; }
+        if (view == null) { Gui.Warn(this, L.T("Open a file first."), L.MExport); return; }
         string ext = kind == "json" ? "json" : "txt";
         string name = Path.GetFileNameWithoutExtension(view.Doc.FilePath
-            ?? (view.Doc.Cnv != null ? L.T("未命名对话") : L.T("未命名任务")));
+            ?? (view.Doc.Cnv != null ? L.T("Untitled conversation") : L.T("Untitled quest")));
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = L.MExport,
@@ -530,7 +674,7 @@ internal sealed class MainWindow : Window
         }
         catch (Exception e)
         {
-            Gui.Warn(this, L.F("导出失败：{0}", e.Message), L.MExport);
+            Gui.Warn(this, L.F("Export failed: {0}", e.Message), L.MExport);
         }
     }
 
@@ -546,18 +690,18 @@ internal sealed class MainWindow : Window
         if (view.Doc.Cnv != null)
         {
             var re = CnvFile.Parse(view.Doc.Serialize());
-            err = !re.Valid ? re.Error : !re.Tiled ? L.T("记录未铺满文件") : !re.LocOffsetMatches ? L.T("未落在声明的本地化偏移") : null;
+            err = !re.Valid ? re.Error : !re.Tiled ? L.T("Records do not tile the file") : !re.LocOffsetMatches ? L.T("Miss the declared localization offset") : null;
         }
         else if (view.Doc.Qst != null)
         {
             var re = QstFile.Parse(view.Doc.Serialize());
-            err = !re.Valid ? re.Error : !re.Tiled ? L.T("记录未铺满文件")
-                : !re.LocOffsetMatches ? L.T("未落在声明的本地化偏移")
-                : re.TextCountDrift != 0 ? L.F("串表条数偏离公式 {0}", re.TextCountDrift)
+            err = !re.Valid ? re.Error : !re.Tiled ? L.T("Records do not tile the file")
+                : !re.LocOffsetMatches ? L.T("Miss the declared localization offset")
+                : re.TextCountDrift != 0 ? L.F("String count deviates from the formula by {0}", re.TextCountDrift)
                 : null;
         }
         if (err == null)
-            Gui.Info(this, L.T("✓ 通过：解析、铺满文件、本地化偏移（QST 另含串表公式）全部正常。"), L.VerifyCurrent);
+            Gui.Info(this, L.T("✓ Passed: parsing, tiling, localization offset (QST also checks the string-count formula)."), L.VerifyCurrent);
         else
             Gui.Warn(this, "✗ " + err, L.VerifyCurrent);
     }
@@ -567,7 +711,7 @@ internal sealed class MainWindow : Window
         var view = Active;
         if (view?.Doc.FilePath == null)
         {
-            Gui.Warn(this, L.T("anchors 需要已保存的文件（当前页签未落盘）。"), L.Anchors);
+            Gui.Warn(this, L.T("anchors needs a saved file (this tab is not on disk yet)."), L.Anchors);
             return;
         }
         var sw = new StringWriter();
@@ -583,7 +727,7 @@ internal sealed class MainWindow : Window
         string? path = view.Doc.FilePath;
         if (path == null) return;
         if (view.Doc.Dirty &&
-            await MsgBox.Show(this, L.T("放弃未保存修改并重新加载？"), L.ReloadCurrent,
+            await MsgBox.Show(this, L.T("Discard unsaved changes and reload?"), L.ReloadCurrent,
                 MsgButtons.OkCancel, warning: true) != MsgResult.Ok)
             return;
 
@@ -594,7 +738,7 @@ internal sealed class MainWindow : Window
         }
         catch (Exception e)
         {
-            Gui.Warn(this, L.F("打开失败：{0}", e.Message), L.ReloadCurrent);
+            Gui.Warn(this, L.F("Open failed: {0}", e.Message), L.ReloadCurrent);
             return;
         }
 
@@ -605,9 +749,11 @@ internal sealed class MainWindow : Window
             SetTabHeader(page, newView);
             UpdateStatus();
         };
+        newView.ModeChanged += UpdateViewChecks;
         page.Content = newView;
         SetTabHeader(page, newView);
         UpdateStatus();
+        UpdateViewChecks();
     }
 
     private void ShowBatch(string? path)
@@ -626,7 +772,7 @@ internal sealed class MainWindow : Window
         if (firstDirty.TabItem == null) return;
         e.Cancel = true;
         var r = await MsgBox.Show(this,
-            L.F("{0} 有未保存修改，仍然退出？", firstDirty.View.Doc.Title), L.Exit,
+            L.F("{0} has unsaved changes. Exit anyway?", firstDirty.View.Doc.Title), L.Exit,
             MsgButtons.YesNo, warning: true);
         if (r == MsgResult.Yes)
         {

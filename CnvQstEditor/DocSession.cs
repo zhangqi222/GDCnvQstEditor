@@ -24,13 +24,13 @@ public sealed class DocSession
         {
             s.Cnv = CnvFile.Parse(data);
             s.ReadOnly = !s.Cnv.Valid || !s.Cnv.Tiled || !s.Cnv.LocOffsetMatches;
-            if (s.ReadOnly) s.LoadError = s.Cnv.Error ?? L.T("记录未铺满文件或未落在声明的本地化偏移");
+            if (s.ReadOnly) s.LoadError = s.Cnv.Error ?? L.T("Records do not tile the file or miss the declared localization offset");
         }
         else
         {
             s.Qst = QstFile.Parse(data);
             s.ReadOnly = !s.Qst.Valid || !s.Qst.Tiled || !s.Qst.LocOffsetMatches;
-            if (s.ReadOnly) s.LoadError = s.Qst.Error ?? L.T("记录未铺满文件或未落在声明的本地化偏移");
+            if (s.ReadOnly) s.LoadError = s.Qst.Error ?? L.T("Records do not tile the file or miss the declared localization offset");
         }
         return s;
     }
@@ -49,8 +49,8 @@ public sealed class DocSession
         get
         {
             string name = FilePath != null ? Path.GetFileName(FilePath)
-                : Cnv != null ? L.T("未命名对话.cnv") : L.T("未命名任务.qst");
-            return name + (Dirty ? " *" : "") + (ReadOnly ? L.T("（只读）") : "");
+                : Cnv != null ? L.T("Untitled conversation.cnv") : L.T("Untitled quest.qst");
+            return name + (Dirty ? " *" : "") + (ReadOnly ? L.T("(read-only)") : "");
         }
     }
 
@@ -67,16 +67,16 @@ public sealed class DocSession
             if (Cnv != null)
             {
                 int recs = Cnv.Steps.Sum(x => x.Conditions.Records.Count + x.Actions.Records.Count);
-                return L.F("{0} · {1} 节点 · {2} 条件/动作 · {3} B", KindVersion, Cnv.Steps.Count, recs, Cnv.Size)
-                     + L.T(Cnv.Tiled ? " · ✓铺满" : " · ✗未铺满")
+                return L.F("{0} · {1} steps · {2} conditions/actions · {3} B", KindVersion, Cnv.Steps.Count, recs, Cnv.Size)
+                     + L.T(Cnv.Tiled ? " · ✓tiled" : " · ✗not tiled")
                      + (Cnv.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset");
             }
             if (Qst != null)
-                return L.F("{0} · {1} task · {2} objective · {3} 条件/动作 · {4} B", KindVersion, Qst.Tasks.Count, Qst.ObjectiveCount, Qst.RecordCount, Qst.Size)
-                     + L.T(Qst.Tiled ? " · ✓铺满" : " · ✗未铺满")
+                return L.F("{0} · {1} tasks · {2} objectives · {3} conditions/actions · {4} B", KindVersion, Qst.Tasks.Count, Qst.ObjectiveCount, Qst.RecordCount, Qst.Size)
+                     + L.T(Qst.Tiled ? " · ✓tiled" : " · ✗not tiled")
                      + (Qst.LocOffsetMatches ? " · ✓locOffset" : " · ✗locOffset")
-                     + (Qst.TextCountDrift == 0 ? L.T(" · ✓串表公式") : L.F(" · ✗串表公式({0})", Qst.TextCountDrift.ToString("+#;-#;0")));
-            return L.T("（空）");
+                     + (Qst.TextCountDrift == 0 ? L.T(" · ✓loc formula") : L.F(" · ✗loc formula ({0})", Qst.TextCountDrift.ToString("+#;-#;0")));
+            return L.T("(empty)");
         }
     }
 
@@ -106,16 +106,16 @@ public sealed class DocSession
         {
             var re = CnvFile.Parse(data);
             if (!re.Valid || !re.Tiled || !re.LocOffsetMatches || !re.Write().AsSpan().SequenceEqual(data))
-                err = L.T("保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。");
+                err = L.T("Save rejected: re-parse failed the integrity checks (tiling / locOffset / round-trip).");
         }
         else
         {
             var re = QstFile.Parse(data);
             if (!re.Valid || !re.Tiled || !re.LocOffsetMatches || !re.Write().AsSpan().SequenceEqual(data))
-                err = L.T("保存被拒绝：重解析未通过完整性检查（tiling / locOffset / round-trip）。");
+                err = L.T("Save rejected: re-parse failed the integrity checks (tiling / locOffset / round-trip).");
             else if (re.TextCountDrift != 0)
-                err = L.F("保存被拒绝：本地化串表条数偏离公式 2+2T+O+I+E（差 {0}）——", re.TextCountDrift.ToString("+#;-#;0")) +
-                      L.T("官方 QuestEditor 按该公式索引串表，条数不符会直接报错。");
+                err = L.F("Save rejected: localization string count deviates from 2+2T+O+I+E (by {0}) —", re.TextCountDrift.ToString("+#;-#;0")) +
+                      L.T("the official QuestEditor indexes strings by this formula and crashes on mismatch.");
         }
         if (err != null) return err;
 
@@ -128,7 +128,7 @@ public sealed class DocSession
         }
         catch (Exception e)
         {
-            return L.T("写入失败：") + e.Message;
+            return L.T("Write failed: ") + e.Message;
         }
         FilePath = path;
         Dirty = false;

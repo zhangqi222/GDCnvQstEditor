@@ -122,8 +122,8 @@ internal sealed class NumPairBox : UserControl
     private void UpdateHint()
     {
         string save = _valid
-            ? L.F("（将以{0}保存）", _mode == NumBoxMode.HexOnly ? L.T("十六进制") : L.T("十进制"))
-            : L.T("（数值无效，修改未生效）", "(invalid value; not applied)");
+            ? L.F("(will save as {0})", _mode == NumBoxMode.HexOnly ? L.T("Hexadecimal") : L.T("Decimal"))
+            : L.T("(invalid value; change not applied)");
         _hint.Text = string.IsNullOrEmpty(_note) ? save : _note + " " + save;
         _hint.Foreground = _valid ? UiTheme.MutedBrush : UiTheme.DangerBrush;
     }
@@ -146,7 +146,7 @@ internal sealed class ScriptListEditor : UserControl
     private readonly Border _existingBox = new();
     private readonly TextBlock _existingHeader = new() { FontWeight = FontWeight.Medium, Margin = new Thickness(0, 0, 0, 6) };
     private readonly ComboBox _logic = new() { MinWidth = 170 };
-    private readonly TextBlock _logicLabel = new() { Text = L.T("关系逻辑", "Logic") + "：", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+    private readonly TextBlock _logicLabel = new() { Text = L.T("Logic") + L.Colon, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
     private readonly Button _add, _edit, _del, _dup, _up, _down;
     private bool _building;
 
@@ -157,14 +157,14 @@ internal sealed class ScriptListEditor : UserControl
         _isCondition = isCondition;
         _changed = changed;
 
-        _add = MkBtn(_isCondition ? L.T("＋ 添加条件", "+ Add") : L.T("＋ 添加动作", "+ Add"), () => _ = AddRecord(), primary: true);
-        _edit = MkBtn(L.T("编辑", "Edit"), () => _ = EditRecord());
-        _del = MkBtn(L.T("删除", "Delete"), DelRecord);
-        _dup = MkBtn(L.T("复制", "Copy"), DupRecord);
-        _up = MkBtn(L.T("上移", "Up"), () => MoveRecord(-1));
-        _down = MkBtn(L.T("下移", "Down"), () => MoveRecord(1));
+        _add = MkBtn(_isCondition ? L.T("＋ Add condition") : L.T("＋ Add action"), () => _ = AddRecord(), primary: true);
+        _edit = MkBtn(L.T("Edit"), () => _ = EditRecord());
+        _del = MkBtn(L.T("Delete"), DelRecord);
+        _dup = MkBtn(L.T("Duplicate"), DupRecord);
+        _up = MkBtn(L.T("Move up"), () => MoveRecord(-1));
+        _down = MkBtn(L.T("Move down"), () => MoveRecord(1));
 
-        _logic.ItemsSource = new[] { L.T("满足全部（AND）"), L.T("满足任一（OR）") };
+        _logic.ItemsSource = new[] { L.T("Match all (AND)"), L.T("Match any (OR)") };
         _logic.SelectedIndex = _list.Logic == 1 ? 1 : 0;
         _logic.SelectionChanged += (_, _) =>
         {
@@ -259,10 +259,10 @@ internal sealed class ScriptListEditor : UserControl
 
     private void RebuildHeader()
     {
-        string cn = L.T(_isCondition ? "条件" : "动作");
+        string cn = L.T(_isCondition ? "Condition" : "Action");
         string logic = _isCondition ? $"  · {Names.LogicWord(_list.Logic)} ({_list.Logic})" : "";
-        string empty = _list.Present ? "" : L.T("  （空列表）", "  (empty)");
-        _existingHeader.Text = L.F("已有{0}（{1} 条）{2}{3}", cn, _list.Records.Count, logic, empty);
+        string empty = _list.Present ? "" : L.T("  (empty list)");
+        _existingHeader.Text = L.F("Existing {0} ({1}){2}{3}", cn, _list.Records.Count, logic, empty);
     }
 
     private async Task AddRecord()
@@ -279,8 +279,8 @@ internal sealed class ScriptListEditor : UserControl
             ClassName = _isCondition ? Names.ConditionClass(defType).name : Names.ActionClass(defType).name,
         };
         rec.Fields = FieldFactory.Resync(rec.BodySpec, rec.SubType, null, _isCondition, defType);
-        string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("添加新{0}", "Add New") + cn, _doc);
+        string cn = L.T(_isCondition ? "Condition" : "Action");
+        var dlg = new ScriptRecordDialog(rec, _isCondition, L.T("Add new {0}") + cn, _doc);
         if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
 
         int at = _records.SelectedIndex >= 0 ? _records.SelectedIndex + 1 : _list.Records.Count;
@@ -300,8 +300,8 @@ internal sealed class ScriptListEditor : UserControl
         int sel = _records.SelectedIndex;
         if (sel < 0 || sel >= _list.Records.Count) return;
         var copy = ScriptRecordCloner.Clone(_list.Records[sel]);
-        string cn = L.T(_isCondition ? "条件" : "动作");
-        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("编辑{0}", "Edit") + cn, _doc);
+        string cn = L.T(_isCondition ? "Condition" : "Action");
+        var dlg = new ScriptRecordDialog(copy, _isCondition, L.T("Edit {0}") + cn, _doc);
         if (await dlg.ShowDialog<bool>(TreeGridShared.OwnerOf(this)!) != true) return;
         _list.Records[sel] = copy;
         Rebuild();
@@ -414,13 +414,13 @@ internal sealed class ScriptRecordDialog : Window
         var stack = new StackPanel { Margin = new Thickness(16) };
         // 类型行 / 比较符行：与字段行（Row）完全相同的 3px 上下边距，保证全弹窗行距一致
         var typeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 3, 0, 3) };
-        typeRow.Children.Add(new TextBlock { Text = L.T("类型", "Type"), VerticalAlignment = VerticalAlignment.Center });
+        typeRow.Children.Add(new TextBlock { Text = L.T("Kind"), VerticalAlignment = VerticalAlignment.Center });
         typeRow.Children.Add(_type);
         typeRow.Children.Add(_sub);
         stack.Children.Add(typeRow);
         // 比较符独立一行（仅条件；它是条件语义的重要组成，不与类型挤在一行）
         var cmpRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 3, 0, 3) };
-        cmpRow.Children.Add(new TextBlock { Text = L.T("比较符", "Comparator"), VerticalAlignment = VerticalAlignment.Center });
+        cmpRow.Children.Add(new TextBlock { Text = L.T("Comparator"), VerticalAlignment = VerticalAlignment.Center });
         cmpRow.Children.Add(_cmp);
         cmpRow.IsVisible = isCondition;
         stack.Children.Add(cmpRow);
@@ -457,10 +457,8 @@ internal sealed class ScriptRecordDialog : Window
     /// <summary>显示 body 版本（表格 sub=N 对应的 SubType）——只读说明，换类型时随默认版本刷新。</summary>
     private void UpdateSub()
     {
-        _sub.Text = L.F("body 版本：{0}", _rec.SubType);
-        ToolTip.SetTip(_sub, L.T(
-            "条件/动作的内部版本号（subType，即表格中的 sub=N）。它决定该条目的字段布局：版本 1 时才会带出部分附加字段（如 HasItem 的 CompleteOnly）。除少数类型固定为 1 外其余为 0，由类型自动决定，与官方编辑器一致，不可修改。",
-            "Internal body version of this condition/action (the sub=N shown in the table). It decides the field layout: version 1 adds extra fields (e.g. HasItem's CompleteOnly). Most types use 0; a few fixed types use 1. Determined by the type, read-only like the official editor."));
+        _sub.Text = L.F("Body version: {0}", _rec.SubType);
+        ToolTip.SetTip(_sub, L.T("Internal version (subType, shown as sub=N) of the condition/action. It determines the field layout: version 1 includes extra fields (e.g. CompleteOnly for HasItem). A few types are fixed at 1 and the rest at 0; it is set by the type, matches the official editor, and cannot be changed."));
     }
 
     private void ChangeType()
@@ -588,7 +586,7 @@ internal sealed class FieldsPanel : ScrollViewer
 
         if (_rec == null)
         {
-            panel.Children.Add(new TextBlock { Text = L.T("（未选择记录）"), Foreground = UiTheme.MutedBrush });
+            panel.Children.Add(new TextBlock { Text = L.T("(no record selected)"), Foreground = UiTheme.MutedBrush });
             _building = false;
             return;
         }
@@ -606,7 +604,7 @@ internal sealed class FieldsPanel : ScrollViewer
                     // 未命中字典回退扩展名规则（.dbr → database\，其余 → resources\）。
                     string? dir = _rec == null ? null : AppSettings.FieldDir(_rec.ClassName);
                     string[]? exts = _rec != null && AppSettings.FieldExts.TryGetValue(_rec.ClassName, out var fe) ? fe : null;
-                    var browse = DialogChrome.Button(L.T("浏览…", "Browse…"), primary: false);
+                    var browse = DialogChrome.Button(L.T("Browse…"), primary: false);
                     browse.Click += async (_, _) => await BrowseResource(TreeGridShared.OwnerOf(this), box, dir, exts, v =>
                     {
                         box.Text = v;
@@ -630,7 +628,7 @@ internal sealed class FieldsPanel : ScrollViewer
                         browse.IsVisible = isPath;
                     }
                     UpdateResourceBtns();
-                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("串[{0}]", i)), box, browse));
+                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("string[{0}]", i)), box, browse));
                     break;
                 }
                 case FieldKind.U32 when IsTaskUidField(_rec.ClassName, f.Param):
@@ -649,21 +647,19 @@ internal sealed class FieldsPanel : ScrollViewer
                         if (_building || _refilling) return;
                         if (combo.SelectedItem is UidItem it && it.Hash != f.U) { f.U = it.Hash; _changed(); }
                     };
-                    var force = DialogChrome.Button(L.T("强制编辑…", "Force edit…"), primary: false);
+                    var force = DialogChrome.Button(L.T("Force edit…"), primary: false);
                     var hex = new NumPairBox(f.U, mode: NumBoxMode.HexOnly) { IsVisible = false };
                     force.Click += async (_, _) =>
                     {
                         var owner = TreeGridShared.OwnerOf(this);
-                        var r = await MsgBox.Show(owner!, L.T(
-                            "强制编辑引用标识：任务文件与 ID 不符会导致任务错乱，仅建议修复失效引用时使用。确定解除限制？",
-                            "Force-edit the reference id: a mismatch between the quest file and this id will scramble quest progression. Only use it to repair broken references. Unlock anyway?"),
-                            L.T("强制编辑", "Force edit"), MsgButtons.YesNo, warning: true);
+                        var r = await MsgBox.Show(owner!, L.T("Force-edit the reference id? A mismatched quest file and ID will corrupt quest state. Use this only to repair broken references. Remove the restriction?"),
+                            L.T("Force edit"), MsgButtons.YesNo, warning: true);
                         if (r != MsgResult.Yes) return;
                         combo.IsVisible = false;
                         force.IsVisible = false;
                         hex.IsVisible = true;
                     };
-                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("数值[{0}]", i)), combo, force, hex));
+                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("number[{0}]", i)), combo, force, hex));
                     _uidCombos.Add((combo, f));
                     RefillUidCombo(combo, f);
                     break;
@@ -673,7 +669,7 @@ internal sealed class FieldsPanel : ScrollViewer
                     // 普通数值字段：十进制单框（默认模式）。ID/引用标识类已在上面 IsTaskUidField 分支处理。
                     var num = new NumPairBox(f.U, note: f.Param.Length > 0 ? f.Note : null);
                     num.ValueChanged += () => { if (_building) return; f.U = num.Value; _changed(); };
-                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("数值[{0}]", i)), num));
+                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("number[{0}]", i)), num));
                     break;
                 }
                 case FieldKind.U8:
@@ -681,42 +677,42 @@ internal sealed class FieldsPanel : ScrollViewer
                     // 布尔字段：Semi 开关组件，右侧文字随开/关状态切换（true/false），无需额外描述
                     var sw = new ToggleSwitch
                     {
-                        OffContent = L.T("false（假/条件不成立/不是）", "false (condition not met)"),
-                        OnContent = L.T("true（真/条件成立/是）", "true (condition met)"),
+                        OffContent = L.T("false (no / condition not met)"),
+                        OnContent = L.T("true (yes / condition met)"),
                         IsChecked = f.B != 0,
                     };
                     sw.IsCheckedChanged += (_, _) => { if (!_building) { f.B = sw.IsChecked == true ? (byte)1 : (byte)0; _changed(); } };
-                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("布尔[{0}]", i)), sw));
+                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("bool[{0}]", i)), sw));
                     break;
                 }
                 case FieldKind.P:
                 {
-                    var btn = new Button { Content = L.T("编辑路径列表…"), MinWidth = 130 };
+                    var btn = new Button { Content = L.T("Edit path list…"), MinWidth = 130 };
                     btn.Click += async (_, _) =>
                     {
                         var owner = TreeGridShared.OwnerOf(this);
-                        var dlg = new StringListDialog(L.T("编辑路径列表"), f.Paths!.Select(p => p.Text).ToList());
+                        var dlg = new StringListDialog(L.T("Edit path list"), f.Paths!.Select(p => p.Text).ToList());
                         if (await dlg.ShowDialog<bool>(owner!) != true) return;
                         f.Paths = dlg.Items.Select(s => new GdString(s)).ToList();
                         f.Count = f.Paths.Count;
                         _changed();
                     };
-                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("路径×{0}", f.Paths!.Count)), btn,
-                        new TextBlock { Text = L.F("尾字={0}", f.Trailing), Foreground = UiTheme.MutedBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }));
+                    panel.Children.Add(Row(ParamLabel(f.Param, L.F("paths×{0}", f.Paths!.Count)), btn,
+                        new TextBlock { Text = L.F("trailing={0}", f.Trailing), Foreground = UiTheme.MutedBrush, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) }));
                     break;
                 }
                 case FieldKind.Lua:
                 {
                     var call = new TextBox { Text = f.S.Text, MinWidth = 280, MaxWidth = 300 };
                     call.TextChanged += (_, _) => { if (_building) return; f.S.SetText(call.Text ?? ""); _changed(); };
-                    var btn = new Button { Content = L.F("参数×{0}…", f.Params!.Count), MinWidth = 110, Margin = new Thickness(8, 0, 0, 0) };
+                    var btn = new Button { Content = L.F("params×{0}…", f.Params!.Count), MinWidth = 110, Margin = new Thickness(8, 0, 0, 0) };
                     btn.Click += async (_, _) =>
                     {
                         var owner = TreeGridShared.OwnerOf(this);
                         var dlg = new LuaParamsDialog(f);
                         if (await dlg.ShowDialog<bool>(owner!) == true) _changed();
                     };
-                    var row = Row(ParamLabel(f.Param, L.T("Lua 调用")), call, btn);
+                    var row = Row(ParamLabel(f.Param, L.T("Lua call")), call, btn);
                     panel.Children.Add(row);
                     if (f.Tail != null)
                     {
@@ -732,11 +728,11 @@ internal sealed class FieldsPanel : ScrollViewer
                         t2.ValueChanged += () => { if (!_building) { t.T2 = (byte)t2.Value; _changed(); } };
                         t3.ValueChanged += () => { if (!_building) { t.T3 = t3.Value; _changed(); } };
                         ts.TextChanged += (_, _) => { if (!_building) { t.S.SetText(ts.Text ?? ""); _changed(); } };
-                        panel.Children.Add(Row(L.T("条件尾部 T0"), t0));
-                        panel.Children.Add(Row(L.T("条件尾部 T1"), t1));
-                        panel.Children.Add(Row(L.T("条件尾部 T2"), t2));
-                        panel.Children.Add(Row(L.T("条件尾部 T3"), t3));
-                        panel.Children.Add(Row(L.T("条件尾部文本"), ts));
+                        panel.Children.Add(Row(L.T("Condition tail T0"), t0));
+                        panel.Children.Add(Row(L.T("Condition tail T1"), t1));
+                        panel.Children.Add(Row(L.T("Condition tail T2"), t2));
+                        panel.Children.Add(Row(L.T("Condition tail T3"), t3));
+                        panel.Children.Add(Row(L.T("Condition tail text"), ts));
                     }
                     break;
                 }
@@ -804,7 +800,7 @@ internal sealed class FieldsPanel : ScrollViewer
                 {
                     if (!objective) continue;
                     items.Add(new UidItem(t.Objectives[k].Unknown0,
-                        UidItemText($"T{ti + 1}·" + L.T("目标", "Objective") + (k + 1), t.Objectives[k].Unknown0, SlotText(texts, objBase + k))));
+                        UidItemText($"T{ti + 1}·" + L.T("Objective") + (k + 1), t.Objectives[k].Unknown0, SlotText(texts, objBase + k))));
                 }
             }
         }
@@ -813,10 +809,10 @@ internal sealed class FieldsPanel : ScrollViewer
         if (items.All(it => it.Hash != f.U))
         {
             string tail = q != null
-                ? L.T("（不在该任务文件中）", "(not in this quest file)")
+                ? L.T("(not in this quest file)")
                 : abs == null && _doc?.Qst == null
-                    ? L.T("（未找到任务文件，请先设置 Quest 文件）", "(quest file not found — set the Quest field first)")
-                    : L.T("（任务文件无法解析）", "(quest file cannot be parsed)");
+                    ? L.T("(quest file not found; set the Quest file first)")
+                    : L.T("(cannot parse quest file)");
             items.Insert(0, new UidItem(f.U, "0x" + f.U.ToString("X8") + tail, Missing: true));
         }
         _refilling = true;
@@ -828,7 +824,7 @@ internal sealed class FieldsPanel : ScrollViewer
     private static string UidItemText(string tag, uint hash, string? title)
     {
         string h = "0x" + hash.ToString("X8");
-        return string.IsNullOrWhiteSpace(title) ? $"{tag}（{h}）" : $"{tag} {title}（{h}）";
+        return string.IsNullOrWhiteSpace(title) ? tag + L.InParen(h) : $"{tag} {title}" + L.InParen(h);
     }
 
     private static string? SlotText(List<GdString> texts, int slot) =>
@@ -846,7 +842,7 @@ internal sealed class FieldsPanel : ScrollViewer
         string subDir = dirOverride
             ?? (value.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ? "database" : "resources");
         string? rel = await FileBrowserDialog.Pick(owner, subDir,
-            L.T("选择资源文件", "Select resource file"), exts, value);
+            L.T("Choose resource file"), exts, value);
         if (rel != null) apply(rel);
     }
 
@@ -870,7 +866,7 @@ internal sealed class FieldsPanel : ScrollViewer
     }
 }
 
-/// <summary>本地化字符串表编辑（行数固定；空槽位可留空但不可增删行）。</summary>
+/// <summary>本地化字符串表（只读；编辑走可视化编辑器的底部文本框，行数固定）。</summary>
 internal sealed class LocalizationGrid : UserControl
 {
     private DocSession _doc = null!;
@@ -879,7 +875,7 @@ internal sealed class LocalizationGrid : UserControl
     {
         AutoGenerateColumns = false,
         CanUserSortColumns = false,
-        IsReadOnly = false,
+        IsReadOnly = true,
         HeadersVisibility = DataGridHeadersVisibility.Column,
     };
 
@@ -894,15 +890,16 @@ internal sealed class LocalizationGrid : UserControl
         };
         var colRole = new DataGridTextColumn
         {
-            Header = L.T("角色 / 对应节点"),
+            Header = L.T("Role / bound node"),
             Binding = new Avalonia.Data.Binding(nameof(LocRow.Role)),
             IsReadOnly = true,
             Width = new DataGridLength(260),
         };
         var colTxt = new DataGridTextColumn
         {
-            Header = L.T("文本（{^n} 表示换行；行数不可增删）"),
+            Header = L.T("Text ({^n} = line break)"),
             Binding = new Avalonia.Data.Binding(nameof(LocRow.Text)),
+            IsReadOnly = true,
             Width = new DataGridLength(1, DataGridLengthUnitType.Star),
         };
 
@@ -935,21 +932,20 @@ internal sealed class LocalizationGrid : UserControl
     private string RoleCnv(int i)
     {
         var c = _doc.Cnv!;
-        if (i == 0) return L.T("说话人名（根节点）");
+        if (i == 0) return L.T("Speaker name (root)");
         if (i < c.Steps.Count)
         {
             var s = c.Steps[i];
             return $"[{i}] {s.Kind}";
         }
-        return L.T("（无对应节点）");
+        return L.T("(no bound node)");
     }
 
-    private static string RoleQst(int i) => i switch
+    private string RoleQst(int i)
     {
-        0 => L.T("任务组名"),
-        1 => L.T("任务名"),
-        _ => L.F("按位置 {0}", i),
-    };
+        var q = _doc.Qst!;
+        return i < q.RequiredTextCount ? q.DescribeSlot(i) : L.T("(no matching slot)");
+    }
 
     private sealed class LocRow
     {

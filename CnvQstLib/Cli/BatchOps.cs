@@ -18,26 +18,48 @@ public sealed class BatchItem
     public int TxtLines;
     /// <summary>QST 专用：串表条数与公式 2+2T+O+I+E 的差值（0 = 正确）。</summary>
     public int TextDrift;
+    /// <summary>languages 的每个语言块是否都与节点/槽位数对齐。</summary>
+    public bool LangOk = true;
+    /// <summary>对齐失败时的逐条说明（含缺/多行数与可填槽位）。</summary>
+    public string? LangDetail;
+    /// <summary>应有的文本槽位数（CNV=节点数；QST=2+2T+O+I+E）。</summary>
+    public int TextSlots;
 
-    public bool AllOk => ParseOk && Tiled && LocOk && RoundTripOk && TextDrift == 0;
+    public bool AllOk => ParseOk && Tiled && LocOk && RoundTripOk && LangOk;
 
-    public string FailReason =>
-        Error ?? (!ParseOk ? "解析失败" : !Tiled ? "记录未铺满文件" : !LocOk ? "未落在声明的本地化偏移"
-            : !RoundTripOk ? "round-trip 不一致" : TextDrift != 0 ? $"QST 串表条数偏离公式 {TextDrift:+#;-#;0}" : "");
+    public string FailReason
+    {
+        get
+        {
+            string reason =
+                Error ?? (!ParseOk ? "解析失败" : !Tiled ? "记录未铺满文件" : !LocOk ? "未落在声明的本地化偏移"
+                    : !RoundTripOk ? "round-trip 不一致" : "");
+            if (LangOk) return reason;
+            return (reason.Length > 0 ? reason + "\n" : "") + LangDetail;
+        }
+    }
+
+    /// <summary>通过时的简要说明（节点/任务数与文本槽行数）。</summary>
+    public string Summary => Kind switch
+    {
+        "CNV" or "CNV-JSON" => $"CNV {StepsOrTasks} 节点 · 文本槽 {TextSlots} 行",
+        "QST2" or "QST2-JSON" => $"QST {StepsOrTasks} task · 文本槽 {TextSlots} 行",
+        _ => Kind,
+    };
 }
 
 /// <summary>批量文件服务：扫描/检查/导出/回填。GUI 批量面板与 CLI 命令共用，保证行为一致。</summary>
 public static class BatchOps
 {
-    /// <summary>枚举待处理文件：路径为文件则按扩展名识别，为目录则递归枚举 .cnv/.qst。</summary>
-    public static List<string> EnumerateFiles(string path)
+    /// <summary>枚举待处理文件：路径为文件则按扩展名识别，为目录则递归枚举 .cnv/.qst（verify 时再加 .json）。</summary>
+    public static List<string> EnumerateFiles(string path, bool includeJson = false)
     {
         if (File.Exists(path))
             return [path];
         if (!Directory.Exists(path))
             throw new FileNotFoundException(path);
         var files = new List<string>();
-        foreach (var ext in new[] { "*.cnv", "*.qst" })
+        foreach (var ext in includeJson ? new[] { "*.cnv", "*.qst", "*.json" } : new[] { "*.cnv", "*.qst" })
             files.AddRange(Directory.EnumerateFiles(path, ext, SearchOption.AllDirectories));
         files.Sort(StringComparer.OrdinalIgnoreCase);
         return files;
@@ -56,6 +78,31 @@ public static class BatchOps
         byte[] data;
         try { data = File.ReadAllBytes(file); }
         catch (Exception e) { item.Error = e.Message; return item; }
+
+        // JSON：校验格式与 languages 对齐（不测试二进制 round-trip，改为生成模型）
+        if (Path.GetExtension(file).Equals(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            string text;
+            try { text = File.ReadAllText(file); }
+            catch (Exception e) { item.Error = e.Message; return item; }
+            var report = ModelChecks.CheckJson(text, out string jsonKind, out _);
+            item.Kind = report.Kind switch
+            {
+                "cnv" => "CNV-JSON",
+                "qst" => "QST2-JSON",
+                _ => "JSON",
+            };
+            item.ParseOk = report.Kind.Length > 0;
+            item.Tiled = true;
+            item.LocOk = true;
+            item.RoundTripOk = report.Kind.Length > 0;
+            item.StepsOrTasks = report.NodeCount;
+            item.TextSlots = report.TextSlots;
+            item.TxtLines = report.TextSlots;
+            item.LangOk = report.Ok;
+            item.LangDetail = report.Ok ? null : report.ToText();
+            return item;
+        }
 
         object model;
         try { model = Load(file, data); }
@@ -88,6 +135,22 @@ public static class BatchOps
             default:
                 item.Error = "未知模型";
                 return item;
+        }
+
+        if (item.ParseOk)
+        {
+            var report = model switch
+            {
+                CnvFile c => ModelChecks.Check(c),
+                QstFile q => ModelChecks.Check(q),
+                _ => null,
+            };
+            if (report != null)
+            {
+                item.TextSlots = report.TextSlots;
+                item.LangOk = report.Ok;
+                item.LangDetail = report.Ok ? null : report.ToText();
+            }
         }
 
         item.RoundTripOk = rewritten.AsSpan().SequenceEqual(data);

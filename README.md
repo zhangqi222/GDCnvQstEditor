@@ -54,21 +54,23 @@ GUI 能力：
 - 批量面板：目录扫描表 / 批量导出 TXT·JSON / 校验所选 / TXT 回填 / CSV 报告
 - 保存三检查（铺满文件 / 本地化偏移 / round-trip）+ `.bak` 自动备份；解析失败或校验不过的文件**只读**打开（可看可导出不可保存）
 
-**界面语言（i18n）**：以中文为基准，语言包是 exe 旁 `lang/*.json`（随构建自动复制）：
+**界面语言（i18n）**：英文 key → 译文的字典，语言包是 exe 旁 `lang/*.json`（随构建自动复制）：
 
 ```json
-{ "code": "en", "name": "English",
-  "strings": { "打开": "Open", "已保存 {0}（三检查通过，原文件已备份为 .bak）。": "Saved {0} …" },
-  "types":   { "HasFaction": "Faction reputation" } }
+{ "code": "zh-CN", "name": "简体中文",
+  "strings": { "Open": "打开", "Saved {0}": "已保存 {0}" },
+  "types":   { "HasFaction": "阵营声望" } }
 ```
 
+- **默认界面为中文**（`zh-CN.json` 即完整中文字典）；`en.json` 是恒等映射，作为全部可用 key 的清单；
+- 缺 key 自动回退英文 key，语言包可逐步补全；
+- 动作 / 条件 / 节点类型属于固定术语（`L.FixedTerms`），不进入 `strings` 字典；中文界面由 `types` 段括注
+  （"speech（台词）"），无译文时只显示官方原文；
 - **新增语言 = 复制一份 json 改 code/name/译文**，放回 `lang/` 即在「语言」菜单出现，无需改代码；
-- 缺 key 自动回退中文，语言包可逐步补全；`zh-CN.json` 即全部键的清单模板（230+ 条，含 56 个类型中文名）；
-- `types` 段给条件/动作提供显示别名（中文界面显示"阵营声望"，英文界面显示官方名 HasFaction）；
-- 切换即时生效并记住（`%APPDATA%\CnvQstEditor\lang.txt`）；菜单「语言 → 打开语言包目录」直达。
+- 切换即时生效并记住（`%APPDATA%\CnvQstEditor\lang.txt`）。
 
 **界面（v1.1 重做）**：扁平化主题（统一字体/配色/表格与页签样式，`Theme.cs`），主工具栏 + 状态栏 +
-键盘快捷键（Ctrl+O/S/N/E/L/B、F5 校验、Ctrl+W 关页签）。`CnvQstEditor.exe --smoke` 可做无头冒烟回归。
+键盘快捷键（Ctrl+O/S/N/E/L/B、F5 校验、Ctrl+W 关页签；Alt+字母 展开对应菜单）。`CnvQstEditor.exe --smoke` 可做无头冒烟回归。
 
 ## 打包（双单文件 EXE）
 

@@ -6,14 +6,25 @@ using CnvQst;
 
 namespace CnvQstEditor;
 
+/// <summary>文档视图模式：可视化编辑器（表格 + 底部编辑器）、JSON、本地化文本、DUMP。</summary>
+internal enum DocViewMode
+{
+    Visual,
+    Json,
+    Localization,
+    Dump,
+}
+
 /// <summary>
 /// 单个文档视图：100% 宽度的树形表格（结构与数据结合展示）+ 页内状态行。
-/// 结构表（CNV/QST）与本地化字符串表通过 <see cref="ToggleView"/> 切换。
+/// 四种视图整体切换（<see cref="SetView"/>）：可视化编辑器 / JSON 模式 / 本地化文本（只读）/ DUMP（只读）。
 /// </summary>
 internal sealed class DocView : UserControl
 {
     public DocSession Doc { get; }
+    public DocViewMode Mode { get; private set; } = DocViewMode.Visual;
     public event Action? DirtyChanged;
+    public event Action? ModeChanged;
 
     private readonly CnvTableEditor _cnvTable = new() { IsVisible = false };
     private readonly QstTableEditor _qstTable = new() { IsVisible = false };
@@ -51,6 +62,35 @@ internal sealed class DocView : UserControl
         Background = Brushes.White,
         Foreground = UiTheme.MutedBrush,
     };
+
+    // JSON 模式：等宽文本框 + 应用 / 重新载入
+    private readonly TextBox _jsonBox = new()
+    {
+        AcceptsReturn = true,
+        AcceptsTab = true,
+        FontFamily = new FontFamily("Consolas"),
+        FontSize = 12,
+        TextWrapping = TextWrapping.NoWrap,
+        IsVisible = false,
+    };
+    private readonly TextBlock _jsonStatus = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
+    private readonly Grid _jsonHost = new() { IsVisible = false };
+    private readonly Button _jsonApply = new() { Content = L.T("Apply JSON") };
+    private readonly Button _jsonReload = new() { Content = L.T("Reload") };
+    private bool _jsonDirty;
+    private bool _jsonBuilding;
+
+    // DUMP 模式：只读文本
+    private readonly TextBox _dumpBox = new()
+    {
+        IsReadOnly = true,
+        AcceptsReturn = true,
+        FontFamily = new FontFamily("Consolas"),
+        FontSize = 12,
+        TextWrapping = TextWrapping.NoWrap,
+        IsVisible = false,
+    };
+
     private bool _panelCollapsed;
     private GridLength _panelHeight = new(180);
 
@@ -58,7 +98,35 @@ internal sealed class DocView : UserControl
     {
         Doc = doc;
 
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint }) _host.Children.Add(c);
+        ScrollViewer.SetVerticalScrollBarVisibility(_jsonBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(_jsonBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+        ScrollViewer.SetVerticalScrollBarVisibility(_dumpBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+        ScrollViewer.SetHorizontalScrollBarVisibility(_dumpBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+
+        _jsonApply.Click += (_, _) => ApplyJson();
+        _jsonReload.Click += (_, _) => LoadJson(force: true);
+        _jsonBox.TextChanged += (_, _) =>
+        {
+            if (_jsonBuilding) return;
+            _jsonDirty = true;
+            _jsonStatus.Text = L.T("JSON modified (not applied yet)");
+        };
+
+        var jsonBar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(10, 6, 10, 4),
+            Children = { _jsonApply, _jsonReload, _jsonStatus },
+        };
+        _jsonHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _jsonHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(jsonBar, 0);
+        Grid.SetRow(_jsonBox, 1);
+        _jsonHost.Children.Add(jsonBar);
+        _jsonHost.Children.Add(_jsonBox);
+
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint, _jsonHost, _dumpBox }) _host.Children.Add(c);
 
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -74,15 +142,15 @@ internal sealed class DocView : UserControl
         _rootGrid.Children.Add(splitterHost);
         _rootGrid.Children.Add(_panel);
         // 分割栏：拖动调高，点击（无拖动）在 折叠 / 展开 之间切换
-        ToolTip.SetTip(_panelSplitter, L.T("拖动调整高度；点击折叠 / 展开底部编辑器。", "Drag to resize; click to collapse / expand the editor."));
-        ToolTip.SetTip(_panelToggle, L.T("点击折叠 / 展开底部编辑器。", "Click to collapse / expand the editor."));
+        ToolTip.SetTip(_panelSplitter, L.T("Drag to resize; click to collapse / expand the bottom editor."));
+        ToolTip.SetTip(_panelToggle, L.T("Click to collapse / expand the bottom editor."));
         _panelSplitter.Tapped += (_, _) => TogglePanel();
         _panelToggle.Click += (_, _) => TogglePanel();
         UpdateToggle();
         Content = _rootGrid;
 
-        _cnvTable.LocRequested += ToggleView;
-        _qstTable.LocRequested += ToggleView;
+        _cnvTable.LocRequested += ToggleLocalization;
+        _qstTable.LocRequested += ToggleLocalization;
         _cnvTable.SelectedChanged += OnSelectedChanged;
         _qstTable.SelectedChanged += OnSelectedChanged;
         _panel.TextEdited += () =>
@@ -99,7 +167,32 @@ internal sealed class DocView : UserControl
             }
         };
 
-        ShowCurrent();
+        SetView(DocViewMode.Visual);
+    }
+
+    /// <summary>切换整体视图（可视化 / JSON / 本地化 / DUMP）。</summary>
+    public void SetView(DocViewMode mode)
+    {
+        Mode = mode;
+        switch (mode)
+        {
+            case DocViewMode.Visual:
+                ShowStructure();
+                break;
+            case DocViewMode.Json:
+                ShowSingle(_jsonHost);
+                LoadJson(force: false);
+                break;
+            case DocViewMode.Localization:
+                ShowSingle(_locGrid);
+                _locGrid.Bind(Doc, OnEdited);
+                break;
+            case DocViewMode.Dump:
+                ShowSingle(_dumpBox);
+                LoadDump();
+                break;
+        }
+        ModeChanged?.Invoke();
     }
 
     /// <summary>选中行变化 → 底部编辑器绑定该行的文本槽位。</summary>
@@ -135,10 +228,10 @@ internal sealed class DocView : UserControl
     /// <summary>分割栏按钮文案随折叠状态切换（▾=可收起 / ▴=可展开），文字 + 符号便于识别。</summary>
     private void UpdateToggle() =>
         _panelToggle.Content = _panelCollapsed
-            ? "▴ " + L.T("展开编辑器", "Expand Editor")
-            : "▾ " + L.T("底部编辑器", "Editor");
+            ? "▴ " + L.T("Expand editor")
+            : "▾ " + L.T("Bottom editor");
 
-    private void ShowCurrent()
+    private void ShowStructure()
     {
         if (Doc.Cnv != null)
         {
@@ -154,31 +247,76 @@ internal sealed class DocView : UserControl
         {
             ShowOnly(_emptyHint);
         }
-    }
-
-    private void ShowOnly(Control target)
-    {
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint })
-            c.IsVisible = c == target;
-        bool structure = target == _cnvTable || target == _qstTable;
+        bool structure = _cnvTable.IsVisible || _qstTable.IsVisible;
         _panel.IsVisible = structure;
         _panelSplitter.IsVisible = structure;
         _panelToggle.IsVisible = structure;
         if (structure) OnSelectedChanged();
     }
 
-    /// <summary>在 结构表 / 本地化字符串表 之间切换（右键菜单与 Ctrl+L 共用）。</summary>
-    public void ToggleView()
+    private void ShowSingle(Control target)
     {
-        if (_locGrid.IsVisible)
+        ShowOnly(target);
+        _panel.IsVisible = false;
+        _panelSplitter.IsVisible = false;
+        _panelToggle.IsVisible = false;
+    }
+
+    private void ShowOnly(Control target)
+    {
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint, _jsonHost, _dumpBox })
+            c.IsVisible = c == target;
+    }
+
+    /// <summary>在 结构表 / 本地化字符串表 之间切换（右键菜单与 Ctrl+L 共用）。</summary>
+    public void ToggleLocalization() =>
+        SetView(Mode == DocViewMode.Localization ? DocViewMode.Visual : DocViewMode.Localization);
+
+    private void LoadJson(bool force)
+    {
+        if (_jsonDirty && !force) return;
+        _jsonBuilding = true;
+        try
         {
-            ShowCurrent();
+            _jsonBox.Text = Doc.Cnv != null
+                ? JsonIO.Export(Doc.Cnv, Doc.Title)
+                : Doc.Qst != null ? JsonIO.Export(Doc.Qst, Doc.Title) : "";
+            _jsonDirty = false;
+            _jsonStatus.Text = L.T("Click \"Apply JSON\" to write changes back to the document.");
         }
-        else
+        finally { _jsonBuilding = false; }
+    }
+
+    private void ApplyJson()
+    {
+        if (Doc.ReadOnly)
         {
-            ShowOnly(_locGrid);
-            _locGrid.Bind(Doc, OnEdited);
+            _jsonStatus.Text = L.T("The current document is read-only; JSON cannot be applied.");
+            return;
         }
+        try
+        {
+            object model = JsonIO.ImportModel(_jsonBox.Text);
+            if (model is CnvFile c && Doc.Cnv != null) Doc.Cnv = c;
+            else if (model is QstFile q && Doc.Qst != null) Doc.Qst = q;
+            else throw new GdParseException(L.T("The JSON kind does not match the current document type."));
+            Doc.Dirty = true;
+            _jsonDirty = false;
+            DirtyChanged?.Invoke();
+            LoadJson(force: true);
+            _jsonStatus.Text = L.T("JSON changes applied.");
+        }
+        catch (Exception ex)
+        {
+            Gui.Warn(TopLevel.GetTopLevel(this) as Window, ex.Message, L.Error);
+        }
+    }
+
+    private void LoadDump()
+    {
+        _dumpBox.Text = Doc.Cnv != null
+            ? Dump.DumpCnv(Doc.Cnv, Doc.Title)
+            : Doc.Qst != null ? Dump.DumpQst(Doc.Qst, Doc.Title) : "";
     }
 
     private void OnEdited()
@@ -189,10 +327,21 @@ internal sealed class DocView : UserControl
 
     public void RefreshAll()
     {
-        if (_cnvTable.IsVisible) _cnvTable.Bind(Doc, OnEdited);
-        else if (_qstTable.IsVisible) _qstTable.Bind(Doc, OnEdited);
-        else if (_locGrid.IsVisible) _locGrid.Bind(Doc, OnEdited);
-        OnSelectedChanged();
+        switch (Mode)
+        {
+            case DocViewMode.Visual:
+                ShowStructure();
+                break;
+            case DocViewMode.Json:
+                LoadJson(force: false);
+                break;
+            case DocViewMode.Localization:
+                _locGrid.Bind(Doc, OnEdited);
+                break;
+            case DocViewMode.Dump:
+                LoadDump();
+                break;
+        }
     }
 
     public void AfterSaved()

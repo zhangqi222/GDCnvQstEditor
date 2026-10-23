@@ -7,8 +7,7 @@
   - `CnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
   - 两个程序的命令完全一致，下文统一用 `CnvQstEditor-cli.exe` 示例。
 - 配套示例：
-  - [`JSON示例/qst_full.json`](JSON示例/qst_full.json) —— 头部 flags、多 task、OnAccept/目标/OnComplete、持久化 uid、条件/动作。
-  - [`JSON示例/qst_all_conditions_actions.json`](JSON示例/qst_all_conditions_actions.json) —— 30 种条件 + 27 个可用动作各写一次。
+  - [`JSON示例/qst_full.json`](JSON示例/qst_full.json) —— **单个文件覆盖全部内容**：顶层字段、task / incentive / objective / event 全部字段、30 种条件、27 个可用动作、`languages` 语言块、持久化 uid，每个字段都带就地说明。
 - 对话文件的写法见 [`JSON转CNV.md`](JSON转CNV.md)；两种文件共用同一套条件/动作系统。
 
 > 目标：读完本文后，你可以不依赖 GUI，直接写出合法的 QST JSON，并生成可被游戏/官方 QuestEditor 读取的 `.qst`。
@@ -134,7 +133,9 @@ CnvQstEditor-cli.exe verify hello.qst
   "id": 0,
   "group": "MY_GROUP",
   "name": "MY_QUEST",
-  "lang": "enUS",
+  "languages": [
+    { "tag": "enUS", "texts": ["MY_GROUP", "MY_QUEST", "标题", "描述", "目标文本"] }
+  ],
   "tasks": [ /* … */ ]
 }
 ```
@@ -147,7 +148,8 @@ CnvQstEditor-cli.exe verify hello.qst
 | `id` | u32 | 否 | 省略时随机非 0 | **本文件自有 ID**。显式写了就用（包括 `0`）；完全省略才随机生成。与 task uid 无关。 |
 | `group` | string | 否 | `""` | 任务组名，本地化槽 0。 |
 | `name` | string | 否 | `""` | 任务名，本地化槽 1。 |
-| `lang` | string | 否 | `"enUS"` | 本地化块标签；也可写 `language`（仅当没有 `lang` 时生效）。 |
+| `languages` | array | 否 | — | 显式语言块，见 §3.3。写了就以它为准，`group`/`name`/`title` 等仅作回退。 |
+| `lang` | string | 否 | `"enUS"` | 单语言块标签（旧写法）。仅在**没有** `languages` 时生效；也可写 `language`。 |
 | `tasks` | array | **是** | — | 任务数组；缺失报错。 |
 
 ### 3.1 头部 `flags`（任务类型）
@@ -172,11 +174,48 @@ CnvQstEditor-cli.exe verify hello.qst
 - `group` / `name` 不是必填，但即使为空也会各占一个本地化槽（槽 0、槽 1）。
 - 官方编辑器的任务列表按组名分组、显示任务名；新任务建议都填写。
 
-### 3.3 `lang`
+### 3.3 `languages` 与本地化
 
-- 只生成一个语言块，标签默认 `enUS`。
-- JSON 不支持多语言；需要多语言时用 GUI 处理。
-- 标签只是字符串，不校验官方语言代码。
+推荐用 `languages` 显式描述语言块，可以把多语言写在一个 JSON 里：
+
+```json
+"languages": [
+  { "tag": "enUS", "texts": ["组名", "任务名", "标题", "描述", "目标文本"] }
+]
+```
+
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `tag` | string | 语言标签。官方 6 种：`enUS` / `enGB` / `es` / `fr` / `de` / `it`；其它标签会有提示，游戏可能忽略该块。 |
+| `texts` | array | 文本行数组；**行数必须与本地化槽位数严格对齐**。 |
+
+QST 的槽位公式与顺序见 [§6](#6-本地化文本槽最关键的部分)：
+
+```text
+总数 = 2（组名、任务名）
+     + Σ 每个 task [ 2（标题、描述）+ incentive 数 + objective 数 + event 数 ]
+```
+
+- 每个语言块的 `texts` 行数必须相同，且等于上面的公式结果。
+- incentive / event 的槽官方都是空串，但空字符串仍必须占位。
+- 行数不符时 `convert` 会直接报错并拒绝生成，例如：
+
+```text
+任务 4 个（标题/描述/事件/目标合计），文本槽应为 24 行，languages[enUS] 有 23 行，缺 1 行。
+缺少的槽位：24=…
+槽位顺序：1=group 任务组名，2=name 任务名，3=T1 标题，4=T1 描述……
+```
+
+- **游戏内换行写 `{^n}`**（字面量四个字符），例如 `"第一行{^n}第二行"`；不要写 JSON 转义的 `\n`。
+- 写了 `languages` 后，`group` / `name` / `title` / `desc` / `text` 仍然必须写（用于结构定义），但输出以 `languages` 为准。
+- 只写一个语言块时，也可以继续用旧写法 `"lang": "enUS"`，此时文本从各字段自动收集。
+
+```json
+// 旧写法：单语言，标签默认 enUS
+"lang": "enUS"
+```
+
+- 标签只是字符串；除官方 6 种外会给出提示，但不会阻止生成。
 
 ---
 
@@ -401,9 +440,11 @@ JSON 里只写：
 
 官方文件里 OnAccept / OnComplete 事件没有可见文本，但每个事件仍占一个槽。工具固定写空字符串。不要试图给事件塞文本——event 对象没有 `text` 键，写了也不会写入。
 
-### 6.6 不要手动改文本条数
+### 6.6 文本条数由公式决定
 
-生成、保存或批量处理时，工具会按公式重建文本表。不要手工增删生成后的文本，否则官方编辑器会因槽数不匹配而报错；需要改文本时请直接改 JSON 里的 `group` / `name` / `title` / `desc` / `text`。
+- 不给 `languages` 时：工具按公式自动补空槽；你**不能**指定槽号，额外键会被忽略。
+- 给了 `languages` 时：每个块的 `texts` 必须**恰好**是公式算出的行数，缺/多行都会报错并拒绝生成。工具不会替你补齐或截断。
+- 修改文本请改 `languages.texts`（或旧写法的 `group` / `name` / `title` / `desc` / `text`），不要手工增删生成后的二进制文本表。
 
 ---
 
@@ -949,7 +990,13 @@ S = 2 + 2*2 + 3 + 1 + 1 = 11
 10 Task2 objective #1
 ```
 
-完整版（含全部类型）见 [`JSON示例/qst_all_conditions_actions.json`](JSON示例/qst_all_conditions_actions.json)。
+完整示例（覆盖全部字段、30 种条件、27 个动作与 `languages`）见 [`JSON示例/qst_full.json`](JSON示例/qst_full.json)，可直接运行：
+
+```bash
+CnvQstEditor-cli.exe convert JSON示例/qst_full.json -o demo.qst
+```
+
+该文件顶部有字段总览与槽位公式，正文每个字段都有就地注释；`languages` 的每一行都标注了对应槽位。
 
 ---
 
@@ -1020,7 +1067,7 @@ CnvQstEditor.exe convert hello.qst.json -o hello.qst
 
 ### 17.1 结构限制
 
-1. **单文件、单语言块**：JSON 只生成一个语言块；多语言请用 GUI。
+1. **语言块行数必须对齐槽位**：显式 `languages` 的每个块行数 = §6 公式结果；多语言时各块行数一致。
 2. **task 数量 ≤4096**。
 3. **没有“任务间引用”的自动解析**：`Quest`/`Task`/`Objective` 都是普通字符串/u32，工具不检查文件与 uid 是否存在。
 4. **event / incentive 没有持久化 uid**：不要写 `uid`，写了会被忽略。

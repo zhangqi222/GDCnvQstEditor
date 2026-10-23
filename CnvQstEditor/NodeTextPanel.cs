@@ -101,7 +101,7 @@ internal sealed class NodeTextPanel : UserControl
         if (doc?.Qst != null)
         {
             _questId = "0x" + doc.Qst.Id.ToString("X8");   // 引用标识统一十六进制（与表格列/官方 Lua 一致）
-            _questIdText.Text = "Quest ID: " + _questId;
+            _questIdText.Text = L.F("Quest ID: {0}", _questId);
             _idHost.IsVisible = true;
         }
         else
@@ -115,14 +115,14 @@ internal sealed class NodeTextPanel : UserControl
             _gutter.IsVisible = false;
             _assigned = "";
             SetBoxText(_main, "");
-            _mainLabel.Text = L.T("任务文件文本");
+            _mainLabel.Text = L.T("Node text");
             _building = false;
             return;
         }
 
         IsEnabled = true;
         _gutter.IsVisible = true;
-        _mainLabel.Text = L.T("任务文件文本") + $"（{doc.PrimaryLanguage.Tag.Text}）";
+        _mainLabel.Text = L.T("Node text") + L.InParen(doc.PrimaryLanguage.Tag.Text);
         _assigned = TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value));
         SetBoxText(_main, _assigned);
         _building = false;

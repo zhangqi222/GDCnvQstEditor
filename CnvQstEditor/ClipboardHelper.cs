@@ -103,9 +103,9 @@ internal static class ClipboardHelper
     {
         if (box.ContextMenu?.Tag is "reliable") return;   // 已启用
         box.ContextFlyout = null;   // 关闭 Semi 默认 MenuFlyout（其"复制"在无选区时禁用）
-        var copy = new MenuItem { Header = L.T("复制文本", "Copy") };
-        var paste = new MenuItem { Header = L.T("粘贴", "Paste") };
-        var all = new MenuItem { Header = L.T("全选", "Select All") };
+        var copy = new MenuItem { Header = L.T("Copy text") };
+        var paste = new MenuItem { Header = L.T("Paste") };
+        var all = new MenuItem { Header = L.T("Select all") };
         copy.Click += (_, _) => CopyText(box);
         paste.Click += (_, _) => PasteText(box);
         all.Click += (_, _) => box.SelectAll();

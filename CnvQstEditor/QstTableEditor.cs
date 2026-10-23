@@ -99,7 +99,7 @@ internal sealed class QstTableEditor : UserControl
             Columns =
             {
                 // 序号列（与 CNV 统一显示；= 行的显示顺序，Bind 时按展开树顺序编号）
-                new TemplateColumn<QstRow>(L.T("序号", "No."),
+                new TemplateColumn<QstRow>(L.T("#"),
                     CellBorder(b =>
                     {
                         var tb = OneLine();
@@ -109,7 +109,7 @@ internal sealed class QstTableEditor : UserControl
                     }, OnCellDoubleTap, "0"),
                     width: GridLength.Auto),
                 new HierarchicalExpanderColumn<QstRow>(
-                    new TemplateColumn<QstRow>(L.T("节点", "Node"),
+                    new TemplateColumn<QstRow>(L.T("Node"),
                         CellBorder(b => b.Child = TreeGridShared.NodeCellContent(), OnCellDoubleTap, "1"),
                         width: new GridLength(TreeGridShared.ColNode, GridUnitType.Star)),
                     r => r.Children, r => r.HasChildren, r => r.IsExpanded),
@@ -123,7 +123,7 @@ internal sealed class QstTableEditor : UserControl
                         b.Child = tb;
                     }, OnCellDoubleTap, "2"),
                     width: new GridLength(TreeGridShared.ColAttrs, GridUnitType.Star)),
-                new TemplateColumn<QstRow>(L.T("条件", "Conditions"),
+                new TemplateColumn<QstRow>(L.T("Condition"),
                     CellBorder(b =>
                     {
                         // 单行显示：水平排列，段间 " | "（生成端已拼入），超宽裁剪
@@ -134,7 +134,7 @@ internal sealed class QstTableEditor : UserControl
                         b.Child = items;
                     }, OnCellDoubleTap, "3"),
                     width: new GridLength(TreeGridShared.ColCond, GridUnitType.Star)),
-                new TemplateColumn<QstRow>(L.T("动作", "Actions"),
+                new TemplateColumn<QstRow>(L.T("Action"),
                     CellBorder(b =>
                     {
                         var items = new ItemsControl { MaxHeight = 18, ClipToBounds = true, VerticalAlignment = VerticalAlignment.Top };
@@ -230,40 +230,40 @@ internal sealed class QstTableEditor : UserControl
         string? cell = CellText(row, col);
         if (cell != null)
         {
-            cm.Items.Add(TreeGridShared.Mi(L.T("复制单元格", "Copy Cell"), () => CopyCell()));
+            cm.Items.Add(TreeGridShared.Mi(L.T("Copy cell"), () => CopyCell()));
             cm.Items.Add(new Separator());
         }
 
         switch (row.Owner)
         {
             case QstRootOwner:
-                cm.Items.Add(TreeGridShared.Mi(L.T("任务属性", "Quest Props"), () => _ = EditQuestProps()));
-                cm.Items.Add(TreeGridShared.Mi(L.T("＋任务"), () => AddTask()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("Quest properties"), () => _ = EditQuestProps()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("+ Task"), () => AddTask()));
                 break;
             case QstQuestOwner:
-                cm.Items.Add(TreeGridShared.Mi(L.T("任务属性", "Quest Props"), () => _ = EditQuestProps()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("Quest properties"), () => _ = EditQuestProps()));
                 break;
             case QstTaskRow tr:
                 // 顺序与表格实际显示一致：接受事件 → 目标 → 完成事件
-                cm.Items.Add(TreeGridShared.Mi(L.T("＋接受事件"), () => AddEvent(tr.T, incentive: true)));
-                cm.Items.Add(TreeGridShared.Mi(L.T("＋目标"), () => AddObjective(tr.T)));
-                cm.Items.Add(TreeGridShared.Mi(L.T("＋完成事件"), () => AddEvent(tr.T, incentive: false)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("+ OnAccept"), () => AddEvent(tr.T, incentive: true)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("+ Objective"), () => AddObjective(tr.T)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("+ OnComplete"), () => AddEvent(tr.T, incentive: false)));
                 cm.Items.Add(new Separator());
-                cm.Items.Add(TreeGridShared.Mi(L.T("－删除任务", "- Delete Task"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("－Delete task"), () => DeleteRow()));
                 break;
             case QstGroupOwner g:
                 if (g.Kind == "Accept")
-                    cm.Items.Add(TreeGridShared.Mi(L.T("＋接受事件"), () => AddEvent(g.Task, incentive: true)));
+                    cm.Items.Add(TreeGridShared.Mi(L.T("+ OnAccept"), () => AddEvent(g.Task, incentive: true)));
                 else if (g.Kind == "Objectives")
-                    cm.Items.Add(TreeGridShared.Mi(L.T("＋目标"), () => AddObjective(g.Task)));
+                    cm.Items.Add(TreeGridShared.Mi(L.T("+ Objective"), () => AddObjective(g.Task)));
                 else if (g.Kind == "Complete")
-                    cm.Items.Add(TreeGridShared.Mi(L.T("＋完成事件"), () => AddEvent(g.Task, incentive: false)));
+                    cm.Items.Add(TreeGridShared.Mi(L.T("+ OnComplete"), () => AddEvent(g.Task, incentive: false)));
                 break;
             case QstObjectiveRow:
-                cm.Items.Add(TreeGridShared.Mi(L.T("－删除目标", "- Delete Objective"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("－Delete objective"), () => DeleteRow()));
                 break;
             case QstEventRow:
-                cm.Items.Add(TreeGridShared.Mi(L.T("－删除事件", "- Delete Event"), () => DeleteRow()));
+                cm.Items.Add(TreeGridShared.Mi(L.T("－Delete event"), () => DeleteRow()));
                 break;
         }
 
@@ -273,11 +273,11 @@ internal sealed class QstTableEditor : UserControl
         {
             cm.Items.Add(new Separator());
             if (hasFields)
-                cm.Items.Add(TreeGridShared.Mi(L.T("节点编辑", "Edit Node"), () => _ = EditFields(row)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("Node editor"), () => _ = EditFields(row)));
             if (row.Owner.HasScript)
             {
-                cm.Items.Add(TreeGridShared.Mi(L.T("编辑条件", "Edit Conditions"), () => _ = EditScript(row, isCondition: true)));
-                cm.Items.Add(TreeGridShared.Mi(L.T("编辑动作", "Edit Actions"), () => _ = EditScript(row, isCondition: false)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("Edit condition"), () => _ = EditScript(row, isCondition: true)));
+                cm.Items.Add(TreeGridShared.Mi(L.T("Edit action"), () => _ = EditScript(row, isCondition: false)));
             }
         }
         return cm;
@@ -292,6 +292,14 @@ internal sealed class QstTableEditor : UserControl
         4 => r.Act.Count > 0 ? string.Join(" | ", r.Act.Select(l => l.Text)) : null,
         _ => null,
     };
+
+    /// <summary>结构分组行标题：官方字段名 + 本地化括注 + 计数（原文界面不重复括注）。</summary>
+    private static string GroupLabel(string icon, string original, string locKey, int count)
+    {
+        string loc = L.T(locKey);
+        string head = loc == locKey || loc == original ? original : original + L.InParen(loc);
+        return icon + " " + head + " ×" + count;
+    }
 
     private void CopyCell()
     {
@@ -396,7 +404,7 @@ internal sealed class QstTableEditor : UserControl
             descRow.Attach(taskRow);
 
             var acceptRow = new QstRow(this, new QstGroupOwner(
-                "▶ " + L.F("OnAccept（接受事件 ×{0}）", t.Incentives.Count), UiTheme.SecondaryBrush, "Accept", t));
+                GroupLabel("▶", "OnAccept", "OnAccept event", t.Incentives.Count), UiTheme.SecondaryBrush, "Accept", t));
             rows.Add(acceptRow);
             acceptRow.Attach(taskRow);
             for (int k = 0; k < t.Incentives.Count; k++)
@@ -407,7 +415,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var objRow = new QstRow(this, new QstGroupOwner(
-                "✅ " + L.F("Objectives（目标 ×{0}）", t.Objectives.Count), UiTheme.WarnBrush, "Objectives", t));
+                GroupLabel("✅", "Objectives", "Objective", t.Objectives.Count), UiTheme.WarnBrush, "Objectives", t));
             rows.Add(objRow);
             objRow.Attach(taskRow);
             for (int k = 0; k < t.Objectives.Count; k++)
@@ -419,7 +427,7 @@ internal sealed class QstTableEditor : UserControl
             }
 
             var compRow = new QstRow(this, new QstGroupOwner(
-                "🏁 " + L.F("OnComplete（完成事件 ×{0}）", t.Events.Count), UiTheme.OkBrush, "Complete", t));
+                GroupLabel("🏁", "OnComplete", "OnComplete event", t.Events.Count), UiTheme.OkBrush, "Complete", t));
             rows.Add(compRow);
             compRow.Attach(taskRow);
             for (int k = 0; k < t.Events.Count; k++)
@@ -502,7 +510,7 @@ internal sealed class QstTableEditor : UserControl
                 if (!_qst.RemoveObjective(or.OwnerTask, or.O)) return;
                 break;
             default:
-                Gui.Warn(TreeGridShared.OwnerOf(this), L.T("该行是结构分组（组名 / 任务名 / 描述 / OnAccept / Objectives / OnComplete），不能删除；请删除其下的具体行。"), L.T("删除", "Delete"));
+                Gui.Warn(TreeGridShared.OwnerOf(this), L.T("This row is a structural group (group name / quest name / description / OnAccept / Objectives / OnComplete) and cannot be deleted; delete the rows under it instead."), L.T("Delete"));
                 return;
         }
         _changed();
