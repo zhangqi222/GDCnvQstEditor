@@ -238,6 +238,7 @@ public static class CliApp
             return 2;
         }
         @out.WriteLine("JSON 校验通过：" + ModelChecks.Summary(report));
+        @out.Write(SlotGuide.Report(model));
         try
         {
             data = model switch
@@ -294,6 +295,7 @@ public static class CliApp
             QstFile q => JsonIO.Export(q, Path.GetFileName(input)),
             _ => throw new InvalidOperationException(),
         };
+        @out.Write(SlotGuide.Report(model));
         outPath ??= DefaultJsonPath(input);
         try { File.WriteAllText(outPath, json, new UTF8Encoding(false)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -370,6 +372,7 @@ public static class CliApp
     {
         if (args.Length < 2) { @out.WriteLine(Usage); return 2; }
         string path = args[1];
+        bool single = File.Exists(path);
         int pass = 0, fail = 0;
         foreach (string file in BatchOps.EnumerateFiles(path, includeJson: true))
         {
@@ -377,7 +380,8 @@ public static class CliApp
             if (item.AllOk)
             {
                 pass++;
-                @out.WriteLine($"PASS  {item.Rel}  （{item.Summary}）");
+                string advice = item.SuggestedSlots > 0 ? $" · 建议填写 {item.SuggestedSlots} 行" : "";
+                @out.WriteLine($"PASS  {item.Rel}  （{item.Summary}{advice}）");
             }
             else
             {
@@ -386,6 +390,8 @@ public static class CliApp
                 foreach (string line in item.FailReason.Split('\n'))
                     @out.WriteLine("      " + line);
             }
+            if (item.ParseOk && (single || !item.AllOk) && !string.IsNullOrWhiteSpace(item.SlotDetail))
+                @out.WriteLine(item.SlotDetail.TrimEnd());
         }
         @out.WriteLine($"\n通过 {pass}，失败 {fail}。");
         return fail == 0 ? 0 : 1;

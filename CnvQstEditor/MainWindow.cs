@@ -180,7 +180,8 @@ internal sealed class MainWindow : Window
             (DocViewMode.Visual, new KeyGesture(Key.D1, KeyModifiers.Control)),
             (DocViewMode.Json, new KeyGesture(Key.D2, KeyModifiers.Control)),
             (DocViewMode.Localization, new KeyGesture(Key.D3, KeyModifiers.Control)),
-            (DocViewMode.Dump, new KeyGesture(Key.D4, KeyModifiers.Control)),
+            (DocViewMode.Slot, new KeyGesture(Key.D4, KeyModifiers.Control)),
+            (DocViewMode.Dump, new KeyGesture(Key.D5, KeyModifiers.Control)),
         })
         {
             var item = MkItem(ViewName(mode), gesture, () => SetActiveView(mode));
@@ -237,7 +238,7 @@ internal sealed class MainWindow : Window
             Background = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8)),
         });
         var viewRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Dump })
+        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Slot, DocViewMode.Dump })
         {
             var b = new RadioButton
             {
@@ -265,12 +266,13 @@ internal sealed class MainWindow : Window
         UpdateViewChecks();
     }
 
-    /// <summary>四种文档视图的显示名（菜单与工具条共用）。</summary>
+    /// <summary>五种文档视图的显示名（菜单与工具条共用）。</summary>
     private static string ViewName(DocViewMode mode) => mode switch
     {
         DocViewMode.Visual => L.T("Visual editor"),
-        DocViewMode.Json => L.T("JSON editor"),
+        DocViewMode.Json => L.T("JSON editor (read-only)"),
         DocViewMode.Localization => L.T("Localization text (read-only)"),
+        DocViewMode.Slot => L.T("Slot guide (read-only)"),
         DocViewMode.Dump => L.T("DUMP view (read-only)"),
         _ => mode.ToString(),
     };
@@ -281,6 +283,7 @@ internal sealed class MainWindow : Window
         DocViewMode.Visual => L.T("Visual"),
         DocViewMode.Json => L.T("JSON"),
         DocViewMode.Localization => L.T("Localization"),
+        DocViewMode.Slot => L.T("Slots"),
         DocViewMode.Dump => L.T("DUMP"),
         _ => mode.ToString(),
     };
@@ -288,9 +291,13 @@ internal sealed class MainWindow : Window
     private static ControlTheme? FindTheme(string key) =>
         Application.Current?.TryFindResource(key, out object? value) == true ? value as ControlTheme : null;
 
+    /// <summary>视图模式是全局设置：切换所有已打开文档，并写入配置供下次启动沿用。</summary>
     private void SetActiveView(DocViewMode mode)
     {
-        if (Active is { } view) view.SetView(mode);
+        foreach (TabItem page in _tabs.Items)
+            ((DocView)page.Content!).SetView(mode);
+        AppSettings.ViewMode = mode;
+        AppSettings.Save();
         UpdateViewChecks();
     }
 
@@ -383,11 +390,13 @@ internal sealed class MainWindow : Window
         Bind(new KeyGesture(Key.F5), VerifyActive);
         Bind(new KeyGesture(Key.R, KeyModifiers.Control), () => _ = ReloadActive());
         Bind(new KeyGesture(Key.F1), ShowAbout);
-        Bind(new KeyGesture(Key.L, KeyModifiers.Control), () => Active?.ToggleLocalization());
+        Bind(new KeyGesture(Key.L, KeyModifiers.Control), () =>
+            SetActiveView(Active?.Mode == DocViewMode.Localization ? DocViewMode.Visual : DocViewMode.Localization));
         Bind(new KeyGesture(Key.D1, KeyModifiers.Control), () => SetActiveView(DocViewMode.Visual));
         Bind(new KeyGesture(Key.D2, KeyModifiers.Control), () => SetActiveView(DocViewMode.Json));
         Bind(new KeyGesture(Key.D3, KeyModifiers.Control), () => SetActiveView(DocViewMode.Localization));
-        Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
+        Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Slot));
+        Bind(new KeyGesture(Key.D5, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
 
         // 菜单标签里的访问键（文件(F) 等）在 Avalonia 内嵌 Menu 中不生效，按 Alt+字母 直接展开菜单。
         Bind(new KeyGesture(Key.F, KeyModifiers.Alt), () => OpenAccessMenu('F'));
@@ -515,16 +524,20 @@ internal sealed class MainWindow : Window
     private void AddTab(DocSession doc)
     {
         var view = new DocView(doc);
+        view.SetView(AppSettings.ViewMode);
         view.DirtyChanged += () =>
         {
             if (_tabs.SelectedItem is TabItem sel) SetTabHeader(sel, view);
             UpdateStatus();
         };
         view.ModeChanged += UpdateViewChecks;
+        view.LocalizationRequested += () =>
+            SetActiveView(Active?.Mode == DocViewMode.Localization ? DocViewMode.Visual : DocViewMode.Localization);
         var page = new TabItem { Content = view };
         SetTabHeader(page, view);
         _tabs.Items.Add(page);
         _tabs.SelectedItem = page;
+        UpdateViewChecks();
         UpdateStatus();
     }
 

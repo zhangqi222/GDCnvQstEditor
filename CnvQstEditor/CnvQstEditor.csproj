@@ -9,7 +9,7 @@
     <AssemblyName>CnvQstEditor</AssemblyName>
     <Product>CnvQstEditor</Product>
     <Description>Grim Dawn .cnv/.qst 图形化查看、编辑、新建、导入导出与批量处理（格式见 CnvQstFormatDecoded.md）</Description>
-    <Version>2.0.22</Version>
+    <Version>2.0.23</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
@@ -38,6 +38,7 @@
   <!-- Avalonia 11.3 系（MIT）：TreeDataGrid 11.0.10 为最后 MIT 免费版，12+ 起为商业授权 -->
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.13" />
     <PackageReference Include="Avalonia.Controls.TreeDataGrid" Version="11.0.10" />

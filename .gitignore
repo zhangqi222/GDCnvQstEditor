@@ -35,3 +35,9 @@ _editor_extract/
 
 # 保存时自动生成的备份
 *.bak
+
+# AvaloniaEdit 源码（本地参考，不入库）
+/AvaloniaEdit-11.4.1/
+
+# 用户临时测试目录
+/tool_temp/

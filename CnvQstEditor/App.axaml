@@ -1,6 +1,21 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="CnvQstEditor.EditorApp">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <!-- AvaloniaEdit（11.4.1）：只取控件模板（Base.xaml）。Simple/Fluent 主题包会
+             通过 StaticResource 引用 Semi 未提供的资源键（FontSizeNormal 等）导致加载失败，
+             因此不用主题包，选中色等在此按 Semi 配色补齐；暂不使用 Semi 的 AvaloniaEdit 主题包。 -->
+        <ResourceInclude Source="avares://AvaloniaEdit/Themes/Base.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <SolidColorBrush x:Key="TextAreaSelectionBrush" Color="#3B82F6" Opacity="0.35" />
+      <SolidColorBrush x:Key="SearchPanelBackgroundBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="SearchPanelBorderBrush" Color="#E0E0E0" />
+      <FontFamily x:Key="SearchPanelFontFamily">Consolas</FontFamily>
+      <x:Double x:Key="SearchPanelFontSize">12</x:Double>
+    </ResourceDictionary>
+  </Application.Resources>
   <Application.Styles>
     <!-- Semi.Avalonia 主题系（控件 / DataGrid / TreeDataGrid） -->
     <StyleInclude Source="avares://Semi.Avalonia/Index.axaml" />

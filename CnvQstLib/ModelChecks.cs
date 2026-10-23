@@ -210,7 +210,7 @@ public static class ModelChecks
             var missed = Enumerable.Range(have, need - have)
                 .Where(i => c.Steps[i].Type != Names.StepLink)
                 .Select(i => i + 1).ToList();
-            if (missed.Count > 0) sb.Append($"\n缺少的行中可填文字：{Ranges(missed)}。");
+            if (missed.Count > 0) sb.Append($"\n按行数推断，缺少的末尾行中可填文字：{Ranges(missed)}（若中间缺行则无法仅凭行数定位）。");
         }
         return sb.ToString();
     }
@@ -224,7 +224,7 @@ public static class ModelChecks
         {
             var roles = Enumerable.Range(have, Math.Min(need - have, 10))
                 .Select(i => $"{i + 1}={q.DescribeSlot(i)}").ToList();
-            sb.Append($"\n缺少的槽位：{string.Join("，", roles)}");
+            sb.Append($"\n按前缀对齐推断缺少的槽位（仅供参考；若中间缺行则无法仅凭行数定位）：{string.Join("，", roles)}");
             if (need - have > roles.Count) sb.Append($" …（共 {need - have} 行）");
             sb.Append('。');
         }

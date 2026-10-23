@@ -1,23 +1,26 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
+using AvaloniaEdit;
 using CnvQst;
 
 namespace CnvQstEditor;
 
-/// <summary>文档视图模式：可视化编辑器（表格 + 底部编辑器）、JSON、本地化文本、DUMP。</summary>
+/// <summary>文档视图模式：只有可视化编辑器可修改；其余四种为只读。</summary>
 internal enum DocViewMode
 {
     Visual,
     Json,
     Localization,
+    Slot,
     Dump,
 }
 
 /// <summary>
-/// 单个文档视图：100% 宽度的树形表格（结构与数据结合展示）+ 页内状态行。
-/// 四种视图整体切换（<see cref="SetView"/>）：可视化编辑器 / JSON 模式 / 本地化文本（只读）/ DUMP（只读）。
+/// 单个文档视图：可视化表格（唯一可编辑入口）+ JSON / 本地化 / 槽位 / DUMP 四种只读视图。
+/// 只读视图占满整个编辑区；JSON、DUMP 用行号，本地化与槽位用“行号 + 槽位名”标注槽位。
 /// </summary>
 internal sealed class DocView : UserControl
 {
@@ -25,10 +28,10 @@ internal sealed class DocView : UserControl
     public DocViewMode Mode { get; private set; } = DocViewMode.Visual;
     public event Action? DirtyChanged;
     public event Action? ModeChanged;
+    public event Action? LocalizationRequested;
 
     private readonly CnvTableEditor _cnvTable = new() { IsVisible = false };
     private readonly QstTableEditor _qstTable = new() { IsVisible = false };
-    private readonly LocalizationGrid _locGrid = new() { IsVisible = false };
     private readonly TextBlock _emptyHint = new()
     {
         Text = L.EmptyHint,
@@ -37,6 +40,21 @@ internal sealed class DocView : UserControl
         TextWrapping = TextWrapping.Wrap,
         VerticalAlignment = VerticalAlignment.Top,
     };
+
+    private readonly TextEditor _jsonEditor = NewReadOnlyEditor(lineNumbers: true);
+    private readonly TextEditor _locEditor = NewReadOnlyEditor(lineNumbers: false);
+    private readonly TextEditor _slotEditor = NewReadOnlyEditor(lineNumbers: false);
+    private readonly TextEditor _dumpEditor = NewReadOnlyEditor(lineNumbers: true);
+    private readonly SlotMargin _locMargin = new();
+    private readonly SlotMargin _slotMargin = new();
+    private readonly TextBlock _slotInfo = new()
+    {
+        Foreground = UiTheme.MutedBrush,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(10, 6, 10, 4),
+    };
+    private readonly Grid _slotHost = new() { IsVisible = false };
+
     private readonly Grid _host = new();
     private readonly NodeTextPanel _panel = new() { IsVisible = false, ClipToBounds = true };
     private readonly GridSplitter _panelSplitter = new()
@@ -63,35 +81,6 @@ internal sealed class DocView : UserControl
         Foreground = UiTheme.MutedBrush,
     };
 
-    // JSON 模式：等宽文本框 + 应用 / 重新载入
-    private readonly TextBox _jsonBox = new()
-    {
-        AcceptsReturn = true,
-        AcceptsTab = true,
-        FontFamily = new FontFamily("Consolas"),
-        FontSize = 12,
-        TextWrapping = TextWrapping.NoWrap,
-    };
-    private readonly TextBlock _jsonStatus = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
-    private readonly Grid _jsonHost = new() { IsVisible = false };
-    private readonly Button _jsonApply = new() { Content = L.T("Apply JSON") };
-    private readonly Button _jsonReload = new() { Content = L.T("Reload") };
-    private bool _jsonDirty;
-    private bool _jsonBuilding;
-    /// <summary>最近一次装载/应用后的 JSON 文本，用于区分挂载初始化与真实编辑。</summary>
-    private string _jsonLoadedText = "";
-
-    // DUMP 模式：只读文本
-    private readonly TextBox _dumpBox = new()
-    {
-        IsReadOnly = true,
-        AcceptsReturn = true,
-        FontFamily = new FontFamily("Consolas"),
-        FontSize = 12,
-        TextWrapping = TextWrapping.NoWrap,
-        IsVisible = false,
-    };
-
     private bool _panelCollapsed;
     private GridLength _panelHeight = new(180);
 
@@ -99,40 +88,18 @@ internal sealed class DocView : UserControl
     {
         Doc = doc;
 
-        ScrollViewer.SetVerticalScrollBarVisibility(_jsonBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
-        ScrollViewer.SetHorizontalScrollBarVisibility(_jsonBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
-        ScrollViewer.SetVerticalScrollBarVisibility(_dumpBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
-        ScrollViewer.SetHorizontalScrollBarVisibility(_dumpBox, Avalonia.Controls.Primitives.ScrollBarVisibility.Auto);
+        _locEditor.TextArea.LeftMargins.Insert(0, _locMargin);
+        _slotEditor.TextArea.LeftMargins.Insert(0, _slotMargin);
 
-        _jsonApply.Click += (_, _) => ApplyJson();
-        _jsonReload.Click += (_, _) => LoadJson(force: true);
-        _jsonBox.TextChanged += (_, _) =>
-        {
-            if (_jsonBuilding) return;
-            if (string.Equals(_jsonBox.Text ?? "", _jsonLoadedText, StringComparison.Ordinal))
-            {
-                _jsonDirty = false;
-                return;
-            }
-            _jsonDirty = true;
-            _jsonStatus.Text = L.T("JSON modified (not applied yet)");
-        };
+        _slotHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _slotHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(_slotInfo, 0);
+        Grid.SetRow(_slotEditor, 1);
+        _slotHost.Children.Add(_slotInfo);
+        _slotHost.Children.Add(_slotEditor);
 
-        var jsonBar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Margin = new Thickness(10, 6, 10, 4),
-            Children = { _jsonApply, _jsonReload, _jsonStatus },
-        };
-        _jsonHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _jsonHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(jsonBar, 0);
-        Grid.SetRow(_jsonBox, 1);
-        _jsonHost.Children.Add(jsonBar);
-        _jsonHost.Children.Add(_jsonBox);
-
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint, _jsonHost, _dumpBox }) _host.Children.Add(c);
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locEditor, _slotHost, _dumpEditor, _emptyHint })
+            _host.Children.Add(c);
 
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -155,8 +122,8 @@ internal sealed class DocView : UserControl
         UpdateToggle();
         Content = _rootGrid;
 
-        _cnvTable.LocRequested += ToggleLocalization;
-        _qstTable.LocRequested += ToggleLocalization;
+        _cnvTable.LocRequested += () => LocalizationRequested?.Invoke();
+        _qstTable.LocRequested += () => LocalizationRequested?.Invoke();
         _cnvTable.SelectedChanged += OnSelectedChanged;
         _qstTable.SelectedChanged += OnSelectedChanged;
         _panel.TextEdited += () =>
@@ -176,7 +143,28 @@ internal sealed class DocView : UserControl
         SetView(DocViewMode.Visual);
     }
 
-    /// <summary>切换整体视图（可视化 / JSON / 本地化 / DUMP）。</summary>
+    private static TextEditor NewReadOnlyEditor(bool lineNumbers)
+    {
+        var editor = new TextEditor
+        {
+            IsReadOnly = true,
+            ShowLineNumbers = lineNumbers,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            WordWrap = false,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Background = Brushes.White,
+            Padding = new Thickness(4, 2, 4, 2),
+            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
+            LineNumbersMargin = new Thickness(4, 0, 6, 0),
+        };
+        editor.TextArea.Foreground = UiTheme.TextBrush;
+        editor.TextArea.Background = Brushes.White;
+        return editor;
+    }
+
+    /// <summary>切换整体视图（可视化 / JSON / 本地化 / 槽位 / DUMP）。</summary>
     public void SetView(DocViewMode mode)
     {
         Mode = mode;
@@ -186,15 +174,19 @@ internal sealed class DocView : UserControl
                 ShowStructure();
                 break;
             case DocViewMode.Json:
-                ShowSingle(_jsonHost);
-                LoadJson(force: false);
+                ShowSingle(_jsonEditor);
+                LoadJson();
                 break;
             case DocViewMode.Localization:
-                ShowSingle(_locGrid);
-                _locGrid.Bind(Doc, OnEdited);
+                ShowSingle(_locEditor);
+                LoadLocalization();
+                break;
+            case DocViewMode.Slot:
+                ShowSingle(_slotHost);
+                LoadSlots();
                 break;
             case DocViewMode.Dump:
-                ShowSingle(_dumpBox);
+                ShowSingle(_dumpEditor);
                 LoadDump();
                 break;
         }
@@ -222,7 +214,6 @@ internal sealed class DocView : UserControl
         }
         else
         {
-            // 记录当前实际高度（拖动后 RowDefinition.Height 可能仍是旧值，以 ActualHeight 为准）
             double h = row.ActualHeight;
             if (h > 8) _panelHeight = new GridLength(Math.Max(h, 40));
             row.Height = new GridLength(0);
@@ -257,74 +248,121 @@ internal sealed class DocView : UserControl
         _panel.IsVisible = structure;
         _panelSplitter.IsVisible = structure;
         _panelToggle.IsVisible = structure;
+        var splitRow = _rootGrid.RowDefinitions[1];
+        var panelRow = _rootGrid.RowDefinitions[2];
+        if (structure)
+        {
+            splitRow.Height = GridLength.Auto;
+            panelRow.Height = _panelCollapsed ? new GridLength(0) : _panelHeight;
+        }
+        else
+        {
+            splitRow.Height = new GridLength(0);
+            panelRow.Height = new GridLength(0);
+        }
         if (structure) OnSelectedChanged();
     }
 
+    /// <summary>只读视图占满整个编辑区：同时收起底部编辑器所在的两行。</summary>
     private void ShowSingle(Control target)
     {
         ShowOnly(target);
         _panel.IsVisible = false;
         _panelSplitter.IsVisible = false;
         _panelToggle.IsVisible = false;
+        _rootGrid.RowDefinitions[1].Height = new GridLength(0);
+        _rootGrid.RowDefinitions[2].Height = new GridLength(0);
     }
 
     private void ShowOnly(Control target)
     {
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _locGrid, _emptyHint, _jsonHost, _dumpBox })
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locEditor, _slotHost, _dumpEditor, _emptyHint })
             c.IsVisible = c == target;
     }
 
-    /// <summary>在 结构表 / 本地化字符串表 之间切换（右键菜单与 Ctrl+L 共用）。</summary>
-    public void ToggleLocalization() =>
-        SetView(Mode == DocViewMode.Localization ? DocViewMode.Visual : DocViewMode.Localization);
-
-    private void LoadJson(bool force)
+    private void LoadJson()
     {
-        if (_jsonDirty && !force) return;
-        _jsonBuilding = true;
         try
         {
-            _jsonBox.Text = Doc.Cnv != null
+            _jsonEditor.Text = Doc.Cnv != null
                 ? JsonIO.Export(Doc.Cnv, Doc.Title)
                 : Doc.Qst != null ? JsonIO.Export(Doc.Qst, Doc.Title) : "";
-            _jsonLoadedText = _jsonBox.Text ?? "";
-            _jsonDirty = false;
-            _jsonStatus.Text = L.T("Click \"Apply JSON\" to write changes back to the document.");
-        }
-        finally { _jsonBuilding = false; }
-    }
-
-    private void ApplyJson()
-    {
-        if (Doc.ReadOnly)
-        {
-            _jsonStatus.Text = L.T("The current document is read-only; JSON cannot be applied.");
-            return;
-        }
-        try
-        {
-            object model = JsonIO.ImportModel(_jsonBox.Text);
-            if (model is CnvFile c && Doc.Cnv != null) Doc.Cnv = c;
-            else if (model is QstFile q && Doc.Qst != null) Doc.Qst = q;
-            else throw new GdParseException(L.T("The JSON kind does not match the current document type."));
-            Doc.Dirty = true;
-            _jsonDirty = false;
-            DirtyChanged?.Invoke();
-            LoadJson(force: true);
-            _jsonStatus.Text = L.T("JSON changes applied.");
         }
         catch (Exception ex)
         {
-            Gui.Warn(TopLevel.GetTopLevel(this) as Window, ex.Message, L.Error);
+            _jsonEditor.Text = ex.Message;
+        }
+    }
+
+    private void LoadLocalization()
+    {
+        try
+        {
+            var texts = Doc.PrimaryLanguage.Texts;
+            var labels = LocalizedRoles(texts.Count);
+            _locMargin.SetLabels(labels);
+            _locEditor.Text = string.Join("\n", texts.Select(t => OneLine(t.Text)));
+        }
+        catch (Exception ex)
+        {
+            _locMargin.SetLabels([]);
+            _locEditor.Text = ex.Message;
+        }
+    }
+
+    private List<string> LocalizedRoles(int count)
+    {
+        var labels = new List<string>(count);
+        if (Doc.Cnv != null)
+        {
+            var slots = SlotGuide.ForCnv(Doc.Cnv);
+            for (int i = 0; i < count; i++)
+                labels.Add(i < slots.Count ? SlotText.Role(slots[i]) : L.T("(no bound node)"));
+        }
+        else if (Doc.Qst != null)
+        {
+            var slots = SlotGuide.ForQst(Doc.Qst);
+            for (int i = 0; i < count; i++)
+                labels.Add(i < slots.Count ? SlotText.Role(slots[i]) : L.T("(no matching slot)"));
+        }
+        return labels;
+    }
+
+    private void LoadSlots()
+    {
+        try
+        {
+            var slots = Doc.Cnv != null ? SlotGuide.ForCnv(Doc.Cnv)
+                : Doc.Qst != null ? SlotGuide.ForQst(Doc.Qst)
+                : [];
+            _slotMargin.SetLabels(slots.Select(SlotText.Role).ToList());
+            _slotEditor.Text = string.Join("\n", slots.Select(SlotText.Placeholder));
+            _slotInfo.Text = L.F("Total {0} slots · {1} suggested · newline: {{^n}}", slots.Count, slots.Count(s => s.Suggested));
+        }
+        catch (Exception ex)
+        {
+            _slotMargin.SetLabels([]);
+            _slotEditor.Text = ex.Message;
+            _slotInfo.Text = "";
         }
     }
 
     private void LoadDump()
     {
-        _dumpBox.Text = Doc.Cnv != null
-            ? Dump.DumpCnv(Doc.Cnv, Doc.Title)
-            : Doc.Qst != null ? Dump.DumpQst(Doc.Qst, Doc.Title) : "";
+        try
+        {
+            _dumpEditor.Text = Doc.Cnv != null
+                ? Dump.DumpCnv(Doc.Cnv, Doc.Title)
+                : Doc.Qst != null ? Dump.DumpQst(Doc.Qst, Doc.Title) : "";
+        }
+        catch (Exception ex)
+        {
+            _dumpEditor.Text = ex.Message;
+        }
     }
+
+    private static string OneLine(string text) =>
+        text.Replace("\r\n", "{^n}").Replace("\n", "{^n}").Replace("\r", "{^n}");
 
     private void OnEdited()
     {
@@ -340,10 +378,13 @@ internal sealed class DocView : UserControl
                 ShowStructure();
                 break;
             case DocViewMode.Json:
-                LoadJson(force: false);
+                LoadJson();
                 break;
             case DocViewMode.Localization:
-                _locGrid.Bind(Doc, OnEdited);
+                LoadLocalization();
+                break;
+            case DocViewMode.Slot:
+                LoadSlots();
                 break;
             case DocViewMode.Dump:
                 LoadDump();

@@ -3,11 +3,6 @@
 //
 // 本文件同时覆盖：全部顶层字段、全部节点字段、7 种节点类型、30 种条件、
 // 27 个可用动作、hints（link/flags/vo）、以及 languages 多语言块。
-// 生成命令（仓库根目录）：
-//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll convert JSON示例/cnv_full.json -o 输出.cnv
-//   CnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o 输出.cnv
-// 生成后可用 verify 回读校验：
-//   CnvQstEditor-cli.exe verify 输出.cnv
 //
 // ----------------------------------------------------------------------------
 // 字段总览（下文每个字段都有更详细的就地注释）

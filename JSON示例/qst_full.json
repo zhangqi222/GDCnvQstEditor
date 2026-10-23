@@ -3,12 +3,6 @@
 //
 // 本文件同时覆盖：全部顶层字段、全部 task / incentive / objective / event 字段、
 // 持久化 uid、30 种条件、27 个可用动作、以及 languages 多语言块。
-// 生成命令（仓库根目录）：
-//   dotnet CnvQstEditor/bin/Debug/net8.0-windows/CnvQstEditor.dll convert JSON示例/qst_full.json -o 输出.qst
-//   CnvQstEditor-cli.exe convert JSON示例/qst_full.json -o 输出.qst
-// 生成后可用 verify 回读校验：
-//   CnvQstEditor-cli.exe verify 输出.qst
-//
 // ----------------------------------------------------------------------------
 // 字段总览（下文每个字段都有更详细的就地注释）
 // ----------------------------------------------------------------------------

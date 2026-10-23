@@ -24,6 +24,10 @@ public sealed class BatchItem
     public string? LangDetail;
     /// <summary>应有的文本槽位数（CNV=节点数；QST=2+2T+O+I+E）。</summary>
     public int TextSlots;
+    /// <summary>按结构规则建议填写的槽位数（仅提醒，不阻止转换）。</summary>
+    public int SuggestedSlots;
+    /// <summary>完整槽位明细（行号 / 槽位名 / 填写建议），供 verify 输出。</summary>
+    public string? SlotDetail;
 
     public bool AllOk => ParseOk && Tiled && LocOk && RoundTripOk && LangOk;
 
@@ -85,7 +89,7 @@ public static class BatchOps
             string text;
             try { text = File.ReadAllText(file); }
             catch (Exception e) { item.Error = e.Message; return item; }
-            var report = ModelChecks.CheckJson(text, out string jsonKind, out _);
+            var report = ModelChecks.CheckJson(text, out string jsonKind, out object? jsonModel);
             item.Kind = report.Kind switch
             {
                 "cnv" => "CNV-JSON",
@@ -101,6 +105,11 @@ public static class BatchOps
             item.TxtLines = report.TextSlots;
             item.LangOk = report.Ok;
             item.LangDetail = report.Ok ? null : report.ToText();
+            if (jsonModel != null)
+            {
+                item.SuggestedSlots = SlotGuide.SuggestedCount(jsonModel);
+                item.SlotDetail = SlotGuide.Report(jsonModel);
+            }
             return item;
         }
 
@@ -164,6 +173,8 @@ public static class BatchOps
             };
         }
         catch { /* 无语言块等；已由 ParseOk 反映 */ }
+        item.SuggestedSlots = SlotGuide.SuggestedCount(model);
+        item.SlotDetail = SlotGuide.Report(model);
         return item;
     }
 

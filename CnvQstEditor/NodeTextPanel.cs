@@ -1,9 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using AvaloniaEdit;
 using CnvQst;
 
 namespace CnvQstEditor;
@@ -11,16 +10,22 @@ namespace CnvQstEditor;
 /// <summary>
 /// 底部节点文本编辑器（官方编辑器风格：选中行后底部编辑，替代弹窗）：
 /// 顶部 = Quest ID 行（仅 QST）；下方 = 任务文件主语言文本（单栏）。
-/// 输入框自动换行，纵向滚动、无横向滚动条。
+/// 文本编辑器使用 AvaloniaEdit（行号 + 自动换行），并在标题行提示当前槽位的填写建议。
 /// </summary>
 internal sealed class NodeTextPanel : UserControl
 {
     private readonly TextBlock _questIdText = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Button _copyId = new() { Content = L.Copy, MinWidth = 56, MinHeight = 22, Margin = new Thickness(6, 0, 0, 0) };
     private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
-    private readonly TextBox _main = NewBox();
-    private readonly LineNumberGutter _gutter = new();
+    private readonly TextEditor _main = NewEditor();
     private readonly TextBlock _mainLabel = MkLabel("");
+    private readonly TextBlock _hint = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        Foreground = UiTheme.MutedBrush,
+        FontSize = 11,
+        TextWrapping = TextWrapping.Wrap,
+    };
     private readonly StackPanel _idHost;
     private DocSession? _doc;
     private int? _slot;
@@ -38,49 +43,47 @@ internal sealed class NodeTextPanel : UserControl
         _idHost.Children.Add(_questIdText);
         _idHost.Children.Add(_copyId);
 
-        // 布局：id 行 → 标签行 → 单栏输入框（固定高度填满剩余空间）
+        // 布局：id 行 → 标签/建议行 → 单栏文本编辑器（填满剩余高度）
         var grid = _grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var editorRow = new Grid();
-        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _gutter.SetValue(Grid.ColumnProperty, 0);
-        _main.SetValue(Grid.ColumnProperty, 1);
-        editorRow.Children.Add(_gutter);
-        editorRow.Children.Add(_main);
+        var labelRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 2) };
+        _mainLabel.Margin = new Thickness(0, 0, 8, 0);
+        labelRow.Children.Add(_mainLabel);
+        labelRow.Children.Add(_hint);
 
         Place(_idHost, 0);
-        Place(_mainLabel, 1);
-        Place(editorRow, 2);
-        _gutter.Attach(_main);
+        Place(labelRow, 1);
+        Place(_main, 2);
 
         Content = grid;
 
         _main.TextChanged += (_, _) => OnEdited(_main);
     }
 
-    private static TextBox NewBox()
+    private static TextEditor NewEditor()
     {
-        var box = new TextBox
+        var editor = new TextEditor
         {
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,   // 超长自动换行；纵向滚动由 TextBox 内建，无横向滚动条
-            VerticalAlignment = VerticalAlignment.Stretch,   // 固定填满父容器分给的高度，不随内容增高
-            // Semi 主题默认 VerticalContentAlignment=Center（内容垂直居中）；改为默认顶格左上对齐
-            VerticalContentAlignment = VerticalAlignment.Top,
+            WordWrap = true,
+            ShowLineNumbers = true,
+            FontFamily = new FontFamily("Consolas"),
+            FontSize = 12,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            Background = Brushes.White,
+            Padding = new Thickness(4, 2, 4, 2),
+            LineNumbersForeground = new SolidColorBrush(Color.FromRgb(0x99, 0x99, 0x99)),
+            LineNumbersMargin = new Thickness(4, 0, 6, 0),
         };
-        EnableReliableCopy(box);
-        return box;
+        editor.TextArea.Foreground = UiTheme.TextBrush;
+        editor.TextArea.Background = Brushes.White;
+        return editor;
     }
 
-    // 复制修复逻辑已提炼为全局 ClipboardHelper.Enable（所有 TextBox 统一启用），
-    // 这里仅为可读性保留转调。
-    private static void EnableReliableCopy(TextBox box) => ClipboardHelper.Enable(box);
-
-    private static TextBlock MkLabel(string text) => new() { Text = text, Margin = new Thickness(0, 0, 0, 2) };
+    private static TextBlock MkLabel(string text) => new() { Text = text };
 
     private Grid _grid = null!;
 
@@ -112,40 +115,53 @@ internal sealed class NodeTextPanel : UserControl
         if (doc == null || slot == null)
         {
             IsEnabled = false;
-            _gutter.IsVisible = false;
             _assigned = "";
-            SetBoxText(_main, "");
+            _main.Text = "";
             _mainLabel.Text = L.T("Node text");
+            _hint.Text = "";
             _building = false;
             return;
         }
 
         IsEnabled = true;
-        _gutter.IsVisible = true;
         _mainLabel.Text = L.T("Node text") + L.InParen(doc.PrimaryLanguage.Tag.Text);
+        BindHint(doc, slot.Value);
         _assigned = TableLayout.Display(GetText(doc.PrimaryLanguage, slot.Value));
-        SetBoxText(_main, _assigned);
+        _main.Text = _assigned;
         _building = false;
+    }
+
+    private void BindHint(DocSession doc, int slot)
+    {
+        SlotInfo? info = null;
+        if (doc.Cnv != null)
+        {
+            var slots = SlotGuide.ForCnv(doc.Cnv);
+            if (slot >= 0 && slot < slots.Count) info = slots[slot];
+            else _hint.Text = L.T("(no bound node)");
+        }
+        else if (doc.Qst != null)
+        {
+            var slots = SlotGuide.ForQst(doc.Qst);
+            if (slot >= 0 && slot < slots.Count) info = slots[slot];
+            else _hint.Text = L.T("(no matching slot)");
+        }
+        if (info == null)
+        {
+            _hint.Foreground = UiTheme.MutedBrush;
+            return;
+        }
+
+        _hint.Text = SlotText.Hint(info) + " · " + SlotText.Role(info);
+        _hint.Foreground = info.Suggested ? UiTheme.AccentBrush
+            : info.MustBeEmpty ? UiTheme.WarnBrush
+            : UiTheme.MutedBrush;
     }
 
     private static string GetText(LanguageBlock lang, int slot) =>
         slot >= 0 && slot < lang.Texts.Count ? lang.Texts[slot].Text : "";
 
-    /// <summary>
-    /// 程序化赋值不进撤销栈：临时关闭撤销并把 UndoLimit 归零（二者都会丢弃既有撤销历史），
-    /// 这样 Ctrl+Z 只撤销用户自己的输入，不会一路回退清空绑定进来的原文。
-    /// </summary>
-    private static void SetBoxText(TextBox box, string text)
-    {
-        bool undo = box.IsUndoEnabled;
-        box.IsUndoEnabled = false;
-        box.UndoLimit = 0;
-        box.Text = text;
-        box.UndoLimit = 200;
-        box.IsUndoEnabled = undo;
-    }
-
-    private void OnEdited(TextBox box)
+    private void OnEdited(TextEditor box)
     {
         if (_building || _doc == null || _slot == null) return;
         // 程序化赋值后 TextChanged 可能延迟到 Bind 结束才派发，_building 已复位；
