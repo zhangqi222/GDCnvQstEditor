@@ -173,7 +173,9 @@ public static class SlotGuide
         for (int i = 0; i < slots.Count; i++)
         {
             var s = slots[i];
-            string content = OneLine(Filled(lang, s.Index));
+            // 语言表行数不足时：该行"不存在"（缺行），不能与"空槽位"（合法的格式保留空串）混淆
+            bool missing = lang != null && s.Index >= lang.Texts.Count;
+            string content = missing ? CliL.T("（缺行）") : OneLine(Filled(lang, s.Index));
             sb.AppendLine(Pad($"  {i + 1}", 6) + Pad(s.RoleZh, 26) + Pad(s.Desc, 11)
                 + Pad(s.AdviceZh, 22) + (content.Length > 0 ? content : CliL.T("（空）")));
         }

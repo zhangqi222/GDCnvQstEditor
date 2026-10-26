@@ -89,6 +89,7 @@
   "描述": "Desc",
   "建议": "Advice",
   "内容": "Content",
+  "（缺行）": "(missing row)",
   "（空）": "(empty)",
 
   // ── SlotInfo.RoleZh（槽位名） ──

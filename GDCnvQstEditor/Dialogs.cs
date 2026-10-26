@@ -45,6 +45,28 @@ internal static class DialogChrome
         return b;
     }
 
+    /// <summary>
+    /// 锁定的引用标识（uid）编辑行：数值框默认禁用 + "强制编辑"按钮，确认警告后解锁。
+    /// 与条件/动作编辑器的"任务引用标识下拉 + 强制编辑"同策略（uid 错改会破坏任务引用，仅修复用）。
+    /// </summary>
+    public static Control LockedUid(Window owner, NumPairBox box)
+    {
+        var force = Button(L.T("Force edit…"), primary: false);
+        force.Click += async (_, _) =>
+        {
+            var r = await MsgBox.Show(owner,
+                L.T("Force-edit the reference id? A mismatched quest file and ID will corrupt quest state. Use this only to repair broken references. Remove the restriction?"),
+                L.T("Force edit"), MsgButtons.YesNo, warning: true);
+            if (r != MsgResult.Yes) return;
+            box.IsEnabled = true;
+            force.IsVisible = false;
+        };
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
+        sp.Children.Add(box);
+        sp.Children.Add(force);
+        return sp;
+    }
+
     /// <summary>取消按钮：点击关闭窗口（ShowDialog 得到 false），Esc 同效。</summary>
     public static Button Cancel(Window w, string? text = null)
     {
@@ -458,6 +480,7 @@ internal sealed class CnvNodeDialog : Window
     private readonly CheckBox _unimportant = new() { Content = L.T("Unimportant") };
     private readonly TextBox _voPath = new() { MinWidth = 320 };
     private readonly ComboBox _link = new() { MinWidth = 320 };
+    private Control _linkRow = null!;   // 跳转目标行：仅跳转节点显示
 
     /// <summary>跳转目标下拉项：Label=截断显示文本（保持原样），Full=完整文本（ToolTip 悬停显示）。</summary>
     private sealed record LinkItem(string Label, string Full);
@@ -500,8 +523,13 @@ internal sealed class CnvNodeDialog : Window
         });
         _link.SelectedIndex = s.LinkId < (uint)c.Steps.Count ? (int)s.LinkId : -1;
         _link.IsEnabled = s.Type == Names.StepLink;
-        // 切换类型为"跳转"时实时启用跳转目标下拉（仅跳转节点有 LinkId 字段）
-        _type.SelectionChanged += (_, _) => _link.IsEnabled = _type.SelectedIndex == (int)Names.StepLink;
+        // 切换类型为"跳转"时实时启用跳转目标下拉（仅跳转节点有 LinkId 字段），非跳转节点整行隐藏
+        _type.SelectionChanged += (_, _) =>
+        {
+            bool link = _type.SelectedIndex == (int)Names.StepLink;
+            _link.IsEnabled = link;
+            _linkRow.IsVisible = link;
+        };
 
         var ok = DialogChrome.Button(L.T("OK"), primary: true);
         ok.IsDefault = true;
@@ -538,7 +566,9 @@ internal sealed class CnvNodeDialog : Window
         voRow.Children.Add(voBrowse);
         voRow.Children.Add(_voPath);
         stack.Children.Add(DialogChrome.FieldRow(L.T("Voice file") + L.Colon, voRow));
-        stack.Children.Add(DialogChrome.FieldRow(L.T("Jump to") + L.Colon, _link));
+        _linkRow = DialogChrome.FieldRow(L.T("Jump to") + L.Colon, _link);
+        _linkRow.IsVisible = _type.SelectedIndex == (int)Names.StepLink;
+        stack.Children.Add(_linkRow);
         stack.Children.Add(DialogChrome.Footer(cancel, ok));
         Content = stack;
     }
@@ -602,7 +632,9 @@ internal sealed class QuestPropsDialog : Window
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        stack.Children.Add(DialogChrome.FieldRow("uid", _uid));
+        // uid：锁定 + 强制编辑（错改会破坏任务引用）
+        _uid.IsEnabled = false;
+        stack.Children.Add(DialogChrome.FieldRow("uid", DialogChrome.LockedUid(this, _uid)));
         stack.Children.Add(_primary);
         stack.Children.Add(_secondary);
         stack.Children.Add(_repeatable);
@@ -636,6 +668,7 @@ internal sealed class QuestPropsDialog : Window
 internal sealed class QstFieldsDialog : Window
 {
     private readonly List<(string, NumPairBox)> _nums = new();
+    private readonly HashSet<int> _uidRows = new();   // uid 行下标：布局时包一层"强制编辑"
     private readonly List<(string, CheckBox)> _flags = new();
 
     internal QstFieldsDialog(QstRowOwner row)
@@ -645,18 +678,20 @@ internal sealed class QstFieldsDialog : Window
         switch (row)
         {
             case QstTaskRow tr:
+                // uid：锁定 + 强制编辑（与条件/动作编辑器的引用标识同策略）；flags 恒为 0 → 与 objective/event 一并禁用
+                _uidRows.Add(0);
                 _nums.Add((L.T("uid (reference id)"), new NumPairBox(tr.T.UnknownA8, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
-                // task flags 恒为 0（官方编辑器亦无编辑入口）→ 只读，防误改破坏文件
-                _nums.Add((L.T("flags (only None)"), new NumPairBox(tr.T.UnknownAC, readOnly: true)));
+                _nums.Add((L.T("flags (only None)"), new NumPairBox(tr.T.UnknownAC) { IsEnabled = false }));
                 _flags.Add((L.T("isBlocker (blocks subsequent tasks, v≥8)"), Check(tr.T.Flag8)));
                 _flags.Add((L.T("dontPropagate (do not propagate upward, v≥9)"), Check(tr.T.Flag9)));
                 break;
             case QstObjectiveRow or:
+                _uidRows.Add(0);
                 _nums.Add((L.T("uid"), new NumPairBox(or.O.Unknown0, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
-                _nums.Add((L.T("flags"), new NumPairBox(or.O.Unknown1)));
+                _nums.Add((L.T("flags"), new NumPairBox(or.O.Unknown1) { IsEnabled = false }));
                 break;
             case QstEventRow er:
-                _nums.Add((L.T("flags"), new NumPairBox(er.E.Unknown)));
+                _nums.Add((L.T("flags"), new NumPairBox(er.E.Unknown) { IsEnabled = false }));
                 break;
         }
 
@@ -666,7 +701,12 @@ internal sealed class QstFieldsDialog : Window
         ok.Click += (_, _) => { Close(true); };
 
         var stack = new StackPanel { Margin = new Thickness(16) };
-        foreach (var (lab, n) in _nums) stack.Children.Add(DialogChrome.FieldRow(lab, n));
+        for (int i = 0; i < _nums.Count; i++)
+        {
+            var (lab, n) = _nums[i];
+            Control host = _uidRows.Contains(i) ? DialogChrome.LockedUid(this, n) : n;
+            stack.Children.Add(DialogChrome.FieldRow(lab, host));
+        }
         foreach (var (lab, cb) in _flags) { cb.Content = lab; stack.Children.Add(cb); }
         stack.Children.Add(new TextBlock
         {
@@ -727,12 +767,18 @@ internal sealed class SettingsDialog : Window
     private readonly DirRow _rootRow, _dlc1Row, _dlc2Row, _dlc3Row, _modRow;
     private readonly string _themeOriginal;   // 打开弹窗前的主题模式（取消时回退）
     private string _theme;                    // 弹窗内当前选择的主题模式
+    private readonly CheckBox _noScaling;     // 禁止缩放开关（强制 1 倍，重启生效）
 
     internal SettingsDialog()
     {
         DialogChrome.Init(this, L.T("Settings"), 720, 0, SizeToContent.Height);
         _themeOriginal = AppSettings.ThemeMode;
         _theme = _themeOriginal;
+        _noScaling = new CheckBox
+        {
+            Content = L.T("Disable scaling (force 100%, restart to apply)"),
+            IsChecked = AppSettings.DisableUiScaling,
+        };
         _root.Text = AppSettings.GameRoot;
         _dlc1.Text = AppSettings.Dlc1Dir;
         _dlc2.Text = AppSettings.Dlc2Dir;
@@ -781,6 +827,7 @@ internal sealed class SettingsDialog : Window
             AppSettings.Dlc3Dir = _dlc3.Text?.Trim() ?? "";
             AppSettings.ModDir = _mod.Text?.Trim() ?? "";
             AppSettings.ThemeMode = _theme;
+            AppSettings.DisableUiScaling = _noScaling.IsChecked == true;
             string? err = AppSettings.Save();
             if (err != null)
                 await MsgBox.Show(this,
@@ -814,6 +861,8 @@ internal sealed class SettingsDialog : Window
             themeRow.Children.Add(rb);
         }
         stack.Children.Add(DialogChrome.FieldRow(L.T("UI theme"), themeRow));
+        // 禁止缩放：强制 1 倍（DPI unaware），重启生效
+        stack.Children.Add(DialogChrome.FieldRow(L.T("UI scaling"), _noScaling));
         stack.Children.Add(DialogChrome.FieldRow(L.T("Game root folder"), _rootRow.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC1 folder"), _dlc1Row.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC2 folder"), _dlc2Row.Host));

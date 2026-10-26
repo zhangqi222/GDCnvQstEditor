@@ -61,6 +61,12 @@ internal static class AppSettings
     /// <summary>主题模式：system=跟随系统 / light / dark（见 UiTheme 常量；持久化供下次启动沿用）。</summary>
     public static string ThemeMode { get; set; } = UiTheme.ThemeSystem;
 
+    /// <summary>
+    /// 禁止缩放：true = 强制 1 倍缩放（进程设为 DPI unaware，不参照系统缩放；须重启生效）；
+    /// false = 跟随系统显示缩放（默认）。Windows 对 DPI unaware 进程做位图拉伸，1 倍大小但高缩放屏上略模糊。
+    /// </summary>
+    public static bool DisableUiScaling { get; set; } = false;
+
     public const int MaxRecentFiles = 10;
 
     static AppSettings() => Load();
@@ -90,6 +96,7 @@ internal static class AppSettings
             ThemeMode = themeRaw.Equals(UiTheme.ThemeLight, StringComparison.OrdinalIgnoreCase) ? UiTheme.ThemeLight
                 : themeRaw.Equals(UiTheme.ThemeDark, StringComparison.OrdinalIgnoreCase) ? UiTheme.ThemeDark
                 : UiTheme.ThemeSystem;
+            DisableUiScaling = root?["DisableUiScaling"]?.GetValue<bool>() ?? false;
             RecentFiles = new List<string>();
             if (root?["RecentFiles"] is JsonArray recent)
             {
@@ -109,7 +116,7 @@ internal static class AppSettings
             bool missingKeys = root != null &&
                 (root["GameRoot"] == null || root["Dlc1Dir"] == null || root["Dlc2Dir"] == null ||
                  root["Dlc3Dir"] == null || root["ModDir"] == null || root["RecentFiles"] == null ||
-                 root["ViewMode"] == null || root["ThemeMode"] == null);
+                 root["ViewMode"] == null || root["ThemeMode"] == null || root["DisableUiScaling"] == null);
             if (missingKeys || srcPath == LegacyFilePath || srcPath == LegacyFilePath2)
                 Save();
         }
@@ -161,6 +168,8 @@ internal static class AppSettings
                 "  \"ViewMode\": " + viewMode + ",\n" +
                 "  /* 主题模式：system=跟随系统 / light=明亮 / dark=暗色。 */\n" +
                 "  \"ThemeMode\": " + themeMode + ",\n" +
+                "  /* 禁止缩放：true=强制 1 倍缩放（不参照系统缩放，重启生效）；false=跟随系统缩放。 */\n" +
+                "  \"DisableUiScaling\": " + (DisableUiScaling ? "true" : "false") + ",\n" +
                 "  /* 最近打开的文件：新的在前，最多 10 条。 */\n" +
                 "  \"RecentFiles\": " + recent + "\n" +
                 "}\n";

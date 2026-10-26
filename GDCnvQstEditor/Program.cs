@@ -16,7 +16,31 @@ internal static class Program
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool FreeConsole();
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetProcessDpiAwarenessContext(nint value);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
+
+    private const nint DPI_AWARENESS_CONTEXT_UNAWARE = -1;
     private const int AttachParentProcess = -1;
+
+    /// <summary>
+    /// 禁止缩放（设置 DisableUiScaling）：把进程设为 DPI unaware → 强制 1 倍缩放。
+    /// 必须在任何窗口创建前调用；进程 DPI 感知级别一经设定不可更改，Avalonia 平台初始化时
+    /// 再设 PerMonitorV2 会失败并被忽略，Windows 保留此处的 unaware 值（报告 96 DPI）。
+    /// 代价：Windows 对 DPI unaware 窗口做位图拉伸——UI 为 1 倍大小，高缩放屏上略模糊。
+    /// </summary>
+    private static void ApplyDpiPolicy()
+    {
+        try
+        {
+            if (!AppSettings.DisableUiScaling) return;
+            if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE))
+                SetProcessDPIAware();   // Win10 1703 之前无 SetProcessDpiAwarenessContext，回退
+        }
+        catch { /* 旧系统缺 API 时保持默认行为 */ }
+    }
 
     private static int Main(string[] args)
     {
@@ -28,6 +52,7 @@ internal static class Program
         {
             try
             {
+                ApplyDpiPolicy();   // 禁止缩放开启时须在任何窗口创建前设 DPI unaware
                 L.Load();
                 GDCnvQstLib.Names.DisplayNameResolver = name => L.TypePair(name);
                 ClipboardHelper.Install();   // 全局 TextBox 可靠复制（右键菜单 + Ctrl+C 无选区复制全文）

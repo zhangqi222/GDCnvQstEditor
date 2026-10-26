@@ -34,7 +34,6 @@ internal sealed class NumPairBox : UserControl
     };
     private readonly uint _max;
     private readonly string? _note;
-    private readonly bool _readOnly;
     private bool _syncing;
     private bool _valid = true;
     private uint _value;
@@ -45,16 +44,13 @@ internal sealed class NumPairBox : UserControl
     /// <summary>当前合法值（无效输入期间保持上一个合法值）。</summary>
     public uint Value => _value;
 
-    public NumPairBox(uint value, uint max = uint.MaxValue, string? note = null, bool inlineHint = true,
-        NumBoxMode mode = NumBoxMode.DecOnly, bool readOnly = false)
+    public NumPairBox(uint value, uint max = uint.MaxValue, string? note = null, bool inlineHint = true, NumBoxMode mode = NumBoxMode.DecOnly)
     {
         _max = max == 0 ? uint.MaxValue : max;
         _note = note;
         _mode = mode;
-        _readOnly = readOnly;
         _dec.Text = value.ToString();
         _hex.Text = "0x" + value.ToString("X");
-        if (readOnly) { _dec.IsReadOnly = true; _hex.IsReadOnly = true; }
 
         _dec.TextChanged += (_, _) => Parse(_dec, fromHex: false);
         _hex.TextChanged += (_, _) => Parse(_hex, fromHex: true);
@@ -125,11 +121,9 @@ internal sealed class NumPairBox : UserControl
 
     private void UpdateHint()
     {
-        string save = _readOnly
-            ? L.T("read-only (always 0 in all files)")
-            : _valid
-                ? L.F("(will save as {0})", _mode == NumBoxMode.HexOnly ? L.T("Hexadecimal") : L.T("Decimal"))
-                : L.T("(invalid value; change not applied)");
+        string save = _valid
+            ? L.F("(will save as {0})", _mode == NumBoxMode.HexOnly ? L.T("Hexadecimal") : L.T("Decimal"))
+            : L.T("(invalid value; change not applied)");
         _hint.Text = string.IsNullOrEmpty(_note) ? save : _note + " " + save;
         _hint.Foreground = _valid ? UiTheme.MutedBrush : UiTheme.DangerBrush;
     }

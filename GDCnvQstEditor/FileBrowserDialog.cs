@@ -42,13 +42,11 @@ internal sealed class FileBrowserDialog : Window
         _panel.SelectionChanged += UpdatePicked;
         _panel.FileActivated += _ => { if (!preview) Accept(); };
 
-        // 顶部说明：本层的目录规则
+        // 顶部说明：本层的目录规则；带扩展名白名单时改显对应类型说明（音频/视频/任务记录）
         var rules = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 0, 8) };
         rules.Children.Add(new TextBlock
         {
-            Text = scopeText ?? (subDir == "database"
-                ? L.T("Scope: record files (.dbr/.tpl) under each layer's database\\")
-                : L.T("Scope: resources files under each layer's resources\\, excluding ARZ / ARC / DBR / TPL.")),
+            Text = scopeText ?? ExtScopeText(subDir, exts),
             Foreground = UiTheme.AccentBrush,
             TextWrapping = TextWrapping.Wrap,
         });
@@ -125,6 +123,29 @@ internal sealed class FileBrowserDialog : Window
         _result = f.FullPath;
         _resultRel = _panel.SelectedRelPath;
         Close(true);
+    }
+
+    /// <summary>
+    /// 范围说明：无扩展名白名单 → 原有 database/resources 层级说明；
+    /// 有白名单 → 按用途归类显示（音频 / 视频 / 任务记录 / 任务文件），未知组合逐个列出。
+    /// 音频额外提示：官方安装的音频打包在 .arc 归档内（浏览树按约定不显示归档），松散音频只存在于解包/MOD。
+    /// </summary>
+    private static string ExtScopeText(string subDir, string[]? exts)
+    {
+        if (exts is not { Length: > 0 })
+            return subDir == "database"
+                ? L.T("Scope: record files (.dbr/.tpl) under each layer's database\\")
+                : L.T("Scope: resources files under each layer's resources\\, excluding ARZ / ARC / DBR / TPL.");
+        var set = exts.Select(e => e.TrimStart('.').ToLowerInvariant()).ToHashSet();
+        if (set.SetEquals(["wav", "ogg"]))
+            return L.T("Showing audio files only (.wav / .ogg). If the list is empty, the game packs audio inside .arc archives (loose audio exists only in unpacked installs or MODs).");
+        if (set.SetEquals(["vid", "bik"]))
+            return L.T("Showing video files only (.vid / .bik).");
+        if (set.SetEquals(["dbr", "tpl"]))
+            return L.T("Scope: record files (.dbr/.tpl) under each layer's database\\");
+        if (set.SetEquals(["qst"]))
+            return L.T("Showing quest files only (.qst).");
+        return L.F("Showing these file types only: {0}.", string.Join(" / ", exts.Select(e => "." + e.TrimStart('.'))));
     }
 
     private static Func<string, bool> BuildFilter(string subDir, string[]? exts, string[]? excludeExts)

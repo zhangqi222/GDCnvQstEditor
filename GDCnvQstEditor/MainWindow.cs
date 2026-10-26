@@ -774,18 +774,22 @@ internal sealed class MainWindow : Window
     private async void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (_forceClose) return;
-        var firstDirty = _tabs.Items.OfType<TabItem>()
+        var dirty = _tabs.Items.OfType<TabItem>()
             .Select(p => (TabItem: p, View: (DocView)p.Content!))
-            .FirstOrDefault(x => x.View.Doc.Dirty);
-        if (firstDirty.TabItem == null) return;
+            .Where(x => x.View.Doc.Dirty)
+            .ToList();
+        if (dirty.Count == 0) return;
         e.Cancel = true;
-        var r = await MsgBox.Show(this,
-            L.F("{0} has unsaved changes. Exit anyway?", firstDirty.View.Doc.Title), L.Exit,
-            MsgButtons.YesNo, warning: true);
-        if (r == MsgResult.Yes)
+        // 与关闭未保存标签页同一弹窗（同一文案/按钮）：逐页询问 保存/不保存/取消
+        foreach (var (_, view) in dirty)
         {
-            _forceClose = true;
-            Close();
+            var r = await MsgBox.Show(this,
+                L.F("{0} has unsaved changes. Save before closing?", view.Doc.Title),
+                L.CloseTab, MsgButtons.YesNoCancel, warning: true);
+            if (r == MsgResult.Cancel) return;                                    // 取消 → 不退出
+            if (r == MsgResult.Yes && !await DoSave(view, saveAs: false)) return; // 保存失败/另存取消 → 不退出
         }
+        _forceClose = true;
+        Close();
     }
 }
