@@ -377,68 +377,6 @@ internal sealed class NewQuestDialog : Window
     }
 }
 
-/// <summary>TXT 回填预览：txt 行 vs 当前本地化表逐行对照；行数不符禁止应用。</summary>
-internal sealed class ImportTxtPreviewDialog : Window
-{
-    public bool Applied { get; private set; }
-
-    public ImportTxtPreviewDialog(DocSession doc, string txtPath)
-    {
-        DialogChrome.Init(this, L.F("TXT backfill preview — {0}", Path.GetFileName(txtPath)), 960, 620);
-        var model = (object?)doc.Cnv ?? doc.Qst!;
-        var preview = BatchOps.BuildImportPreview(model, txtPath);
-        bool countOk = doc.PrimaryLanguage.Texts.Count == TextExport.SplitTxt(BatchOps.ReadTextAuto(txtPath)).Count;
-
-        var grid = new DataGrid
-        {
-            AutoGenerateColumns = false,
-            IsReadOnly = true,
-            CanUserSortColumns = false,
-            HeadersVisibility = DataGridHeadersVisibility.Column,
-        };
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Line"), Binding = new Binding(nameof(PreviewRow.Idx)), Width = new DataGridLength(60) });
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("TXT line"), Binding = new Binding(nameof(PreviewRow.New)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-        grid.Columns.Add(new DataGridTextColumn { Header = L.T("Current text"), Binding = new Binding(nameof(PreviewRow.Cur)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
-
-        var rows = new List<PreviewRow>();
-        foreach (var (idx, line, cur) in preview)
-            rows.Add(new PreviewRow(idx.ToString(), line, cur));
-        grid.ItemsSource = rows;
-
-        var info = new TextBlock
-        {
-            Text = countOk
-                ? L.F("Line count matches: {0} rows. Red rows will be replaced.", preview.Count)
-                : L.T("Line count mismatch between TXT and the localization table — backfill is blocked (the game fills text by line position)."),
-            Foreground = countOk ? UiTheme.TextBrush : UiTheme.DangerBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-
-        var cancel = DialogChrome.Cancel(this);
-        var apply = DialogChrome.Button(L.T("Apply backfill"), primary: true, minWidth: 120);
-        apply.IsEnabled = countOk;
-        apply.Click += (_, _) =>
-        {
-            var lines = TextExport.SplitTxt(BatchOps.ReadTextAuto(txtPath));
-            TextExport.ApplyTxt(doc.PrimaryLanguage, lines);
-            Applied = true;
-            Close(true);
-        };
-
-        var root = new DockPanel { Margin = new Thickness(14) };
-        var bottom = new StackPanel();
-        bottom.Children.Add(info);
-        bottom.Children.Add(DialogChrome.Footer(cancel, apply));
-        DockPanel.SetDock(bottom, Dock.Bottom);
-        root.Children.Add(bottom);
-        root.Children.Add(grid);
-        Content = root;
-    }
-
-    private sealed record PreviewRow(string Idx, string New, string Cur);
-}
-
 /// <summary>条件/动作编辑模态窗：克隆编辑，确定才回填原列表。逻辑字（AND/OR）仅条件显示。</summary>
 internal sealed class ScriptListDialog : Window
 {
@@ -881,7 +819,7 @@ internal sealed class SettingsDialog : Window
         stack.Children.Add(DialogChrome.FieldRow(L.T("DLC3 folder"), _dlc3Row.Host));
         stack.Children.Add(DialogChrome.FieldRow(L.T("MOD folder"), _modRow.Host));
 
-        // 预览内置文件树：database 仅 .dbr；resources 排除 ARZ / ARC / DBR
+        // 预览内置文件树：database 仅 .dbr/.tpl；resources 排除 ARZ / ARC / DBR / TPL
         var previewRow = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
         var prevDb = DialogChrome.Button(L.T("Preview database files"), primary: false);
         prevDb.Click += async (_, _) => await FileBrowserDialog.Preview(this,
@@ -889,8 +827,8 @@ internal sealed class SettingsDialog : Window
         var prevRes = DialogChrome.Button(L.T("Preview resources files"), primary: false);
         prevRes.Click += async (_, _) => await FileBrowserDialog.Preview(this,
             "resources", L.T("Preview resources files"),
-            L.T("Scope: resources\\ in each layer, excluding ARZ / ARC / DBR (qst, cnv, wav, ogg, tex, fx, anm, lua, etc.)"),
-            null, new[] { "arz", "arc", "dbr" });
+            L.T("Scope: resources\\ in each layer, excluding ARZ / ARC / DBR / TPL (qst, cnv, wav, ogg, tex, fx, anm, lua, etc.)"),
+            null, new[] { "arz", "arc", "dbr", "tpl" });
         previewRow.Children.Add(prevDb);
         previewRow.Children.Add(prevRes);
         stack.Children.Add(previewRow);

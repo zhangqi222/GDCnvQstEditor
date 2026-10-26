@@ -19,6 +19,14 @@ internal sealed class NodeTextPanel : UserControl
     private string _questId = "";   // 当前选中的任务 ID（Bind 时赋值；复制按钮直接取，避免解析显示文本）
     private readonly TextEditor _main = UiEditors.Editable();
     private readonly TextBlock _mainLabel = MkLabel("");
+    private readonly TextBlock _enTip = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        Foreground = UiTheme.MutedBrush,
+        FontSize = 11,
+        Margin = new Thickness(12, 0, 0, 0),
+        TextWrapping = TextWrapping.Wrap,
+    };
     private readonly TextBlock _hint = new()
     {
         VerticalAlignment = VerticalAlignment.Center,
@@ -53,6 +61,8 @@ internal sealed class NodeTextPanel : UserControl
         _mainLabel.Margin = new Thickness(0, 0, 8, 0);
         labelRow.Children.Add(_mainLabel);
         labelRow.Children.Add(_hint);
+        labelRow.Children.Add(_enTip);
+        _enTip.Text = L.T("Suggest English only; localize other languages via Export TXT.");
 
         Place(_idHost, 0);
         Place(labelRow, 1);

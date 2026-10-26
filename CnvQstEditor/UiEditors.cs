@@ -113,8 +113,14 @@ internal sealed class RowMargin : AbstractMargin
     private List<RowLabel> _rows = [];
     private int _digits = 1;
     private double _labelW, _descW, _adviceW;
+    /// <summary>Consolas 12 的基线高：行号与正文行按基线对齐（TextTop 受 TextView 默认字体度量影响会偏上 1-2px）。</summary>
+    private readonly double _baseline;
 
-    public RowMargin() => UiTheme.ThemeChanged += () => { InvalidateMeasure(); InvalidateVisual(); TextView?.InvalidateVisual(); };
+    public RowMargin()
+    {
+        _baseline = MakeText("0", UiTheme.RowNumberBrush).Baseline;
+        UiTheme.ThemeChanged += () => { InvalidateMeasure(); InvalidateVisual(); TextView?.InvalidateVisual(); };
+    }
 
     /// <summary>装载行标注；rows 为 null 时清空为纯行号（行号仍显示）。</summary>
     public void SetRows(IReadOnlyList<RowLabel>? rows)
@@ -186,32 +192,34 @@ internal sealed class RowMargin : AbstractMargin
             if (visual.TextLines.Count == 0) continue;
             int number = visual.FirstDocumentLine.LineNumber;
             bool even = number % 2 == 0;
-            double y = visual.GetTextLineVisualYPosition(visual.TextLines[0], VisualYPosition.TextTop)
-                       - tv.VerticalOffset;
+            // 背景：铺整个视觉行（VisualTop 起）；文字：与正文同一基线（VisualYPosition.Baseline）
+            double top = visual.VisualTop - tv.VerticalOffset;
+            double baseY = visual.GetTextLineVisualYPosition(visual.TextLines[0], VisualYPosition.Baseline)
+                           - tv.VerticalOffset - _baseline;
             // 行背景：整个 margin 宽（含换行续行），与 TextArea 的 ZebraBackgroundRenderer 同奇偶规则
             if (even)
-                ctx.FillRectangle(UiTheme.ZebraBrush, new Rect(0, y, totalWidth, visual.Height));
+                ctx.FillRectangle(UiTheme.ZebraBrush, new Rect(0, top, totalWidth, visual.Height));
 
             int index = number - 1;
             if ((uint)index >= (uint)_rows.Count)
             {
-                DrawNumber(ctx, number, y);
+                DrawNumber(ctx, number, baseY);
                 continue;
             }
             var row = _rows[index];
-            double x = DrawNumber(ctx, number, y);
+            double x = DrawNumber(ctx, number, baseY);
             if (_labelW > 0 && row.Label.Length > 0)
             {
-                ctx.DrawText(MakeText(row.Label, row.LabelBrush ?? UiTheme.TextBrush), new Point(x + Gap, y));
+                ctx.DrawText(MakeText(row.Label, row.LabelBrush ?? UiTheme.TextBrush), new Point(x + Gap, baseY));
                 x += Gap + _labelW;
             }
             if (_descW > 0 && row.Desc.Length > 0)
             {
-                ctx.DrawText(MakeText(row.Desc, UiTheme.RowDescBrush), new Point(x + Gap, y));
+                ctx.DrawText(MakeText(row.Desc, UiTheme.RowDescBrush), new Point(x + Gap, baseY));
                 x += Gap + _descW;
             }
             if (_adviceW > 0 && row.Advice.Length > 0)
-                ctx.DrawText(MakeText(row.Advice, UiTheme.RowAdviceBrush), new Point(x + Gap, y));
+                ctx.DrawText(MakeText(row.Advice, UiTheme.RowAdviceBrush), new Point(x + Gap, baseY));
         }
     }
 

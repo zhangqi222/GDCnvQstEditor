@@ -261,92 +261,6 @@ public static class BatchOps
         return results;
     }
 
-    /// <summary>按同名配对把译文 txt 回填到目录下的二进制（输出到 outDir，镜像结构）。</summary>
-    public static List<(string Bin, string? Txt, string? Out, string? Error)> ImportTxtDir(
-        string binPath, string txtDir, string outDir)
-    {
-        var results = new List<(string, string?, string?, string?)>();
-        var txts = Directory.EnumerateFiles(txtDir, "*.txt", SearchOption.AllDirectories)
-            .ToDictionary(f => Path.GetFileNameWithoutExtension(f), StringComparer.OrdinalIgnoreCase);
-        foreach (string file in EnumerateFiles(binPath))
-        {
-            string stem = Path.GetFileNameWithoutExtension(file);
-            if (!txts.TryGetValue(stem, out string? txtFile))
-            {
-                results.Add((file, null, null, CliL.T("未找到同名 txt")));
-                continue;
-            }
-            try
-            {
-                string rel = Path.GetRelativePath(Path.GetFullPath(binPath), Path.GetFullPath(file));
-                string target = Path.Combine(outDir, Path.GetDirectoryName(rel) ?? "",
-                    Path.GetFileNameWithoutExtension(file) + Path.GetExtension(file));
-                ImportTxtOne(file, txtFile, target);
-                results.Add((file, txtFile, target, null));
-            }
-            catch (Exception e)
-            {
-                results.Add((file, txtFile, null, e.Message));
-            }
-        }
-        return results;
-    }
-
-    /// <summary>单文件 TXT 回填（翻译行 → 新二进制，重解析确认）。</summary>
-    public static void ImportTxtOne(string binFile, string txtFile, string outPath)
-    {
-        byte[] data = File.ReadAllBytes(binFile);
-        var model = Load(binFile, data);
-        var lines = TextExport.SplitTxt(ReadTextAuto(txtFile));
-        switch (model)
-        {
-            case CnvFile c:
-                TextExport.ApplyTxt(c.PrimaryLanguage, lines);
-                break;
-            case QstFile q:
-                TextExport.ApplyTxt(q.PrimaryLanguage, lines);
-                break;
-        }
-        byte[] rewritten = model switch
-        {
-            CnvFile c => c.Write(),
-            QstFile q => q.Write(),
-            _ => throw new GdParseException(CliL.T("未知模型")),
-        };
-        // 重解析确认无损
-        if (model is CnvFile)
-        {
-            var c2 = CnvFile.Parse(rewritten);
-            if (!c2.Valid) throw new GdParseException(CliL.F("回写后解析失败：{0}", c2.Error));
-        }
-        else
-        {
-            var q2 = QstFile.Parse(rewritten);
-            if (!q2.Valid) throw new GdParseException(CliL.F("回写后解析失败：{0}", q2.Error));
-        }
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
-        File.WriteAllBytes(outPath, rewritten);
-    }
-
-    /// <summary>构建 TXT 回填预览：txt 行 vs 当前本地化表逐行对照。</summary>
-    public static List<(int Index, string TxtLine, string CurrentText)> BuildImportPreview(
-        object model, string txtFile)
-    {
-        var lines = TextExport.SplitTxt(ReadTextAuto(txtFile));
-        var texts = model switch
-        {
-            CnvFile c => c.PrimaryLanguage.Texts,
-            QstFile q => q.PrimaryLanguage.Texts,
-            _ => throw new GdParseException(CliL.T("未知模型")),
-        };
-        var rows = new List<(int, string, string)>();
-        int n = Math.Max(lines.Count, texts.Count);
-        for (int i = 0; i < n; i++)
-            rows.Add((i + 1, i < lines.Count ? lines[i] : CliL.T("<缺失>"),
-                      i < texts.Count ? texts[i].Text : CliL.T("<缺失>")));
-        return rows;
-    }
-
     public static string TargetPath(string file, string baseDir, string? outDir, bool flat, string newExt)
     {
         string name = Path.GetFileNameWithoutExtension(file) + newExt;
@@ -354,17 +268,5 @@ public static class BatchOps
         if (flat || File.Exists(baseDir)) return Path.Combine(outDir, name);
         string rel = Path.GetRelativePath(Path.GetFullPath(baseDir), Path.GetFullPath(file));
         return Path.Combine(outDir, Path.GetDirectoryName(rel) ?? "", name);
-    }
-
-    public static string ReadTextAuto(string path)
-    {
-        byte[] bytes = File.ReadAllBytes(path);
-        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
-        return Encoding.UTF8.GetString(bytes);
     }
 }

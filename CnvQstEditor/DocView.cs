@@ -48,6 +48,8 @@ internal sealed class DocView : UserControl
     private readonly RowMargin _locRowMargin = new();
     private readonly TextEditor _locEditor;
     private readonly TextEditor _dumpEditor = UiEditors.ReadOnly();
+    private Grid _jsonHost = null!;         // 只读 tag + JSON 编辑器（构造函数组装，字段初始化器不能互相引用）
+    private Grid _dumpHost = null!;
     private readonly TextBlock _locInfo = new()
     {
         Foreground = UiTheme.MutedBrush,
@@ -92,14 +94,22 @@ internal sealed class DocView : UserControl
         // JSON 语法着色：AvaloniaEdit 内置 JSON 高亮定义（Json.xshd），配色随主题由 UiTheme.Refresh 同步
         _jsonEditor.SyntaxHighlighting = HighlightingManager.Instance.GetDefinitionByExtension(".json");
 
+        // JSON / DUMP：顶部居中"只读"TagLabel + 编辑器；本地化：tag 在统计提示行上方
+        _jsonHost = MakeReadOnlyHost(_jsonEditor);
+        _dumpHost = MakeReadOnlyHost(_dumpEditor);
+
+        var locTag = MakeTag();
+        _locHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _locHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _locHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_locInfo, 0);
-        Grid.SetRow(_locEditor, 1);
+        Grid.SetRow(locTag, 0);
+        Grid.SetRow(_locInfo, 1);
+        Grid.SetRow(_locEditor, 2);
+        _locHost.Children.Add(locTag);
         _locHost.Children.Add(_locInfo);
         _locHost.Children.Add(_locEditor);
 
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locHost, _dumpEditor, _emptyHint })
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonHost, _locHost, _dumpHost, _emptyHint })
             _host.Children.Add(c);
 
         _rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -154,7 +164,7 @@ internal sealed class DocView : UserControl
                 ShowStructure();
                 break;
             case DocViewMode.Json:
-                ShowSingle(_jsonEditor);
+                ShowSingle(_jsonHost);
                 LoadJson();
                 break;
             case DocViewMode.Localization:
@@ -162,7 +172,7 @@ internal sealed class DocView : UserControl
                 LoadLocalization();
                 break;
             case DocViewMode.Dump:
-                ShowSingle(_dumpEditor);
+                ShowSingle(_dumpHost);
                 LoadDump();
                 break;
         }
@@ -252,8 +262,31 @@ internal sealed class DocView : UserControl
 
     private void ShowOnly(Control target)
     {
-        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonEditor, _locHost, _dumpEditor, _emptyHint })
+        foreach (var c in new Control[] { _cnvTable, _qstTable, _jsonHost, _locHost, _dumpHost, _emptyHint })
             c.IsVisible = c == target;
+    }
+
+    /// <summary>Semi TagLabel（Grey 浅色 tag，明暗主题自适应）：只读视图顶部居中提示。</summary>
+    private static Label MakeTag() => new()
+    {
+        Theme = UiTheme.FindTheme("TagLabel"),
+        Content = L.T("Read-only view; edit in the Visual view."),
+        HorizontalAlignment = HorizontalAlignment.Center,
+        Margin = new Thickness(0, 8, 0, 2),
+    };
+
+    /// <summary>只读视图宿主：顶部居中只读 tag + 编辑器占满剩余高度。</summary>
+    private static Grid MakeReadOnlyHost(TextEditor editor)
+    {
+        var host = new Grid();
+        host.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        host.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var tag = MakeTag();
+        Grid.SetRow(tag, 0);
+        Grid.SetRow(editor, 1);
+        host.Children.Add(tag);
+        host.Children.Add(editor);
+        return host;
     }
 
     /// <summary>JSON 视图：语法着色（key/string/number/keyword/注释）+ 对象/数组折叠。</summary>

@@ -83,6 +83,10 @@ internal static class UiTheme
     /// <summary>偶数行交叉着色底色（亮=SemiOrange0 #FFF8EA，暗=介于 Background1/2 的相近值）。</summary>
     public static readonly SolidColorBrush ZebraBrush = new(defaultZebra);
 
+    /// <summary>按 key 查 Semi 主题里的 ControlTheme（如 "TagLabel"、"ButtonRadioButton"）；未命中返回 null。</summary>
+    public static ControlTheme? FindTheme(string key) =>
+        Application.Current?.TryFindResource(key, out object? value) == true ? value as ControlTheme : null;
+
     /// <summary>启动时应用主题：按配置模式设置 Application 主题变体并刷新语义刷（GUI 与冒烟共用）。</summary>
     public static void ApplyStartup()
     {

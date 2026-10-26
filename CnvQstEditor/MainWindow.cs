@@ -21,7 +21,6 @@ internal sealed class MainWindow : Window
 {
     private readonly TabControl _tabs = new();
     private readonly TextBlock _statusDoc = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _statusLang = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _statusVer = new() { VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush };
     private readonly Grid _root = new();
     private Menu? _menu;
@@ -53,7 +52,7 @@ internal sealed class MainWindow : Window
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 6,
-                Children = { _statusDoc, new TextBlock { Text = "·", VerticalAlignment = VerticalAlignment.Center, Foreground = UiTheme.MutedBrush }, _statusLang, _statusVer },
+                Children = { _statusDoc, _statusVer },
             },
         };
 
@@ -160,7 +159,6 @@ internal sealed class MainWindow : Window
 
         var import = MkMenu(L.MImport);
         _accessMenus['I'] = import;
-        import.Items.Add(MkItem(L.ImportTxtToActive, null, () => _ = ImportTxtToActive()));
         import.Items.Add(MkItem(L.ImportJsonNewTab, null, () => _ = ImportJson()));
 
         var export = MkMenu(L.MExport);
@@ -178,8 +176,8 @@ internal sealed class MainWindow : Window
         foreach (var (mode, gesture) in new (DocViewMode, KeyGesture)[]
         {
             (DocViewMode.Visual, new KeyGesture(Key.D1, KeyModifiers.Control)),
-            (DocViewMode.Json, new KeyGesture(Key.D2, KeyModifiers.Control)),
-            (DocViewMode.Localization, new KeyGesture(Key.D3, KeyModifiers.Control)),
+            (DocViewMode.Localization, new KeyGesture(Key.D2, KeyModifiers.Control)),
+            (DocViewMode.Json, new KeyGesture(Key.D3, KeyModifiers.Control)),
             (DocViewMode.Dump, new KeyGesture(Key.D4, KeyModifiers.Control)),
         })
         {
@@ -237,7 +235,7 @@ internal sealed class MainWindow : Window
             Background = UiTheme.GridLineBrush,
         });
         var viewRow = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Json, DocViewMode.Localization, DocViewMode.Dump })
+        foreach (var mode in new[] { DocViewMode.Visual, DocViewMode.Localization, DocViewMode.Json, DocViewMode.Dump })
         {
             var b = new RadioButton
             {
@@ -348,10 +346,11 @@ internal sealed class MainWindow : Window
     }
 
     /// <summary>工具条按钮：Semi Light 主题 secondary 样式（浅色底、主题色文字，与菜单主色呼应）。
-    /// Semi.Avalonia 的按钮变体经样式类切换：light = 主题 Light、secondary = 次要色。</summary>
+    /// Semi.Avalonia 的按钮变体经样式类切换：light = 主题 Light、secondary = 次要色。
+    /// Semi 按钮默认 SemiFontWeightBold + Regular 字号，这里改为常规字重、与右侧视图按钮组同字号（12）。</summary>
     private static Button ToolBtn(string text, Action onClick)
     {
-        var b = new Button { Content = text };
+        var b = new Button { Content = text, FontSize = 12, FontWeight = FontWeight.Normal };
         b.Classes.Add("light");
         b.Classes.Add("secondary");
         b.Click += (_, _) => onClick();
@@ -390,8 +389,8 @@ internal sealed class MainWindow : Window
         Bind(new KeyGesture(Key.L, KeyModifiers.Control), () =>
             SetActiveView(Active?.Mode == DocViewMode.Localization ? DocViewMode.Visual : DocViewMode.Localization));
         Bind(new KeyGesture(Key.D1, KeyModifiers.Control), () => SetActiveView(DocViewMode.Visual));
-        Bind(new KeyGesture(Key.D2, KeyModifiers.Control), () => SetActiveView(DocViewMode.Json));
-        Bind(new KeyGesture(Key.D3, KeyModifiers.Control), () => SetActiveView(DocViewMode.Localization));
+        Bind(new KeyGesture(Key.D2, KeyModifiers.Control), () => SetActiveView(DocViewMode.Localization));
+        Bind(new KeyGesture(Key.D3, KeyModifiers.Control), () => SetActiveView(DocViewMode.Json));
         Bind(new KeyGesture(Key.D4, KeyModifiers.Control), () => SetActiveView(DocViewMode.Dump));
 
         // 菜单标签里的访问键（文件(F) 等）在 Avalonia 内嵌 Menu 中不生效，按 Alt+字母 直接展开菜单。
@@ -430,7 +429,8 @@ internal sealed class MainWindow : Window
     }
 
     private void ShowAbout() =>
-        Gui.Info(this, L.AboutBody + "\n\n" + L.F("Version: {0}", AppInfo.Version) + "\n\n" + L.AboutLicense, L.AboutTitle);
+        Gui.Info(this, L.AboutBody + "\n\n" + L.F("Version: {0}", AppInfo.Version) + "\n\n" +
+            L.F("Author: {0}", "laozhangggg(老张allif)") + "\n\n" + L.AboutLicense, L.AboutTitle);
 
     private void UpdateStatus()
     {
@@ -441,8 +441,7 @@ internal sealed class MainWindow : Window
         if (v != null && v.Doc.ReadOnly) text += "   .   " + L.StatusReadonly(v.Doc.LoadError ?? L.T("Integrity check failed"));
         _statusDoc.Text = text;
         _statusDoc.Foreground = v?.Doc.ReadOnly == true ? UiTheme.WarnBrush : UiTheme.TextBrush;
-        _statusLang.Text = L.DisplayName;
-        _statusVer.Text = "CnvQstEditor " + AppInfo.Version;
+        _statusVer.Text = "GDCnvQstEditor " + AppInfo.Version;
     }
 
     // ------------------------------------------------------------------
@@ -627,27 +626,6 @@ internal sealed class MainWindow : Window
     // ------------------------------------------------------------------
     // 导入 / 导出
     // ------------------------------------------------------------------
-
-    private async Task ImportTxtToActive()
-    {
-        var view = Active;
-        if (view?.Doc.ReadOnly != false)
-        {
-            Gui.Warn(this, L.T("Open an editable .cnv / .qst tab first."), L.ImportTxtToActive);
-            return;
-        }
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = L.ImportTxtToActive,
-            AllowMultiple = false,
-            FileTypeFilter = new[] { new FilePickerFileType("TXT") { Patterns = new[] { "*.txt" } }, new FilePickerFileType(L.T("All files")) { Patterns = new[] { "*" } } },
-        });
-        if (files.Count == 0) return;
-        var preview = new ImportTxtPreviewDialog(view.Doc, files[0].Path.LocalPath);
-        if (await preview.ShowDialog<bool>(this) != true || !preview.Applied) return;
-        view.RefreshAll();
-        Gui.Info(this, L.T("Backfill applied (not saved yet — review and save)."), L.ImportTxtToActive);
-    }
 
     private async Task ImportJson()
     {

@@ -14,7 +14,7 @@ using CnvQst.Cli;
 namespace CnvQstEditor;
 
 /// <summary>
-/// 批量处理窗口（Avalonia 版）：目录扫描 → 勾选 → 批量导出 TXT/JSON、校验、TXT 回填、CSV 报告。
+/// 批量处理窗口（Avalonia 版）：目录扫描 → 勾选 → 批量导出 TXT/JSON、校验、CSV 报告。
 /// 布局：源目录行 / 生成目录行 / 选项行 / 操作行 / 结果表 / 状态行，全部走 <see cref="L"/>。
 /// </summary>
 internal sealed class BatchWindow : Window
@@ -94,7 +94,6 @@ internal sealed class BatchWindow : Window
         actRow.Children.Add(MkBtn(L.T("Export TXT"), () => Export(ExportKind.Txt)));
         actRow.Children.Add(MkBtn(L.T("Export JSON"), () => Export(ExportKind.Json)));
         actRow.Children.Add(MkBtn(L.T("Verify selected"), VerifySelected));
-        actRow.Children.Add(MkBtn(L.T("Backfill TXT"), () => _ = ImportTxt()));
         actRow.Children.Add(MkBtn(L.T("Export CSV report"), () => _ = ExportCsv()));
 
         BuildColumns();
@@ -335,36 +334,6 @@ internal sealed class BatchWindow : Window
         if (errors.Count > 0)
             Gui.Warn(this, string.Join("\n", errors.Take(20)) + (errors.Count > 20 ? "\n" + L.F("…{0} total", errors.Count) : ""),
                 L.T("Failed checks"));
-    }
-
-    private async Task ImportTxt()
-    {
-        string binPath = _path.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(binPath) || !Directory.Exists(binPath) && !File.Exists(binPath))
-        {
-            Gui.Warn(this, L.T("Pick a binary source folder first."), Title ?? "");
-            return;
-        }
-        string outDir = _outPath.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(outDir)) { Gui.Warn(this, L.T("Choose an output folder first (source files are never overwritten)."), Title ?? ""); return; }
-        try { Directory.CreateDirectory(outDir); }
-        catch (Exception e) { Gui.Warn(this, L.F("Cannot create output folder: {0}", e.Message), Title ?? ""); return; }
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = L.T("Select the translated TXT folder (paired by name)"),
-            AllowMultiple = false,
-        });
-        if (folders.Count == 0) return;
-
-        var results = BatchOps.ImportTxtDir(binPath, folders[0].Path.LocalPath, outDir);
-        int ok = results.Count(r => r.Error == null), fail = results.Count - ok;
-        string msg = L.F("TXT backfill done: {0} ok, {1} skipped/failed. Output: {2}", ok, fail, outDir);
-        SetStatus(msg);
-        Notify(L.T("Backfill TXT"), msg, ResultType(ok, fail));
-        var problems = results.Where(r => r.Error != null).Select(r => $"{Path.GetFileName(r.Bin)}：{r.Error}").ToList();
-        if (problems.Count > 0)
-            Gui.Warn(this, string.Join("\n", problems.Take(20)) + (problems.Count > 20 ? "\n" + L.F("…{0} total", problems.Count) : ""),
-                L.T("Unfinished backfills"));
     }
 
     private async Task ExportCsv()

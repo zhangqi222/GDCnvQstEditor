@@ -199,6 +199,5 @@ internal static class CliL
           dev hash      <text>                       FNV1 hash (conversation id / Copy Id)
           dev legacytxt <file>                       v0.9 TXT algorithm baseline (for comparison)
           dev txt-diff  <dir>                        New TXT export vs v0.9 baseline, full comparison
-          dev import-txt <file> <translation.txt> [-o output]  Fill translated lines back (deferred, enabled later as needed)
         """;
 }

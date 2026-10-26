@@ -25,7 +25,6 @@ public static class CliApp
             "convert" or "json" or "make" => CmdConvert(args, @out),
             "txt" => CmdTxt(args, @out),
             "legacytxt" => CmdLegacyTxt(args, @out),
-            "import-txt" => CmdImportTxt(args, @out),
             "verify" => CmdVerify(args, @out),
             "txt-diff" => CmdTxtDiff(args, @out),
             "anchors" => CmdAnchors(args, @out),
@@ -156,7 +155,6 @@ public static class CliApp
           dev hash      <文本>                       FNV1 哈希（对话 id / Copy Id）
           dev legacytxt <文件>                       v0.9 TXT 算法基线（比对用）
           dev txt-diff  <目录>                       新 TXT 导出 vs v0.9 基线，全量比对
-          dev import-txt <文件> <翻译.txt> [-o 输出]  翻译行回填（暂缓，后续按需启用）
         """;
 
     // ------------------------------------------------------------------
@@ -356,16 +354,6 @@ public static class CliApp
         if (args.Length < 2) { @out.WriteLine(CliL.UsageText); return 2; }
         byte[] data = File.ReadAllBytes(args[1]);
         @out.Write(TextExport.LegacyTxtV09(data));
-        return 0;
-    }
-
-    static int CmdImportTxt(string[] args, TextWriter @out)
-    {
-        if (args.Length < 3) { @out.WriteLine(CliL.UsageText); return 2; }
-        string file = args[1], txtPath = args[2];
-        string? outPath = OutPath(args) ?? Path.ChangeExtension(file, ".imported" + Path.GetExtension(file));
-        BatchOps.ImportTxtOne(file, txtPath, outPath);
-        @out.WriteLine(CliL.F("已写出 {0}（重解析通过）", outPath));
         return 0;
     }
 

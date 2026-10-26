@@ -275,7 +275,6 @@ internal static class L
     public static string Exit => T("Exit");
     public static string NewConversationMenu => T("New conversation (CNV v6)");
     public static string NewQuestMenu => T("New quest (QST2 v9)");
-    public static string ImportTxtToActive => T("Backfill TXT into current file");
     public static string ImportJsonNewTab => T("Import JSON as new tab");
     public static string ExportTxtOfficial => T("TXT (official localization)");
     public static string ExportJson => T("JSON");
@@ -293,7 +292,6 @@ internal static class L
     public static string NewQuestBtn => T("New quest");
     public static string ExportTxtBtn => T("Export TXT");
     public static string ExportJsonBtn => T("Export JSON");
-    public static string ImportTxtBtn => T("Import TXT");
     public static string BatchBtn => T("Batch");
     public static string VerifyBtn => T("Verify");
     public static string OpenBtn => T("Open");
@@ -331,7 +329,7 @@ internal static class L
     public static string EmptyHint => T(
         "Select a node on the left to view / edit, or drag a .cnv / .qst file (or folder) into the window.\n\n" +
         "· Export to TXT / JSON / dump tree text\n" +
-        "· Import can backfill official localization TXT or JSON\n" +
+        "· Import supports JSON files\n" +
         "· Three checks run before saving, and a .bak backup is created");
 
     public static string LocStringTable => T("Localization string table");

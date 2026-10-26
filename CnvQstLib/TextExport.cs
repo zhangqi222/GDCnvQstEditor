@@ -46,32 +46,6 @@ public static partial class TextExport
     public static string CnvTxt(CnvFile c) => BuildTxt(c.PrimaryLanguage.Texts);
     public static string QstTxt(QstFile q) => BuildTxt(q.PrimaryLanguage.Texts);
 
-    /// <summary>txt → 行列表。按 CRLF/LF 切分，保留空行（空槽位），不产生末尾伪行。</summary>
-    public static List<string> SplitTxt(string content)
-    {
-        var lines = new List<string>();
-        int start = 0;
-        for (int i = 0; i < content.Length; i++)
-        {
-            if (content[i] != '\n') continue;
-            int end = i > start && content[i - 1] == '\r' ? i - 1 : i;
-            lines.Add(content[start..end]);
-            start = i + 1;
-        }
-        if (start < content.Length) lines.Add(content[start..]);
-        return lines;
-    }
-
-    /// <summary>把翻译行回填进语言块（行数必须与本地化字符串表严格一致）。</summary>
-    public static void ApplyTxt(LanguageBlock lang, IReadOnlyList<string> lines)
-    {
-        if (lines.Count != lang.Texts.Count)
-            throw new GdParseException(
-                $"行数不匹配：txt 有 {lines.Count} 行，本地化表有 {lang.Texts.Count} 条。" +
-                "游戏按行号位置回填文本，空行（空槽位）必须原样保留，不能增删。");
-        for (int i = 0; i < lines.Count; i++) lang.Texts[i].SetText(lines[i]);
-    }
-
     // ------------------------------------------------------------------
     // GrimDawnCnvQstToTXT v0.9 的算法移植（Form1.cs:600-701）。
     // 仅用于"新旧输出逐字节比对"的基准生成（legacytxt 命令），含其固有缺陷，

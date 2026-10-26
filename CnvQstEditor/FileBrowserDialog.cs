@@ -48,7 +48,7 @@ internal sealed class FileBrowserDialog : Window
         {
             Text = scopeText ?? (subDir == "database"
                 ? L.T("Scope: record files (.dbr/.tpl) under each layer's database\\")
-                : L.T("Scope: resources (qst, cnv, wav, ogg, tex, fx, anm, lua, etc.) under each layer's resources\\")),
+                : L.T("Scope: resources files under each layer's resources\\, excluding ARZ / ARC / DBR / TPL.")),
             Foreground = UiTheme.AccentBrush,
             TextWrapping = TextWrapping.Wrap,
         });
@@ -145,8 +145,11 @@ internal sealed class FileBrowserDialog : Window
             return rel => rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) ||
                           rel.EndsWith(".tpl", StringComparison.OrdinalIgnoreCase);
         }
-        // resources：显示所有非 dbr 文件（qst/cnv/wav/ogg/tex/fx/anm/lua 等）
-        return rel => !rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase);
+        // resources：排除归档/记录文件（.arz/.arc/.dbr/.tpl），显示 qst/cnv/wav/ogg/tex/fx/anm/lua 等
+        return rel => !rel.EndsWith(".arz", StringComparison.OrdinalIgnoreCase) &&
+                      !rel.EndsWith(".arc", StringComparison.OrdinalIgnoreCase) &&
+                      !rel.EndsWith(".dbr", StringComparison.OrdinalIgnoreCase) &&
+                      !rel.EndsWith(".tpl", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

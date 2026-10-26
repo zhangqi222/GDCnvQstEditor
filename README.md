@@ -22,7 +22,6 @@
 | selftest 结构编辑 | `cnv示例` 199/199：内存副本删/增/移后 `Parse(Write())` 三连校验（tiled/locOffset/round-trip）全过 |
 | TXT 导出 | 与 GrimDawnCnvQstToTXT v0.9 输出在全部 447 样本上逐字节一致（但为按格式精准提取，不再强读二进制） |
 | JSON 导出→导入 | 关键样本 round-trip 逐字节一致（含 logic 字保真） |
-| import-txt 原文回填 | 字节一致的恒等操作；中文翻译回填后重解析通过 |
 
 ## 构建
 
@@ -56,8 +55,8 @@ GUI 能力：
   可为空 = QST 任务描述、CNV 跳转 / 随机 / 通用节点；应为空 = QST OnAccept / OnComplete 槽（格式保留）。
   同一份规则由 GUI（槽位视图、底部编辑器提示）与 CLI（`verify` / `convert` 的槽位明细）共用
 - 新建对话（CNV v6）/ 新建任务（QST2 v9）向导
-- 导入导出：TXT（官方本地化）/ JSON / dump 树形文本，TXT 回填预览、JSON 导入
-- 批量面板：目录扫描表 / 批量导出 TXT·JSON / 校验所选 / TXT 回填 / CSV 报告
+- 导入导出：TXT（官方本地化）/ JSON / dump 树形文本，JSON 导入
+- 批量面板：目录扫描表 / 批量导出 TXT·JSON / 校验所选 / CSV 报告
 - 保存三检查（铺满文件 / 本地化偏移 / round-trip）+ `.bak` 自动备份；解析失败或校验不过的文件**只读**打开（可看可导出不可保存）
 
 **界面语言（i18n）**：英文 key → 译文的字典，语言包是 exe 旁 `lang/*.json`（随构建自动复制）：
@@ -114,7 +113,7 @@ dotnet $T txt         <文件|目录> [-o 目录] [--flat]  # 导出官方本地
 dotnet $T sample      cnv|qst [-o 模板.json]        # 生成 convert 用 JSON 模板
 
 # 开发/分析工具（一般用户可忽略）
-dotnet $T dev anchors|census|vocab|probe|selftest|hash|legacytxt|txt-diff|import-txt …
+dotnet $T dev anchors|census|vocab|probe|selftest|hash|legacytxt|txt-diff …
 ```
 
 旧命令 `dump` / `json` / `make` 仍可用，分别是 `view` / `convert` 的兼容别名。
@@ -163,7 +162,7 @@ dotnet $T dev anchors|census|vocab|probe|selftest|hash|legacytxt|txt-diff|import
    [GrimDawnCnvQstToTXT](https://github.com/zhangqi222/GrimDawnCnvQstToTXT) 输出逐字节兼容）；
 2. 翻译各 txt（一行一条文本，空行是空槽位，**不可增删**）；
 3. 二选一：
-   - `import-txt` 生成翻译版 .cnv/.qst（本方案，结构级精准写回）；
+   - `json` 导出 → 改 JSON → `make` 生成翻译版 .cnv/.qst（结构级精准写回）；
    - 沿用官方位置回填：翻译后的 txt 交 arzedit-GUI 打包成 `text_zh.arc` 放入游戏 `resources`。
 
 ## 工程结构
@@ -177,7 +176,7 @@ CnvQstLib/     解析+序列化库（net8.0，GUI/CLI 共用）：BinaryReaderEx
                Cli/CliApp（CLI 命令）、Cli/Census（语料普查）、Cli/BatchOps（批量服务）、Creation（新建工厂）
 CnvQstEditor-cli/    CLI 薄壳（Main → CliApp.Run），发布为 dist/CnvQstEditor-cli.exe
 CnvQstEditor/  Avalonia GUI（net8.0-windows）：Program（双模式入口）、MainWindow、DocSession、
-               Editors（条件/动作/节点/QST 编辑器）、Dialogs（新建向导/回填预览/JSON）、
+               Editors（条件/动作/节点/QST 编辑器）、Dialogs（新建向导/JSON）、
                BatchWindow（批量面板）、I18n（中英界面切换）
 README.md      使用说明与打包（双单文件 EXE）
 cnvqst-wiki-dev.md  开发侧 wiki：构建/发布、CLI 规范、GUI 约定、决策记录
