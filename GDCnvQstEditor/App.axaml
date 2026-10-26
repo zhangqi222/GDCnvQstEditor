@@ -5,21 +5,17 @@
     <ResourceDictionary>
       <!-- 窗口背景：亮色用 Semi 灰阶相近值（介于 Grey0 #F9F9F9 与 Grey1 #E6E8EA 的柔和浅灰，
            替换纯白避免刺眼）；暗色沿用 Semi 默认暗背景（SemiBackground0）。
-           页签标题底色 UiTabBackground 在窗口背景基础上深一档（暗色亮一档），用于区分文件名页签。
            编辑器底色在 UiTheme.EditorBrush（亮 #F9F9F9 / 暗 #232429），与窗口背景接近但可区分，
            两处色值需同步调整。所有窗口经下方 Window 样式统一应用。 -->
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Light">
           <SolidColorBrush x:Key="UiWindowBackground" Color="#F2F3F5" />
-          <SolidColorBrush x:Key="UiTabBackground" Color="#E9EBEE" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="UiWindowBackground" Color="#16161A" />
-          <SolidColorBrush x:Key="UiTabBackground" Color="#1F2025" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
           <SolidColorBrush x:Key="UiWindowBackground" Color="#F2F3F5" />
-          <SolidColorBrush x:Key="UiTabBackground" Color="#E9EBEE" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
       <ResourceDictionary.MergedDictionaries>
@@ -45,10 +41,10 @@
       <Setter Property="Icon" Value="avares://GDCnvQstEditor/app.ico" />
       <Setter Property="Background" Value="{DynamicResource UiWindowBackground}" />
     </Style>
-    <!-- 文档页签标题底色：比窗口背景略深一档（暗色为略亮，否则几乎不可见），
-         让文件名页签从空白区分离；选中态仍由 Semi 的主色下划线 + 加粗标识。 -->
+    <!-- 文档页签标题底色：使用 Semi 内置 AI 渐变 SemiAIGeneral1，明暗主题自动切换；
+         选中态仍由 Semi 的主色下划线 + 加粗标识。 -->
     <Style Selector="TabItem">
-      <Setter Property="Background" Value="{DynamicResource UiTabBackground}" />
+      <Setter Property="Background" Value="{DynamicResource SemiAIGeneral1}" />
     </Style>
   </Application.Styles>
 </Application>
