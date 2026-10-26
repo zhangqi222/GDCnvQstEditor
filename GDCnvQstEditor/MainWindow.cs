@@ -2,10 +2,12 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using GDCnvQstLib;
 using GDCnvQstLib.Cli;
 
@@ -67,22 +69,21 @@ internal sealed class MainWindow : Window
         InstallShortcuts();
         UpdateStatus();
 
+        // 拖放：AllowDrop 是继承属性，在窗口开启即可覆盖全部逻辑子控件（表格/页签/按钮）；
+        // 文件拖放事件统一冒泡到这里处理。
+        DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
-            e.DragEffects = e.Data.Contains(DataFormats.Files) ? DragDropEffects.Copy : DragDropEffects.None;
+            if (e.DataTransfer is not { } dt || !dt.Contains(DataFormat.File)) return;
+            e.DragEffects = DragDropEffects.Copy;
             e.Handled = true;
-        });
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, (_, e) =>
         {
-            var paths = e.Data.GetFiles()?.Select(f => f.Path.LocalPath).ToArray();
-            if (paths == null) return;
-            foreach (string p in paths)
-            {
-                if (Directory.Exists(p)) ShowBatch(p);
-                else if (File.Exists(p)) _ = OpenFile(p);
-            }
+            if (e.DataTransfer is not { } dt || !dt.Contains(DataFormat.File)) return;
             e.Handled = true;
-        });
+            OpenDropped(dt);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
 
         L.Changed += OnLanguageChanged;
         Closing += OnWindowClosing;
@@ -464,6 +465,28 @@ internal sealed class MainWindow : Window
         await OpenFile(files[0].Path.LocalPath);
     }
 
+    /// <summary>处理拖入的文件/文件夹：文件夹进批量处理，文件按页签打开。</summary>
+    private void OpenDropped(IDataTransfer data)
+    {
+        IStorageItem[]? items;
+        try
+        {
+            items = data.TryGetFiles();
+        }
+        catch (Exception e)
+        {
+            Gui.Warn(this, L.F("Open failed: {0}", e.Message), L.T("Open"));
+            return;
+        }
+        if (items == null) return;
+        foreach (var item in items)
+        {
+            string p = item.Path.LocalPath;
+            if (Directory.Exists(p)) ShowBatch(p);
+            else if (File.Exists(p)) _ = OpenFile(p);
+        }
+    }
+
     private async Task OpenFile(string path)
     {
         if (!File.Exists(path))
@@ -514,6 +537,19 @@ internal sealed class MainWindow : Window
         if (!json.Contains("\"Languages\"")) return "视图自测失败：JSON 模式未包含 Languages";
         view.SetView(DocViewMode.Visual);
         return null;
+    }
+
+    /// <summary>冒烟测试专用：拖放命中只取最深的可交互控件并读其有效 AllowDrop（含继承），逐个检查可见且可命中的控件。</summary>
+    public string? SmokeTestDropTargets()
+    {
+        var missing = this.GetVisualDescendants().OfType<Control>()
+            .Where(c => c.IsEffectivelyVisible && c.IsHitTestVisible)
+            .Where(c => !DragDrop.GetAllowDrop(c))
+            .Select(c => c.GetType().Name)
+            .Distinct()
+            .Take(8)
+            .ToList();
+        return missing.Count == 0 ? null : "拖放自测失败：以下控件未开启 AllowDrop：" + string.Join("、", missing);
     }
 
     private void AddTab(DocSession doc)

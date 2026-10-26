@@ -151,7 +151,18 @@ internal static class Program
                     }
 
                     var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
-                    timer.Tick += (_, _) => { timer.Stop(); main.Close(); };
+                    timer.Tick += (_, _) =>
+                    {
+                        timer.Stop();
+                        // 拖放自测：等首轮布局/虚拟化完成后再断言所有可命中的控件都已开启 AllowDrop。
+                        string? dropErr = main.SmokeTestDropTargets();
+                        if (dropErr != null)
+                        {
+                            failure = new Exception(dropErr);
+                            Console.WriteLine(dropErr);
+                        }
+                        main.Close();
+                    };
                     timer.Start();
                 }
                 catch (Exception ex)
