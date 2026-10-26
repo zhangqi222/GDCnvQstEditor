@@ -1,0 +1,16 @@
+QST编辑器各字段提供可选值，这个应该方便你判断
+
+编辑器新增任务后，固定添加一个节点组，包括
+
+纸张图标[数字] New Task
+	- 纸张加笔图标 可写字符串内容 
+		【只能输入字符串】
+	- 复选框里有个向下拐弯箭头图标 OnAccept 
+		【右键新增，可以添加单独的向下拐弯箭头图标节点，可设置Condition和Action字段内容】
+	- 复选框里有个绿色对勾图标 Objectives 
+		【右键新增，可以添加单独的绿色对勾图标节点，可设置Condition和Action字段内容】
+	- 复选框里有个向下拐弯箭头图标 OnComplete
+		【右键新增，可以添加单独的向下拐弯箭头图标节点，可设置Condition和Action字段内容】
+
+Condition和Action字段内容与CNV一模一样
+查看G:\githubcangku\arzedit-GUI2026\cnv示例\cnv字段选项.txt

@@ -1,0 +1,190 @@
+CNV编辑器各字段提供可选值，这个应该方便你判断
+
+第一个字段，无名字段提供内容
+更改状态：
+	Continue
+	Accept
+	Decline
+	End Conversation
+更改flag
+	Once Only
+	Always Show
+	Unimportant
+
+第二个字段，Conditions
+可下拉选择
+– Ho Condi ti on
+AnyoneHasToken
+	- TokenName []str
+	- HasToken TRUE/FALSE
+CheckRandomValue
+	- Name []str
+	- Value []number
+	- Comparaior =/>/</>=/<=/!=
+EarnedDevotion
+	- DevotionAmount []number
+	- Comparaior =/>/</>=/<=/!=
+Hasbuff
+	- BuffName []file
+	- HasBuff TRUE/FALSE
+HasExperience
+	- Experience []number
+	- Comparaior =/>/</>=/<=/!=
+HasFaction
+	- FactionName []str
+	- Value []number
+	- Comparaior =/>/</>=/<=/!=
+HasItem
+	- ItemRecord []file
+	- ItemCount []num
+	- CompleteOnly TRUE/FALSE
+	- Comparaior =/>/</>=/<=/!=
+HasKilled
+	- MonsterRecords []arr
+	- KillCount []num
+	- Comparaior =/>/</>=/<=/!=
+HasKilledFaction
+	- Faction1 []内置arr 太多了
+	- Faction2 []内置arr 太多了
+	- KillCount []num
+	- Comparaior =/>/</>=/<=/!=
+HasKilledMonsterClass
+	- Faction1 []内置arr Common/Champion/Hero/Boss/Quest/SuperBoss
+	- Faction2 []内置arr Common/Champion/Hero/Boss/Quest/SuperBoss
+	- KillCount []num
+	- Comparaior =/>/</>=/<=/!=
+HasKilledProxy
+	- ProxyRecords []arr
+	- KillCount []num
+	- Comparaior =/>/</>=/<=/!=
+HasMastery
+	- MasteryName []内置arr SkillClass01/SkillClass02/SkillClass03...SkillClass30
+	- HasMastery TRUE/FALSE
+HasMoney
+	- MoneyAmount []num
+	- Comparaior =/>/</>=/<=/!=
+HasQuestObjective
+	- Quest []file
+	- Task (不可输入，应该是从Quest的dbr中识别)
+	- Objective  (不可输入，应该是从Quest的dbr中识别)
+	- Satisfied TRUE/FALSE
+HasToken
+	- TokenName []str
+	- HasToken TRUE/FALSE
+HasTribute
+	- TributeAmount []num
+	- Comparaior =/>/</>=/<=/!=
+IsChallenge
+	- IsChallenge []内置arr
+	- Comparaior =/>/</>=/<=/!=
+IsDifficulty
+	- IsDifficulty []内置arr
+	- Comparaior =/>/</>=/<=/!=
+IsHardcore
+	- IsHardcore TRUE/FALSE
+IsLevel
+	- IsLevel []num
+	- Comparaior =/>/</>=/<=/!=
+KnowsPlayer
+	- KnowsPlayer TRUE/FALSE
+LuaScript
+	- Function []内置lua函数，自行读取资源获取
+	- args []表格，三列无字段名列表[Defaults] [Nil ALL] [More Up][More down]四个按钮
+	- Evaluate [bool/number/string/nil] [=/!=] [] 最后这个中括号是根据前面选择的选项，自动显示如选择bool则显示TRUE/FALSE，选择number则可输入数字，选择string则可输入字符串
+OnQuest
+	- QusstFile []file
+	- OnQuest TRUE/FALSE
+OnQuestTask
+	- QusstFile []file
+	- Task 读取上方文件中的值
+	- OnTask TRUE/FALSE
+OwnsDLC
+	- DLC_ID []num
+	- Comparaior =/>/</>=/<=/!=
+QuestBlocked
+	- QuestBlocked []file
+	- QuestBlocked TRUE/FALSE
+QuestTaskComplete
+	- QusstFile []file
+	- Task 读取上方文件中的值
+	- TaskComplete TRUE/FALSE
+ServerHasToken
+	- TokenName []str
+	- HasToken TRUE/FALSE
+UsedQuestItem
+	- ItemRecord []file
+	- NumUsed []num
+	- Comparaior =/>/</>=/<=/!=
+WaitForCompletion
+	- 无选项
+
+
+Actions字段可选内容
+
+Ho Action
+BeginQuestTask
+	- QuestFile []file
+	- Task 自动读取
+CastSkill
+	- SkillRecord []file
+CompleteQuest
+	- QuestFile []file
+CompleteQuestTask
+	- QuestFile []file
+	- Task 自动读取
+DebugPrint
+	- Text []str
+GenerateRandomValue
+	- Name []str
+	- Min []num
+	- Max []num
+GiveAttributePoint
+	- NumAttributePoints []num
+GiveDevotion
+	- NumDevotionPoints []num
+GiveExperience
+	- Experience []num
+GiveFaction
+	- FactionType []str
+	- Amount []num
+GiveItem
+	- ItemRecord []file
+	- NumItems []num
+GiveLevel
+	- NumLevels []num
+GiveMoney
+	- MoneyAmount []num
+GiveRandomItem
+	- ItemRecord []file
+	- NumItems []num
+GiveSkillPoint
+	- NumSkillpoints []num
+GiveToken
+	- TokenName []str
+GiveTribute
+	- TributeAmount []num
+LuaScript
+	- Function []内置lua函数，自行读取资源获取
+	- args []表格，三列无字段名列表[Defaults] [Nil ALL] [More Up][More down]四个按钮
+Notification
+	- Tag []str
+OperMerchantWindow
+	- 点击报错，无法打开，应该是没有解包资源的问题，先忽略
+PlayAnimation
+	- AnimationType []num
+PlaySound
+	- SoundRecord []file
+PlayVideo
+	- Video Path []file
+	- AllowSkip TRUE/FALSE
+RemoveToken
+	- TokenName []str
+ScriptEyent
+	- ScriptEvent []str
+SetFaction
+	- FactionType []str
+	- Value []num
+UnlockFaction
+	- FactionType []str
+UnlockTutorial
+	- TutorialPage []num
