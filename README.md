@@ -223,3 +223,4 @@ screenshots/           README 截图（中文 / 英文）
 - 本项目依赖的第三方组件遵循各自许可证，包括 Avalonia、Semi.Avalonia、AvaloniaEdit（MIT）等；
   `Avalonia.Controls.TreeDataGrid` 固定使用最后的 MIT 版本 11.0.10（12 及以上为商业授权）。
 - 使用本工具修改游戏文件的风险由使用者自行承担，请务必保留备份。
+- 如有侵权，请告知我，我将按照版权人的意愿处理！

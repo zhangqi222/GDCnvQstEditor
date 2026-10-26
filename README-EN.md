@@ -256,3 +256,4 @@ sample file and the `verify` output so the issue can be reproduced.
 - Third-party components keep their own licenses, including Avalonia, Semi.Avalonia and AvaloniaEdit (MIT).
   `Avalonia.Controls.TreeDataGrid` is pinned to 11.0.10, the last MIT-licensed version (12+ is commercially licensed).
 - You are responsible for the risks of modifying game files; always keep backups.
+- If there is any infringement, please inform me, and I will handle it in accordance with the wishes of the copyright owner!
