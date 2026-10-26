@@ -28,15 +28,18 @@ internal sealed class FileTreePanel : UserControl
     public event Action<GdFileEntry>? FileActivated;
 
     private readonly TreeView _tree = new() { MinHeight = 240 };
-    private readonly Grid _treeHost = new();   // 树 + 扫描进度覆盖层
-    private readonly StackPanel _buildingTip;
+    private readonly Grid _treeHost = new();   // 树（扫描时不再遮挡，保持可见）
+    private readonly StackPanel _buildStatus;  // 标题行内联扫描指示（小进度环 + 文字）
     private readonly TextBlock _countText = new() { Foreground = UiTheme.MutedBrush };
+    private readonly TextBox _filterBox = new() { Watermark = L.T("Filter files or folders…") };
+    private readonly DispatcherTimer _filterTimer;   // 输入防抖 200ms
     private readonly Button _refreshBtn;
     private readonly Dictionary<string, TreeViewItem> _nodes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _loaded = new(StringComparer.OrdinalIgnoreCase);   // 已加载子项的目录
     private readonly HashSet<string> _dirs = new(StringComparer.OrdinalIgnoreCase);     // 索引中存在的全部目录（决定是否有展开箭头）
     private GdIndex? _index;
     private string _subDir = "";
+    private string _filterKw = "";              // 当前生效的关键词（空 = 正常懒加载树）
     private Func<string, bool> _filter = _ => true;
     private CancellationTokenSource? _buildCts;
 
@@ -61,8 +64,8 @@ internal sealed class FileTreePanel : UserControl
             FileActivated?.Invoke(SelectedFile);
         };
 
-        // Semi 圆形进度（ProgressRing 主题）：扫描各层文件期间盖在树区中央
-        var ring = new ProgressBar { IsIndeterminate = true, Width = 32, Height = 32 };
+        // 扫描指示：标题行内联小进度环（不遮挡树区，扫描期间旧树保持可见可浏览）
+        var ring = new ProgressBar { IsIndeterminate = true, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center };
         if (Application.Current != null)
         {
             var theme = Application.Current.ActualThemeVariant ?? ThemeVariant.Default;
@@ -70,37 +73,44 @@ internal sealed class FileTreePanel : UserControl
                 ringTheme is ControlTheme ct)
                 ring.Theme = ct;
         }
-        _buildingTip = new StackPanel
+        _buildStatus = new StackPanel
         {
             IsVisible = false,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
         };
-        _buildingTip.Children.Add(ring);
-        _buildingTip.Children.Add(new TextBlock
+        _buildStatus.Children.Add(ring);
+        _buildStatus.Children.Add(new TextBlock
         {
             Text = L.T("Scanning layers…"),
             Foreground = UiTheme.MutedBrush,
-            Margin = new Thickness(0, 10, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
         });
 
-        _treeHost.Children.Add(_tree);
-        _treeHost.Children.Add(_buildingTip);
+        _filterTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _filterTimer.Tick += (_, _) => { _filterTimer.Stop(); ApplyFilter(); };
+        _filterBox.TextChanged += (_, _) => { _filterTimer.Stop(); _filterTimer.Start(); };
 
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
         var refreshHost = new StackPanel { Orientation = Orientation.Horizontal };
         DockPanel.SetDock(refreshHost, Dock.Right);
         refreshHost.Children.Add(_refreshBtn);
+        DockPanel.SetDock(_buildStatus, Dock.Left);
         head.Children.Add(refreshHost);
+        head.Children.Add(_buildStatus);
         head.Children.Add(_countText);
 
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(head, 0);
-        Grid.SetRow(_treeHost, 1);
+        Grid.SetRow(_filterBox, 1);
+        Grid.SetRow(_treeHost, 2);
         grid.Children.Add(head);
+        grid.Children.Add(_filterBox);
         grid.Children.Add(_treeHost);
+        _treeHost.Children.Add(_tree);
         Content = grid;
     }
 
@@ -148,7 +158,7 @@ internal sealed class FileTreePanel : UserControl
         catch (OperationCanceledException) { }
         finally
         {
-            _buildingTip.IsVisible = false;
+            _buildStatus.IsVisible = false;
             if (!ct.IsCancellationRequested) _refreshBtn.IsEnabled = true;
         }
     }
@@ -177,23 +187,20 @@ internal sealed class FileTreePanel : UserControl
         }
     }
 
-    /// <summary>扫描中：清树并显示圆形进度覆盖层。</summary>
+    /// <summary>扫描中：标题行显示内联进度；树保持原样可见（首次打开为空区），不遮挡。</summary>
     private void ShowBuilding()
     {
-        _tree.Items.Clear();
-        _nodes.Clear();
-        _loaded.Clear();
+        _buildStatus.IsVisible = true;
         _countText.Text = "";
-        _buildingTip.IsVisible = true;
     }
 
-    /// <summary>无法使用时的占位提示（无进度环）。</summary>
+    /// <summary>无法使用时的占位提示（清树）。</summary>
     private void ShowMessage(string text)
     {
         _tree.Items.Clear();
         _nodes.Clear();
         _loaded.Clear();
-        _buildingTip.IsVisible = false;
+        _buildStatus.IsVisible = false;
         _tree.Items.Add(new TreeViewItem { Header = text, IsEnabled = false });
         _countText.Text = "";
     }
@@ -201,11 +208,18 @@ internal sealed class FileTreePanel : UserControl
     /// <summary>索引就绪：重建整棵树（懒加载，只展开根）。在 UI 线程调用。</summary>
     private void RebuildTree()
     {
-        _buildingTip.IsVisible = false;
+        _buildStatus.IsVisible = false;
         _tree.Items.Clear();
         _nodes.Clear();
         _loaded.Clear();
         if (_index == null) return;
+
+        // 有关键词 → 过滤树（物化匹配子树；无关键词 → 懒加载树）
+        if (_filterKw.Length > 0)
+        {
+            RebuildFilteredTree(_filterKw);
+            return;
+        }
 
         // 目录集合：决定每个目录节点是否挂占位子项（挂了才有展开箭头可点）
         _dirs.Clear();
@@ -231,6 +245,96 @@ internal sealed class FileTreePanel : UserControl
         _tree.Items.Add(root);
         LoadChildren(root, _subDir);
         root.IsExpanded = true;
+    }
+
+    // ------------------------------------------------------------------
+    // 关键词筛选：物化"匹配文件 + 祖先目录"子树，空目录不出现；全部展开
+    // ------------------------------------------------------------------
+
+    /// <summary>防抖结束后应用筛选框关键词（索引未就绪时等 RebuildTree 时再生效）。</summary>
+    private void ApplyFilter()
+    {
+        _filterKw = (_filterBox.Text ?? "").Trim();
+        if (_index == null) return;
+        if (_filterKw.Length == 0) RebuildTree();
+        else RebuildFilteredTree(_filterKw);
+    }
+
+    /// <summary>相对路径按 \ 切段，任一段（文件名或任一级目录名）包含关键词即匹配。</summary>
+    private static bool MatchKeyword(string rel, string kw)
+    {
+        int start = 0;
+        while (true)
+        {
+            int slash = rel.IndexOf('\\', start);
+            string seg = slash < 0 ? rel[start..] : rel[start..slash];
+            if (seg.Contains(kw, StringComparison.OrdinalIgnoreCase)) return true;
+            if (slash < 0) return false;
+            start = slash + 1;
+        }
+    }
+
+    /// <summary>过滤树：一次全量扫描索引（20 万条毫秒级），只建匹配文件与其祖先目录，全部展开。</summary>
+    private void RebuildFilteredTree(string kw)
+    {
+        _tree.Items.Clear();
+        _nodes.Clear();
+        _loaded.Clear();
+        if (_index == null) return;
+
+        string prefix = _subDir + "\\";
+        var dirs = new SortedSet<string>(StringComparer.OrdinalIgnoreCase) { _subDir };
+        var matched = new List<(string Key, GdFileEntry Entry)>();
+        foreach (var (key, entry) in _index.Files)
+        {
+            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!_filter(entry.RelativePath)) continue;          // 保留扩展名过滤（database/resources 规则）
+            if (!MatchKeyword(key[prefix.Length..], kw)) continue;
+            matched.Add((key, entry));
+            for (int idx = prefix.Length; ;)
+            {
+                int slash = key.IndexOf('\\', idx);
+                if (slash < 0) break;
+                dirs.Add(key[..slash]);
+                idx = slash + 1;
+            }
+        }
+
+        _countText.Text = L.F("{0} matches", matched.Count);
+
+        // 父目录必为前缀，SortedSet 序保证父先建；根节点挂到树，其余挂到各自父目录
+        var root = MakeDirNode(_subDir, _subDir);
+        root.Items.Clear();
+        _tree.Items.Add(root);
+        foreach (string d in dirs)
+        {
+            if (d == _subDir) continue;
+            var node = MakeDirNode(d, d[(d.LastIndexOf('\\') + 1)..]);
+            node.Items.Clear();   // 去掉懒加载占位"…"，过滤模式下子项立即可见
+            if (_nodes.TryGetValue(d[..d.LastIndexOf('\\')], out var parent))
+                parent.Items.Add(node);
+        }
+        foreach (var (key, entry) in matched.OrderBy(m => m.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var node = new TreeViewItem
+            {
+                Header = MakeFileHeader(key[(key.LastIndexOf('\\') + 1)..], entry),
+                Tag = new NodeEntry(key, false, entry),
+            };
+            ToolTip.SetTip(node, entry.FullPath);
+            _nodes[key] = node;
+            if (_nodes.TryGetValue(key[..key.LastIndexOf('\\')], out var parent))
+                parent.Items.Add(node);
+        }
+
+        // 过滤目录全部标记"已加载"：展开事件不再触发 LoadChildren 用未过滤内容覆盖
+        foreach (string d in dirs)
+        {
+            _loaded.Add(d);
+            if (_nodes.TryGetValue(d, out var n)) n.IsExpanded = true;
+        }
+        if (matched.Count == 0)
+            root.Items.Add(new TreeViewItem { Header = L.T("(no matches)"), IsEnabled = false });
     }
 
     // ------------------------------------------------------------------

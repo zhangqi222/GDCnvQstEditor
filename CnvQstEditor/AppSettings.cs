@@ -45,10 +45,11 @@ internal static class AppSettings
     };
 
     /// <summary>
-    /// 共享的跨层文件索引缓存：按层根目录缓存枚举结果（默认 3 秒新鲜窗口），
-    /// 大目录（20 万文件级）短时间内多次浏览不重复扫描；设置变更后可 Clear()。
+    /// 共享的跨层文件索引缓存：按层根目录缓存枚举结果（新鲜窗口 10 分钟），
+    /// 大目录（20 万文件级）窗口内多次打开浏览器即秒开（不重扫磁盘）；
+    /// 文件变更靠"重新扫描"按钮强制刷新；设置变更后可 Clear()。
     /// </summary>
-    public static readonly GdAssets.GdIndexCache GdCache = new();
+    public static readonly GdAssets.GdIndexCache GdCache = new() { FreshWindow = TimeSpan.FromMinutes(10) };
 
     /// <summary>最近打开的文件（新的在前，最多 <see cref="MaxRecentFiles"/> 条）。</summary>
     public static List<string> RecentFiles { get; private set; } = new();

@@ -646,7 +646,8 @@ internal sealed class QstFieldsDialog : Window
         {
             case QstTaskRow tr:
                 _nums.Add((L.T("uid (reference id)"), new NumPairBox(tr.T.UnknownA8, mode: NumBoxMode.HexOnly) { IsEnabled = false }));
-                _nums.Add((L.T("flags (only None)"), new NumPairBox(tr.T.UnknownAC)));
+                // task flags 恒为 0（官方编辑器亦无编辑入口）→ 只读，防误改破坏文件
+                _nums.Add((L.T("flags (only None)"), new NumPairBox(tr.T.UnknownAC, readOnly: true)));
                 _flags.Add((L.T("isBlocker (blocks subsequent tasks, v≥8)"), Check(tr.T.Flag8)));
                 _flags.Add((L.T("dontPropagate (do not propagate upward, v≥9)"), Check(tr.T.Flag9)));
                 break;

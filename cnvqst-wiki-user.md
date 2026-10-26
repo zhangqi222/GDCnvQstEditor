@@ -78,7 +78,7 @@
 | 20 | 添加任务 / 目标 / 完成事件 / 接受事件 | 结构增删走库层，**自动按串表公式 2+2T+O+I+E 重建本地化表**，文本随实体移动 | — |
 | 21 | 删除行 | 删 task / objective / event | 同上自动维护串表 |
 | 22 | 任务属性 | uid + 主线 Primary / 支线 Secondary（互斥）/ 可重复 Repeatable | 模态窗 |
-| 23 | 字段编辑 | task：uid（引用标识）/flags/isBlocker/dontPropagate；objective：uid/flags；event：flags | 位含义来自官方 Common.dll |
+| 23 | 字段编辑 | task：uid（引用标识）/flags（只读，恒为 0）/isBlocker/dontPropagate；objective：uid/flags；event：flags | 位含义来自官方 Common.dll |
 | 24 | 条件/动作编辑 | 与 CNV 相同的模态编辑器 | — |
 
 ### 2.5 查看本地化字符串表（只读）
@@ -159,7 +159,7 @@
 
 三个非可视化视图占满整个编辑区（不再保留底部编辑器空位）。所有文本视图统一使用 AvaloniaEdit
 （`Avalonia.AvaloniaEdit` 11.4.1）：自动换行（禁止横向滚动）、奇偶行交叉着色（默认白 / 浅橙，含行号列）、
-右键复制 / 全选（复制走同步剪贴板），本地化合并视图的行号列在换行后背景连片、标注只画首行。
+右键复制 / 全选与 Ctrl+C（均走同步剪贴板），本地化合并视图的行号列在换行后背景连片、标注只画首行。
 
 ---
 

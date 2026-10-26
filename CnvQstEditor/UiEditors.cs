@@ -7,6 +7,7 @@ using AvaloniaEdit;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
+using Avalonia.Input;
 
 namespace CnvQstEditor;
 
@@ -55,7 +56,8 @@ internal static class UiEditors
 
     /// <summary>
     /// 右键菜单：复制 / 全选。复制走 Win32 同步剪贴板（ClipboardHelper），与表格复制同一套实现；
-    /// Ctrl+C 仍走 AvaloniaEdit 内建 Copy 命令。
+    /// Ctrl+C 同样拦到 Win32 同步剪贴板——AvaloniaEdit 内建 Copy 用 IClipboard.SetTextAsync，
+    /// 该异步路径在本项目实测会静默失效（粘贴出旧内容），故在 TextArea.KeyDown 先行拦截。
     /// </summary>
     private static void AttachCopyMenu(TextEditor editor)
     {
@@ -64,6 +66,15 @@ internal static class UiEditors
         var all = new MenuItem { Header = L.T("Select all") };
         all.Click += (_, _) => editor.SelectAll();
         editor.TextArea.ContextMenu = new ContextMenu { Items = { copy, all } };
+
+        // 订阅先于 AvaloniaEdit 内部处理器（Build 时 TextArea 尚未挂模板），Handled=true 可阻断内建异步复制
+        editor.TextArea.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.C || e.KeyModifiers != KeyModifiers.Control) return;
+            if (editor.SelectedText.Length == 0) return;
+            ClipboardHelper.SetText(editor.SelectedText);
+            e.Handled = true;
+        };
     }
 }
 
