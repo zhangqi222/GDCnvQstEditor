@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Description>Grim Dawn .cnv (conversation) / .qst (quest) binary parser + serializer. Format per Game.dll loader, see 参考资料/gd-utility.</Description>
+    <Description>Grim Dawn .cnv (conversation) / .qst (quest) binary parser + serializer. Format derived from the Game.dll loader and official editor evidence.</Description>
   </PropertyGroup>
 
   <ItemGroup>

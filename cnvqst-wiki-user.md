@@ -312,7 +312,7 @@ TXT 本地化回填已移除（2026-10-23）：翻译请走 JSON 导入，或 TX
   - task 的 **OnComplete（完成事件）**：task 完成时执行——典型组合 `CompleteQuest(2)` / `GiveExperience(8)` / `IsDifficulty(4)` 分难度给不同奖励（语料 mq_burrwitch 实证）；
   - **Objective（目标）**：目标的 Conditions（何时完成目标，常配 WaitForCompletion(17) / HasToken(7)）与 Actions（完成目标时的附加效果）；
   - 目标完成态可被对话侧引用：CNV 条件 `HasQuestObjective(11)`、`QuestTaskComplete(1)` 按 QuestFile+Task+Objective 定位——**Objective ID 列显示的 uid 就是官方编辑器供此引用的 ID**。
-- **QST 语料统计**（248 样本）：task/objective/event 的 flags 全 0、uid 全非 0；task/objective/event 的串表槽固定为 组名(0)+任务名(1)+每 task 依次 [标题, 描述]+事件/目标文本，总量遵守公式 `2+2T+O+I+E`（本编辑器保存三检查会强制校验）。
+- **QST 语料统计**（本地语料 248 样本）：task/objective/event 的 flags 全 0、uid 全非 0；task/objective/event 的串表槽固定为 组名(0)+任务名(1)+每 task 依次 [标题, 描述]+事件/目标文本，总量遵守公式 `2+2T+O+I+E`（本编辑器保存三检查会强制校验）。
 - **QST 特有注意点**：
   - 编辑器底部面板选中任意行可编辑其串表文本（组名/任务名/标题/描述/目标文本）；
   - 结构增删（右键 ＋任务/＋目标/＋事件、－删除）会自动按公式重建本地化表，不破坏既有文本；

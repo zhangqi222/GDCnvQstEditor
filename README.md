@@ -47,7 +47,7 @@ CLI 帮助总览：
 
 ## 下载与运行
 
-发布版由 [`publish.ps1`](publish.ps1) 生成两个**框架依赖单文件**（`dist/` 为构建产物，不入库）：
+从 [Releases](../../releases) 页面下载最新发布包。发布版由 [`publish.ps1`](publish.ps1) 生成两个**框架依赖单文件**（`dist/` 为构建产物，不入库）：
 
 | 文件 | 用途 | 运行时要求 |
 |---|---|---|
@@ -89,10 +89,10 @@ GDCnvQstEditor-cli <命令> [参数]
 
 ```bash
 # 批量校验并导出报告
-GDCnvQstEditor-cli.exe verify cnv示例
-# 二进制 → JSON，修改后再转回
-GDCnvQstEditor-cli.exe convert qst示例/mq_burrwitch.qst -o mq.json
-GDCnvQstEditor-cli.exe convert mq.json -o mq_new.qst
+GDCnvQstEditor-cli.exe verify JSON示例
+# JSON → 二进制，再转回 JSON
+GDCnvQstEditor-cli.exe convert JSON示例/qst_full.json -o qst_full.qst
+GDCnvQstEditor-cli.exe convert qst_full.qst -o qst_roundtrip.json
 # 导出官方格式本地化文本
 GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
 ```
@@ -135,6 +135,14 @@ dotnet build GDCnvQstEditor.sln        # 默认 Debug，输出到各工程 bin/D
 
 产出 `dist/GDCnvQstEditor.exe` 与 `dist/GDCnvQstEditor-cli.exe`（框架依赖单文件）。
 
+### GitHub 发布（维护者，手动触发）
+
+发布由 [`.github/workflows/release.yml`](.github/workflows/release.yml) 完成，只响应手动运行（`workflow_dispatch`），提交、标签、定时任务都不会自动触发：
+
+1. 同步修改 `GDCnvQstEditor/GDCnvQstEditor.csproj` 与 `GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj` 的 `<Version>`，提交并推送；版本号即标签名（`2.0.24` → `v2.0.24`）。
+2. 仓库 **Actions → Release → Run workflow**，可勾选草稿 / 预发布。
+3. 工作流读取版本号并校验两个工程一致、标签未被其他提交占用（发布中断后可在同一提交重跑），按上一版本标签到当前提交生成更新日志（没有上一版本时写「首次发布」），调用 `publish.ps1` 打包，创建 `vX.Y.Z` 标签与 Release，上传两个 EXE 与 `SHA256SUMS.txt`。
+
 ## 工程结构
 
 ```text
@@ -148,9 +156,9 @@ GDCnvQstEditor/        Avalonia GUI（net8.0-windows）
 GDCnvQstEditor-cli/    命令行薄壳
 GdAssets/              Grim Dawn 安装目录模型与跨层文件索引
 EditorProbe/           官方编辑器程序集只读探针（格式研究用）
-cnv示例/ qst示例/       447 个真实样本（CNV 199 + QST 248）
+cnv示例/               官方编辑器字段词表摘录（手工抄录）
+qst示例/               自制最小 QST 示例与字段说明
 JSON示例/              全量 JSON 示例与手写模板
-scripts脚本示例/        任务 Lua 脚本参考语料
 screenshots/           README 截图（中文 / 英文）
 ```
 
@@ -210,8 +218,8 @@ screenshots/           README 截图（中文 / 英文）
 - 本项目源代码以 [MIT 许可证](LICENSE) 发布，Copyright © 2026 GDCnvQstEditor contributors。
 - **本项目是非官方第三方工具，与 Grim Dawn 的开发商 / 发行商 Crate Entertainment（玩家常称「板条箱」）没有任何隶属、授权、赞助或背书关系。**
 - Grim Dawn、Crate Entertainment 及相关名称、标识、游戏内容与数据文件归其各自权利人所有。
-- 仓库内 `cnv示例/`、`qst示例/`、`scripts脚本示例/` 等游戏数据样本仅用于格式兼容性研究与回归测试，
-  不构成对游戏内容的再授权；游戏本体及运行所需资源需自行合法取得。
+- 仓库只包含自制的最小示例（`JSON示例/`、`qst示例/20260928newtask.qst`）与官方编辑器字段词表摘录，
+  不随仓库分发游戏本体或游戏数据文件；截图中的游戏界面与文本仅作功能演示之用。
 - 本项目依赖的第三方组件遵循各自许可证，包括 Avalonia、Semi.Avalonia、AvaloniaEdit（MIT）等；
   `Avalonia.Controls.TreeDataGrid` 固定使用最后的 MIT 版本 11.0.10（12 及以上为商业授权）。
 - 使用本工具修改游戏文件的风险由使用者自行承担，请务必保留备份。

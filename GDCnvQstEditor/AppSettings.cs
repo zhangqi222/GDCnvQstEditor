@@ -217,7 +217,7 @@ internal static class AppSettings
 
     /// <summary>
     /// 条件/动作串字段 → 资源目录字典（键 = 官方类名）。
-    /// 依据：遍历 cnv示例 / qst示例 全部 445 个官方样本实测归纳——
+    /// 依据：遍历本地语料全部 445 个官方样本实测归纳——
     /// 任务引用类串恒为 .qst（resources\），物品/技能记录类串恒为 .dbr（database\）；
     /// Token / 名称 / 数值类串不带路径，不在字典内（不显示浏览按钮）。
     /// </summary>

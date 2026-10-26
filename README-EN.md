@@ -58,7 +58,8 @@ CLI help overview:
 
 ## Download & Run
 
-Release builds are produced by [`publish.ps1`](publish.ps1) as two **framework-dependent single files**
+Download the latest package from the [Releases](../../releases) page. Release builds are produced by
+[`publish.ps1`](publish.ps1) as two **framework-dependent single files**
 (`dist/` is a build output and is not tracked):
 
 | File | Purpose | Runtime |
@@ -105,10 +106,10 @@ Exit codes: `0` success, `1` failures found, `2` usage error.
 
 ```bash
 # Validate a whole folder
-GDCnvQstEditor-cli.exe verify cnv示例
-# Binary -> JSON, edit, then convert back
-GDCnvQstEditor-cli.exe convert qst示例/mq_burrwitch.qst -o mq.json
-GDCnvQstEditor-cli.exe convert mq.json -o mq_new.qst
+GDCnvQstEditor-cli.exe verify JSON示例
+# JSON -> binary, then convert back
+GDCnvQstEditor-cli.exe convert JSON示例/qst_full.json -o qst_full.qst
+GDCnvQstEditor-cli.exe convert qst_full.qst -o qst_roundtrip.json
 # Export official localization text
 GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
 ```
@@ -153,6 +154,21 @@ Create release binaries:
 
 This produces `dist/GDCnvQstEditor.exe` and `dist/GDCnvQstEditor-cli.exe` (framework-dependent single files).
 
+### GitHub release (maintainers, manual only)
+
+Releases are created by [`.github/workflows/release.yml`](.github/workflows/release.yml), which only runs on
+manual dispatch (`workflow_dispatch`) — pushes, tags and schedules never trigger it:
+
+1. Set the same `<Version>` in `GDCnvQstEditor/GDCnvQstEditor.csproj` and
+   `GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj`, commit and push. The version becomes the tag
+   (`2.0.24` → `v2.0.24`).
+2. In the repository, open **Actions → Release → Run workflow**; optionally mark the release as draft or
+   pre-release.
+3. The workflow reads the version, verifies both projects agree, refuses a tag already used by another commit
+   (a re-run on the same commit reuses the tag), builds the changelog from the previous version tag up to the
+   current commit (`First release` when no tag exists), runs `publish.ps1`, creates the `vX.Y.Z` tag and
+   Release, and uploads both EXEs plus `SHA256SUMS.txt`.
+
 ## Project Layout
 
 ```text
@@ -166,9 +182,9 @@ GDCnvQstEditor/        Avalonia GUI (net8.0-windows)
 GDCnvQstEditor-cli/    Thin command-line host
 GdAssets/              Grim Dawn install model and layered file index
 EditorProbe/           Read-only probe for the official editor assemblies (format research)
-cnv示例/ qst示例/       447 real samples (199 CNV + 248 QST)
+cnv示例/               Field vocabulary transcribed from the official editor
+qst示例/               Self-made minimal QST sample and field notes
 JSON示例/              Full JSON examples and hand-written template
-scripts脚本示例/        Quest Lua script reference corpus
 screenshots/           README screenshots (Chinese / English)
 ```
 
@@ -234,9 +250,9 @@ sample file and the `verify` output so the issue can be reproduced.
   relationship with Crate Entertainment, the developer / publisher of Grim Dawn.**
 - Grim Dawn, Crate Entertainment and related names, logos, game content and data files belong to their
   respective owners.
-- Game data samples under `cnv示例/`, `qst示例/` and `scripts脚本示例/` are included solely for format
-  compatibility research and regression testing; they do not grant any rights to the game content. The game
-  itself and the assets required to run it must be obtained legally.
+- The repository ships only self-made minimal samples (`JSON示例/`, `qst示例/20260928newtask.qst`) and field
+  vocabulary transcribed from the official editor. No game data files are redistributed; game UI and text
+  appearing in screenshots are for illustration only.
 - Third-party components keep their own licenses, including Avalonia, Semi.Avalonia and AvaloniaEdit (MIT).
   `Avalonia.Controls.TreeDataGrid` is pinned to 11.0.10, the last MIT-licensed version (12+ is commercially licensed).
 - You are responsible for the risks of modifying game files; always keep backups.

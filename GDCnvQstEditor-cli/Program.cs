@@ -1,7 +1,7 @@
 using System.Text;
 using GDCnvQstLib.Cli;
 
-// GDCnvQstEditor-cli — CnvQstLib CLI 的开发/CI 薄壳。命令实现全部在 CnvQstLib.Cli.CliApp，
+// GDCnvQstEditor-cli — GDCnvQstLib CLI 的开发/CI 薄壳。命令实现全部在 GDCnvQstLib.Cli.CliApp，
 // GDCnvQstEditor 单 EXE 的参数模式调用同一实现，保证 GUI/CLI 行为一致。
 // 编码设置放这里（库内不碰 Console，便于被 GUI 宿主）。
 

@@ -1,0 +1,168 @@
+name: Release
+
+# 手动发布：仅 Actions 页面点 "Run workflow" 触发，不响应 push / tag / 定时任务。
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        description: 创建为草稿（不公开，需手动点 Publish release）
+        type: boolean
+        default: false
+      prerelease:
+        description: 标记为预发布（Pre-release）
+        type: boolean
+        default: false
+
+# 创建 tag 与 Release 需要写权限；gh 使用内置 GITHUB_TOKEN，无需配置任何密钥。
+permissions:
+  contents: write
+
+# 同一时间只允许一个发布任务，防止并发重复打 tag。
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码（完整历史与标签，用于生成更新日志）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装 .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: 读取版本号并生成更新日志
+        id: meta
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          [Console]::OutputEncoding = [Text.Encoding]::UTF8
+
+          function Get-ProjectVersion([string]$path) {
+            [xml]$xml = Get-Content -Path $path -Raw
+            $node = $xml.SelectSingleNode('/Project/PropertyGroup/Version')
+            if (-not $node) { throw "未在 $path 中找到 <Version>" }
+            return $node.InnerText.Trim()
+          }
+
+          $guiVersion = Get-ProjectVersion 'GDCnvQstEditor/GDCnvQstEditor.csproj'
+          $cliVersion = Get-ProjectVersion 'GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj'
+          if ($guiVersion -ne $cliVersion) {
+            throw "版本号不一致：GUI=$guiVersion，CLI=$cliVersion，请先同步两个 csproj"
+          }
+
+          $tag = "v$guiVersion"
+          $tagExists = 'false'
+          git rev-parse --verify --quiet "refs/tags/$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = (git rev-list -n 1 $tag | Select-Object -First 1)
+            if ($tagCommit -ne $env:GITHUB_SHA) {
+              throw "标签 $tag 已存在且指向 $tagCommit：请先提升两个 csproj 的 <Version> 再发布"
+            }
+            # 上次运行已推标签但 Release 创建失败时，允许直接重跑（Release 已存在则 gh 会报错）
+            $tagExists = 'true'
+            Write-Warning "标签 $tag 已存在并指向当前提交，本次复用该标签"
+          }
+
+          # 上一版本 = 按版本号排序的最新 v* 标签（排除本次要创建的标签）
+          $prevTag = @(git tag --list 'v[0-9]*' --sort=-v:refname | Where-Object { $_ -ne $tag }) |
+            Select-Object -First 1
+
+          $lines = [System.Collections.Generic.List[string]]::new()
+          $lines.Add('## 更新日志')
+          $lines.Add('')
+          if (-not $prevTag) {
+            $lines.Add('首次发布。')
+          }
+          else {
+            $lines.Add(('变更范围：`{0}` → `{1}`' -f $prevTag, $tag))
+            $lines.Add('')
+            $commits = @(git log "$prevTag..HEAD" --no-merges --encoding=UTF-8 --pretty=format:'- %s (%h)')
+            if ($commits.Count -eq 0) { $lines.Add('- 本次发布无代码提交（仅重新打包）') }
+            else { foreach ($c in $commits) { $lines.Add($c) } }
+          }
+          $lines.Add('')
+          $lines.Add('---')
+          $lines.Add('')
+          $lines.Add('**运行要求**：Windows x64。`GDCnvQstEditor.exe` 需 .NET 8 Desktop Runtime，`GDCnvQstEditor-cli.exe` 需 .NET 8 Runtime（Desktop Runtime 已包含）。')
+          $lines.Add('')
+          $lines.Add('运行时下载：https://dotnet.microsoft.com/download/dotnet/8.0')
+          $lines.Add('')
+          $lines.Add('产物校验值见 `SHA256SUMS.txt`。')
+
+          Set-Content -Path 'release-notes.md' -Value $lines -Encoding utf8
+          "version=$guiVersion" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "tag_exists=$tagExists" >> $env:GITHUB_OUTPUT
+          "prev_tag=$prevTag" >> $env:GITHUB_OUTPUT
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ("## $tag`n`n" + ($lines -join "`n")) -Encoding utf8
+          Write-Host "版本：$guiVersion，标签：$tag，上一版本：$(if ($prevTag) { $prevTag } else { '无（首次发布）' })"
+
+      - name: 打包（调用项目内 publish.ps1）
+        shell: pwsh
+        run: ./publish.ps1
+
+      - name: 校验产物并生成 SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $names = @('GDCnvQstEditor.exe', 'GDCnvQstEditor-cli.exe')
+          $sums = foreach ($name in $names) {
+            $path = Join-Path 'dist' $name
+            if (-not (Test-Path $path)) { throw "缺少产物：$path" }
+            if ((Get-Item $path).Length -lt 100KB) { throw "产物异常（过小）：$path" }
+            $hash = (Get-FileHash $path -Algorithm SHA256).Hash
+            '{0}  {1}' -f $hash, $name
+          }
+          Set-Content -Path 'dist/SHA256SUMS.txt' -Value $sums -Encoding utf8
+          Get-Content 'dist/SHA256SUMS.txt'
+
+      - name: 创建并推送标签
+        shell: pwsh
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          TAG_EXISTS: ${{ steps.meta.outputs.tag_exists }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:TAG_EXISTS -eq 'true') {
+            Write-Host "标签 $env:TAG 已存在，跳过创建"
+            exit 0
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a $env:TAG -m $env:TAG
+          if ($LASTEXITCODE -ne 0) { throw "创建标签失败 (exit=$LASTEXITCODE)" }
+          git push origin $env:TAG
+          if ($LASTEXITCODE -ne 0) { throw "推送标签失败 (exit=$LASTEXITCODE)" }
+
+      - name: 创建 Release 并上传产物
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ghArgs = @(
+            'release', 'create', $env:TAG,
+            'dist/GDCnvQstEditor.exe',
+            'dist/GDCnvQstEditor-cli.exe',
+            'dist/SHA256SUMS.txt',
+            '--verify-tag',
+            '--title', $env:TAG,
+            '--notes-file', 'release-notes.md'
+          )
+          if ($env:DRAFT -eq 'true') { $ghArgs += '--draft' }
+          if ($env:PRERELEASE -eq 'true') { $ghArgs += '--prerelease' }
+          gh @ghArgs
+          if ($LASTEXITCODE -ne 0) { throw "创建 Release 失败 (exit=$LASTEXITCODE)" }
