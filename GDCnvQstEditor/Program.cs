@@ -42,6 +42,9 @@ internal static class Program
         catch { /* 旧系统缺 API 时保持默认行为 */ }
     }
 
+    // 必须在 STA 线程启动：Avalonia Win32 的 OLE 拖放/系统剪贴板都要求 STA，
+    // MTA 下 OleContext 不初始化，窗口不会注册 IDropTarget（拖入完全无反应）。
+    [STAThread]
     private static int Main(string[] args)
     {
         // 无参数（或显式 gui）→ 图形界面；--smoke → 建窗即关（CI/回归用）；带参数 → CLI。
@@ -108,6 +111,11 @@ internal static class Program
         }
         try
         {
+            if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
+            {
+                Console.WriteLine($"UI 冒烟失败：主线程为 {Thread.CurrentThread.GetApartmentState()}，OLE 拖放/剪贴板不可用");
+                return 1;
+            }
             L.Load();
             GDCnvQstLib.Names.DisplayNameResolver = name => L.TypePair(name);
             ClipboardHelper.Install();

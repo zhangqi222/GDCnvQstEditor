@@ -70,14 +70,10 @@ internal sealed class MainWindow : Window
         UpdateStatus();
 
         // 拖放：AllowDrop 是继承属性，在窗口开启即可覆盖全部逻辑子控件（表格/页签/按钮）；
-        // 文件拖放事件统一冒泡到这里处理。
+        // 文件拖放事件统一冒泡到这里处理。DragEnter 与 DragOver 都要应答，切换子控件时会重新发 DragEnter。
         DragDrop.SetAllowDrop(this, true);
-        AddHandler(DragDrop.DragOverEvent, (_, e) =>
-        {
-            if (e.DataTransfer is not { } dt || !dt.Contains(DataFormat.File)) return;
-            e.DragEffects = DragDropEffects.Copy;
-            e.Handled = true;
-        }, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(DragDrop.DragEnterEvent, OnFileDrag, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(DragDrop.DragOverEvent, OnFileDrag, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, (_, e) =>
         {
             if (e.DataTransfer is not { } dt || !dt.Contains(DataFormat.File)) return;
@@ -463,6 +459,13 @@ internal sealed class MainWindow : Window
         });
         if (files.Count == 0) return;
         await OpenFile(files[0].Path.LocalPath);
+    }
+
+    private void OnFileDrag(object? sender, DragEventArgs e)
+    {
+        if (e.DataTransfer is not { } dt || !dt.Contains(DataFormat.File)) return;
+        e.DragEffects = DragDropEffects.Copy;
+        e.Handled = true;
     }
 
     /// <summary>处理拖入的文件/文件夹：文件夹进批量处理，文件按页签打开。</summary>
