@@ -1,7 +1,7 @@
 # qstcnv — Grim Dawn .cnv / .qst 解析 · 导出 · 写回
 
 对《恐怖黎明》对话文件（`.cnv`）与任务文件（`.qst`）二进制格式的完整实现：
-**解析（CnvQstLib）+ 编辑器风格查看 / JSON 互转 / 官方本地化 TXT 导出**。
+**解析（GDCnvQstLib）+ 编辑器风格查看 / JSON 互转 / 官方本地化 TXT 导出**。
 
 格式权威依据：[R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility)（MIT）
 反编译 Game.dll 加载器的结论（快照存于 `参考资料/gd-utility/`），格式详情见
@@ -26,20 +26,20 @@
 ## 构建
 
 ```bash
-dotnet build CnvQstEditor-cli/CnvQstEditor-cli.csproj     # 同时构建 CnvQstLib（net8.0，可被其他工程引用）
-dotnet build qstcnv.sln                        # 全部工程（CnvQstLib/CnvQstEditor-cli/CnvQstEditor）
+dotnet build GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj     # 同时构建 GDCnvQstLib（net8.0，可被其他工程引用）
+dotnet build GDCnvQstEditor.sln                        # 全部工程（GDCnvQstLib/GDCnvQstEditor-cli/GDCnvQstEditor）
 ```
 
-## 图形界面（CnvQstEditor，单 EXE 双模式）
+## 图形界面（GDCnvQstEditor，单 EXE 双模式）
 
-`CnvQstEditor` 是同一套实现的图形界面，支持查看 / 编辑 / 新建 / 导入导出 / 批量处理，
-与 CLI 共用 CnvQstLib，保证行为一致。
+`GDCnvQstEditor` 是同一套实现的图形界面，支持查看 / 编辑 / 新建 / 导入导出 / 批量处理，
+与 CLI 共用 GDCnvQstLib，保证行为一致。
 
 | 启动方式 | 行为 |
 |---|---|
-| `CnvQstEditor.exe`（双击 / 无参数） | 进入图形界面 |
-| `CnvQstEditor.exe gui` | 强制图形界面（防变量残留） |
-| `CnvQstEditor.exe <命令> …` | 进入 CLI（命令集与 CnvQstEditor-cli 完全一致） |
+| `GDCnvQstEditor.exe`（双击 / 无参数） | 进入图形界面 |
+| `GDCnvQstEditor.exe gui` | 强制图形界面（防变量残留） |
+| `GDCnvQstEditor.exe <命令> …` | 进入 CLI（命令集与 GDCnvQstEditor-cli 完全一致） |
 
 GUI 能力：
 - 多文件页签（拖拽 .cnv/.qst 打开，拖目录打开批量面板）
@@ -72,10 +72,10 @@ GUI 能力：
 - 动作 / 条件 / 节点类型属于固定术语（`L.FixedTerms`），不进入 `strings` 字典；中文界面由 `types` 段括注
   （"speech（台词）"），无译文时只显示官方原文；
 - **新增语言 = 复制一份 json 改 code/name/译文**，放回 `lang/` 即在「语言」菜单出现，无需改代码；
-- 切换即时生效并记住（`%APPDATA%\CnvQstEditor\lang.txt`）。
+- 切换即时生效并记住（`%APPDATA%\GDCnvQstEditor\lang.txt`）。
 
 **界面（v1.1 重做）**：扁平化主题（统一字体/配色/表格与页签样式，`Theme.cs`），主工具栏 + 状态栏 +
-键盘快捷键（Ctrl+O/S/N/E/L/B、F5 校验、Ctrl+W 关页签；Alt+字母 展开对应菜单）。`CnvQstEditor.exe --smoke` 可做无头冒烟回归。
+键盘快捷键（Ctrl+O/S/N/E/L/B、F5 校验、Ctrl+W 关页签；Alt+字母 展开对应菜单）。`GDCnvQstEditor.exe --smoke` 可做无头冒烟回归。
 
 ## 打包（双单文件 EXE）
 
@@ -85,21 +85,21 @@ GUI 能力：
 
 产出两个**框架依赖单文件**（配置 B / lite，dist 中只有 EXE，无 DLL/PDB）：
 
-- `dist/CnvQstEditor.exe` — 图形界面（无参数或 `gui`）；带参数时复用同一套 CLI。
+- `dist/GDCnvQstEditor.exe` — 图形界面（无参数或 `gui`）；带参数时复用同一套 CLI。
   需目标机装有 [.NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/8.0)。
-- `dist/CnvQstEditor-cli.exe` — 纯 CLI，无 `AttachConsole` 接管问题，适合脚本/CI。
+- `dist/GDCnvQstEditor-cli.exe` — 纯 CLI，无 `AttachConsole` 接管问题，适合脚本/CI。
   需目标机装有 .NET 8 Runtime x64（Desktop Runtime 已包含）。
 
 已知事项：
 - GUI EXE 在 PowerShell/cmd 中直接以 `& exe verify …` 调用时输出可能被 `AttachConsole` 接管，回显异常；
   用 `Start-Process -RedirectStandardOutput` 或 `cmd /c` 即可获得规整输出（退出码约定 0=成功 / 1=存在失败项 / 2=用法错误）。
-  纯 CLI 的 `CnvQstEditor-cli.exe` 无此问题。
+  纯 CLI 的 `GDCnvQstEditor-cli.exe` 无此问题。
 - 单文件 EXE 偶发杀软误报，请加白名单。
 
-## 用法（CnvQstEditor-cli）
+## 用法（GDCnvQstEditor-cli）
 
 ```bash
-T=CnvQstEditor-cli/bin/Debug/net8.0/CnvQstEditor-cli.dll   # 发布版直接用 dist/CnvQstEditor-cli.exe
+T=GDCnvQstEditor-cli/bin/Debug/net8.0/GDCnvQstEditor-cli.dll   # 发布版直接用 dist/GDCnvQstEditor-cli.exe
 
 dotnet $T help                                      # 命令说明；help convert / help dev 看详情
 dotnet $T view        <文件.cnv|qst>                 # 查看：树形文本内容（原 dump）
@@ -168,19 +168,19 @@ dotnet $T dev anchors|census|vocab|probe|selftest|hash|legacytxt|txt-diff …
 ## 工程结构
 
 ```
-CnvQstLib/     解析+序列化库（net8.0，GUI/CLI 共用）：BinaryReaderEx/WriterEx、CnvFile、QstFile、
+GDCnvQstLib/     解析+序列化库（net8.0，GUI/CLI 共用）：BinaryReaderEx/WriterEx、CnvFile、QstFile、
                Scriptable（26 条件+27 动作 body 表+参数字段名）、Names（类型命名三层：引擎证实 /
                金样锚定 / 官方选项推断，推断带"（推断）"后缀）、EditorVocab（官方编辑器选项词表
                + type 对照，`vocab` 命令输出）、
                Dump、TextExport（官方 TXT + v0.9 基线）、JsonIO（全保真双向）、
                Cli/CliApp（CLI 命令）、Cli/Census（语料普查）、Cli/BatchOps（批量服务）、Creation（新建工厂）
-CnvQstEditor-cli/    CLI 薄壳（Main → CliApp.Run），发布为 dist/CnvQstEditor-cli.exe
-CnvQstEditor/  Avalonia GUI（net8.0-windows）：Program（双模式入口）、MainWindow、DocSession、
+GDCnvQstEditor-cli/    CLI 薄壳（Main → CliApp.Run），发布为 dist/GDCnvQstEditor-cli.exe
+GDCnvQstEditor/  Avalonia GUI（net8.0-windows）：Program（双模式入口）、MainWindow、DocSession、
                Editors（条件/动作/节点/QST 编辑器）、Dialogs（新建向导/JSON）、
                BatchWindow（批量面板）、I18n（中英界面切换）
 README.md      使用说明与打包（双单文件 EXE）
 cnvqst-wiki-dev.md  开发侧 wiki：构建/发布、CLI 规范、GUI 约定、决策记录
-publish.ps1    一键打包 dist/CnvQstEditor.exe 与 dist/CnvQstEditor-cli.exe（配置 B / lite 单文件）
+publish.ps1    一键打包 dist/GDCnvQstEditor.exe 与 dist/GDCnvQstEditor-cli.exe（配置 B / lite 单文件）
 参考资料/gd-utility/   上游文档与 C++ 参考解析器（MIT，commit 1d468f5）
 cnv示例/ qst示例/      199+248 个真实游戏样本与编辑器 UI 手工对照
 EditorProbe/           官方编辑器程序集只读探针（types/fields/il/xref/res/ex）：解枚举常量、字段表、方法 IL
@@ -191,11 +191,11 @@ BinAnalyzer/           早期分析工具（留档）
 ## 验证结果
 
 - 格式基线：`cnv示例` 199/199、`qst示例` 248/248（解析 + 铺满 + locOffset + round-trip 逐字节一致）
-- CLI 回归：`CnvQstEditor-cli` 与 `CnvQstEditor.exe`（双模式 CLI）在 447 样本上均 199/248 全过
+- CLI 回归：`GDCnvQstEditor-cli` 与 `GDCnvQstEditor.exe`（双模式 CLI）在 447 样本上均 199/248 全过
 - GUI：447 样本经 `DocSession.Open`（GUI 实际打开路径）+ **平铺表格编辑器绑定**（CNV 199 / QST 248 行数全部对齐承载对象，0 崩溃）无异常；GUI 进程可正常启动
 - JSON 生成：`JSON示例/*.json` 四个示例经 `convert` 生成，三检查全部通过
 - JSON 往返：`dist/` 中全部 QST/CNV 样本 → JSON → 二进制，逐字节一致
-- 构建：`dotnet build qstcnv.sln -c Release` 0 警告 0 错误
+- 构建：`dotnet build GDCnvQstEditor.sln -c Release` 0 警告 0 错误
 
 ## 已解 / 未解（详见 CnvQstFormatDecoded.md 第七、八章）
 
@@ -204,7 +204,7 @@ BinAnalyzer/           早期分析工具（留档）
 - **比较符**：条件记录里被 gd-utility 称作 uid 的那个字就是它——`<`=0 `<=`=1 `=`=2 `>=`=3 `>`=4 `!=`=5
   （官方 `ScriptableCondition+Comparison` 枚举 + 编辑器实测，两路互证）；那个字前面的字节是 **body 版本**；
 - **step flags**：低 3 位 = OnceOnly(1) / AlwaysShow(2) / Unimportant(4)，正是编辑器的三个开关；
-- **对话 id** = 根节点文本（NPC 名）的 FNV1 哈希（`CnvQstEditor-cli hash <文本>` 可直接算）；
+- **对话 id** = 根节点文本（NPC 名）的 FNV1 哈希（`GDCnvQstEditor-cli hash <文本>` 可直接算）；
 - **节点类型**补齐 5=Generic、8=Random；linkId = 目标节点的展平序号（官方 `EstablishIds` 就是按下标编号）；
 - **QST 本地化串表公式**：`S = 2 + 2T + O + I + E`，槽位顺序为
   每 task `[标题, 描述, OnAccept 事件…, Objectives…, OnComplete 事件…]`（248 个样本零误差 +
@@ -216,5 +216,5 @@ BinAnalyzer/           早期分析工具（留档）
 - 条件里"任务引用标识"要哈希的字符串（编辑器自身也显示 `?`）；
 - bodyVersion 除 0/1 之外是否还有别的版本。
 
-`CnvQstEditor-cli vocab` 打印逐项证据等级；`probe` 造探测文件；`EditorProbe` 只读反汇编官方编辑器
+`GDCnvQstEditor-cli vocab` 打印逐项证据等级；`probe` 造探测文件；`EditorProbe` 只读反汇编官方编辑器
 （`types` / `fields` / `il` / `xref` / `res` / `ex`）。

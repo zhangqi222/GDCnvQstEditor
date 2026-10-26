@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Description>Grim Dawn .cnv (conversation) / .qst (quest) binary parser + serializer. Format per Game.dll loader, see 参考资料/gd-utility.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CLI 英文词典（CliL 按资源名结尾 cli_en.json 匹配加载） -->
+    <EmbeddedResource Include="Cli\cli_en.json" />
+    <!-- sample 命令释放的内置全量示例（源文件在项目目录外，用 LogicalName 固定资源名） -->
+    <EmbeddedResource Include="..\JSON示例\cnv_full.json" LogicalName="GDCnvQstLib.Cli.sample_cnv_full.json" />
+    <EmbeddedResource Include="..\JSON示例\qst_full.json" LogicalName="GDCnvQstLib.Cli.sample_qst_full.json" />
+  </ItemGroup>
+
+</Project>

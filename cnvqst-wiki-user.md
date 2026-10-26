@@ -1,4 +1,4 @@
-# CnvQstEditor 用户功能总览
+# GDCnvQstEditor 用户功能总览
 
 > 面向界面重构的功能清单：只列**用户可感知**的功能，不含实现细节。
 > 每项标注：做什么、当前入口、输入/输出与约束——重新规划界面时以此为准。
@@ -11,8 +11,8 @@
 
 | 形态 | 入口 | 适用 |
 |---|---|---|
-| **图形界面** | 无参数启动 CnvQstEditor.exe | 日常编辑 |
-| **命令行** | CnvQstEditor <命令> … | 脚本化、批量、自动化流水线 |
+| **图形界面** | 无参数启动 GDCnvQstEditor.exe | 日常编辑 |
+| **命令行** | GDCnvQstEditor <命令> … | 脚本化、批量、自动化流水线 |
 
 两个格式：**CNV**（对话树，版本 v6）与 **QST2**（任务，版本 v9）。
 
@@ -148,7 +148,7 @@
 ### 2.12 文档视图（四视图，全局生效）
 
 工具条右侧 + "视图"菜单（Ctrl+1…Ctrl+4）切换当前文档的显示方式；**一次切换对所有已开页签生效**，
-并写入配置 `%USERPROFILE%\.CnvQstEditor\CnvQstEditor.json` 的 `ViewMode`，下次启动沿用。
+并写入配置 `%USERPROFILE%\.GDCnvQstEditor\GDCnvQstEditor.json` 的 `ViewMode`，下次启动沿用。
 
 | 视图 | 快捷键 | 可编辑 | 说明 |
 |---|---|---|---|

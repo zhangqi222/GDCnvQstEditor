@@ -5,7 +5,7 @@
 > （CNV 199 + QST 248）的验证结果，取代 `CnvQstFormatSpec.md` 中与之冲突的早期推断
 > （勘误对照见 §6）。参考解析器原文存于 `参考资料/gd-utility/`（commit `1d468f5`）。
 >
-> 实现库：`CnvQstLib`；CLI：`CnvQstEditor-cli`；GUI：`CnvQstEditor`（二者共用 `CnvQstLib`）。
+> 实现库：`GDCnvQstLib`；CLI：`GDCnvQstEditor-cli`；GUI：`GDCnvQstEditor`（二者共用 `GDCnvQstLib`）。
 > 验证（2026-10-22）：**cnv示例 199/199、qst示例 248/248** —— 记录恰好铺满文件、
 > 走序落在头部声明的本地化偏移、parse→write 逐字节一致（含全部 CNV v5 与多任务 QST）。
 > TXT 管线另与旧工具 v0.9 做了逐字节对照：CNV 199/199 一致；QST 247/248 一致，
@@ -66,7 +66,7 @@ u32 byteLength; byte[byteLength]
   "Alex" → `0x93EF8495`、`gdareab/npc_alicia.cnv` "Alicia" → `0x7659527A` 同样吻合。
 - 该哈希**只用于对话 id**。条件/动作参数里的“任务引用”不是它的左移结果，而是目标任务
   记录中的持久化 `uid`（详见 §3.2）。
-- CLI：`CnvQstEditor-cli hash <文本>` 可直接算出来（仅 FNV1，用于核对对话 id）。
+- CLI：`GDCnvQstEditor-cli hash <文本>` 可直接算出来（仅 FNV1，用于核对对话 id）。
 
 ### 2.2 节点（Step，深度前序递归）
 
@@ -544,7 +544,7 @@ QST 样本（含 `20260928newtask.qst`）未计入本表；类型集合与上表
 - 一行 = 本地化字符串表一条；CNV 首行 = 说话人名；空槽位 → 空行（位置不可增删——游戏按行号回填）。
 - UTF-8 无 BOM、CRLF、文件末尾再补一个 CRLF；行中保留 `{^n}`；行尾 `{^n}`/`{^n` 剥除；
   串内换行归一为 `{^n}`；行首尾 Trim。
-- 本项目 `CnvQstEditor-cli txt` 为**按格式精准提取**，输出与 GrimDawnCnvQstToTXT v0.9
+- 本项目 `GDCnvQstEditor-cli txt` 为**按格式精准提取**，输出与 GrimDawnCnvQstToTXT v0.9
   （"首个 enUS+12 截断 + 逐 null 强插换行"的强读算法，移植版见 `legacytxt` 命令）对照：
   CNV **199/199 一致**；QST **247/248 一致**。唯一差异是新增的 `20260928newtask.qst`：
   旧工具漏掉尾部空槽并写成 `<无>`，新工具保留空行——这是旧算法的缺陷，不是回归。
@@ -594,13 +594,13 @@ task/objective 的持久化 uid/flags 与版本门控尾字节（§3.2）、任�
 
 ### 8.1 语料统计（`census`）——先问"语料怎么说"
 
-`CnvQstEditor-cli census <目录>` 输出条件/动作的类型分布、bodyVersion/comparison 取值分布、body 字面值、
+`GDCnvQstEditor-cli census <目录>` 输出条件/动作的类型分布、bodyVersion/comparison 取值分布、body 字面值、
 同列表共现、logic 字、step flags 分布、**QST 槽位配平**等。多数"字段语义"问题在语料层面
 就能收敛（例：没有比较语义的条件 comparison 恒为 2；QST 串表条数残差 `0×247`）。
 
 ### 8.2 探测文件 + 官方编辑器辨认（`dev probe` / `convert`）——让工具自己报名字
 
-`CnvQstEditor-cli dev probe <cond|act|uid|sub|flags|qst|all>` 造最小合法文件，交给官方编辑器打开：
+`GDCnvQstEditor-cli dev probe <cond|act|uid|sub|flags|qst|all>` 造最小合法文件，交给官方编辑器打开：
 
 - `dev probe cond` / `dev probe act`：一个文件 N 个节点，每个节点挂一个类型 → 编辑器直接显示官方名
   （**30 个条件类型 + 27 个可用动作槽一次性辨认完毕**，包括本地语料里样本为 0 的）；

@@ -3,9 +3,9 @@
 本文介绍如何**手写 JSON 生成 Grim Dawn `.qst` 任务文件**。
 
 - 工具：
-  - `CnvQstEditor.exe`：图形界面；带参数运行时执行同样的命令行命令。
-  - `CnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
-  - 两个程序的命令完全一致，下文统一用 `CnvQstEditor-cli.exe` 示例。
+  - `GDCnvQstEditor.exe`：图形界面；带参数运行时执行同样的命令行命令。
+  - `GDCnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
+  - 两个程序的命令完全一致，下文统一用 `GDCnvQstEditor-cli.exe` 示例。
 - 配套示例：
   - [`JSON示例/qst_full.json`](JSON示例/qst_full.json) —— **单个文件覆盖全部内容**：顶层字段、task / incentive / objective / event 全部字段、30 种条件、27 个可用动作、`languages` 语言块、持久化 uid，每个字段都带就地说明。
 - 对话文件的写法见 [`JSON转CNV.md`](JSON转CNV.md)；两种文件共用同一套条件/动作系统。
@@ -70,7 +70,7 @@
 ### 1.2 生成
 
 ```bash
-CnvQstEditor-cli.exe convert hello.qst.json -o hello.qst
+GDCnvQstEditor-cli.exe convert hello.qst.json -o hello.qst
 ```
 
 输出：
@@ -85,11 +85,11 @@ CnvQstEditor-cli.exe convert hello.qst.json -o hello.qst
 ### 1.3 检查生成物
 
 ```bash
-CnvQstEditor-cli.exe view hello.qst
-CnvQstEditor-cli.exe verify hello.qst
+GDCnvQstEditor-cli.exe view hello.qst
+GDCnvQstEditor-cli.exe verify hello.qst
 ```
 
-也可以直接用 `CnvQstEditor.exe` 打开，或用官方 QuestEditor 核对。
+也可以直接用 `GDCnvQstEditor.exe` 打开，或用官方 QuestEditor 核对。
 
 ---
 
@@ -993,7 +993,7 @@ S = 2 + 2*2 + 3 + 1 + 1 = 11
 完整示例（覆盖全部字段、30 种条件、27 个动作与 `languages`）见 [`JSON示例/qst_full.json`](JSON示例/qst_full.json)，可直接运行：
 
 ```bash
-CnvQstEditor-cli.exe convert JSON示例/qst_full.json -o demo.qst
+GDCnvQstEditor-cli.exe convert JSON示例/qst_full.json -o demo.qst
 ```
 
 该文件顶部有字段总览与槽位公式，正文每个字段都有就地注释；`languages` 的每一行都标注了对应槽位。
@@ -1002,16 +1002,16 @@ CnvQstEditor-cli.exe convert JSON示例/qst_full.json -o demo.qst
 
 ## 15. CLI 命令参考
 
-`CnvQstEditor.exe` 与 `CnvQstEditor-cli.exe` 命令相同；下文用 `CnvQstEditor-cli.exe`。查看完整用法：
+`GDCnvQstEditor.exe` 与 `GDCnvQstEditor-cli.exe` 命令相同；下文用 `GDCnvQstEditor-cli.exe`。查看完整用法：
 
 ```bash
-CnvQstEditor-cli.exe help
+GDCnvQstEditor-cli.exe help
 ```
 
 ### 15.1 生成
 
 ```bash
-CnvQstEditor-cli.exe convert <spec.json> [-o out.qst]
+GDCnvQstEditor-cli.exe convert <spec.json> [-o out.qst]
 ```
 
 - `make` 是 `convert` 的兼容别名，旧脚本仍可用。
@@ -1023,21 +1023,21 @@ CnvQstEditor-cli.exe convert <spec.json> [-o out.qst]
 ### 15.2 模板
 
 ```bash
-CnvQstEditor-cli.exe sample qst                    # 释放内置 qst_full.json 到当前目录
-CnvQstEditor-cli.exe sample qst -o D:\mydir        # 释放到指定目录
+GDCnvQstEditor-cli.exe sample qst                    # 释放内置 qst_full.json 到当前目录
+GDCnvQstEditor-cli.exe sample qst -o D:\mydir        # 释放到指定目录
 ```
 
 ### 15.3 查看与验证
 
 ```bash
-CnvQstEditor-cli.exe view   <file.qst>       # 编辑器风格树形文本（含文本槽公式）
-CnvQstEditor-cli.exe verify <file或目录>      # 检查文件结构
+GDCnvQstEditor-cli.exe view   <file.qst>       # 编辑器风格树形文本（含文本槽公式）
+GDCnvQstEditor-cli.exe verify <file或目录>      # 检查文件结构
 ```
 
 ### 15.4 GUI 同名命令
 
 ```bash
-CnvQstEditor.exe convert hello.qst.json -o hello.qst
+GDCnvQstEditor.exe convert hello.qst.json -o hello.qst
 ```
 
 无参数启动进入图形界面。
@@ -1078,7 +1078,7 @@ CnvQstEditor.exe convert hello.qst.json -o hello.qst
 1. **槽数由公式决定**，不能手工指定槽号。
 2. **incentive/event 各占一个空槽**，不能塞文本。
 3. **不要手改生成后的文本表长度**；需要改文本时直接改 JSON 再重新生成。
-4. 要**修改现有文件**，建议直接用 `CnvQstEditor.exe` 打开；手写 JSON 适合从零新建。
+4. 要**修改现有文件**，建议直接用 `GDCnvQstEditor.exe` 打开；手写 JSON 适合从零新建。
 
 ### 17.3 uid
 

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>GDCnvQstEditor-cli</AssemblyName>
+    <Product>GDCnvQstEditor-cli</Product>
+    <Description>Grim Dawn .cnv/.qst 命令行工具：查看、导出、转换、校验与生成</Description>
+    <Version>2.0.22</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GDCnvQstLib\GDCnvQstLib.csproj" />
+  </ItemGroup>
+
+</Project>

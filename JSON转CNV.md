@@ -3,9 +3,9 @@
 本文介绍如何**手写 JSON 生成 Grim Dawn `.cnv` 对话文件**。
 
 - 工具：
-  - `CnvQstEditor.exe`：图形界面；带参数运行时执行同样的命令行命令。
-  - `CnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
-  - 两个程序的命令完全一致，下文统一用 `CnvQstEditor-cli.exe` 示例。
+  - `GDCnvQstEditor.exe`：图形界面；带参数运行时执行同样的命令行命令。
+  - `GDCnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
+  - 两个程序的命令完全一致，下文统一用 `GDCnvQstEditor-cli.exe` 示例。
 - 配套示例：
   - [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json) —— **单个文件覆盖全部内容**：顶层字段、节点字段、全部节点类型、30 种条件、27 个可用动作、`languages` 语言块、配音、flags、跳转，每个字段都带就地说明。
 - QST 任务文件的写法见 [`JSON转QST.md`](JSON转QST.md)；两种文件共用同一套条件/动作系统。
@@ -60,7 +60,7 @@
 ### 1.2 生成
 
 ```bash
-CnvQstEditor-cli.exe convert hello.json -o hello.cnv
+GDCnvQstEditor-cli.exe convert hello.json -o hello.cnv
 ```
 
 输出：
@@ -75,11 +75,11 @@ CnvQstEditor-cli.exe convert hello.json -o hello.cnv
 ### 1.3 检查生成物
 
 ```bash
-CnvQstEditor-cli.exe view hello.cnv
-CnvQstEditor-cli.exe verify hello.cnv
+GDCnvQstEditor-cli.exe view hello.cnv
+GDCnvQstEditor-cli.exe verify hello.cnv
 ```
 
-也可以直接用 `CnvQstEditor.exe` 打开 `hello.cnv`，或用官方 ConversationEditor 核对。
+也可以直接用 `GDCnvQstEditor.exe` 打开 `hello.cnv`，或用官方 ConversationEditor 核对。
 
 ---
 
@@ -841,7 +841,7 @@ CNV：
 完整示例（覆盖全部字段、全部节点类型、30 种条件、27 个动作与 `languages`）见 [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json)，可直接运行：
 
 ```bash
-CnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o demo.cnv
+GDCnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o demo.cnv
 ```
 
 该文件顶部有字段总览，正文每个字段都有就地注释；`languages` 的每一行都标注了对应节点。
@@ -850,16 +850,16 @@ CnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o demo.cnv
 
 ## 13. CLI 命令参考
 
-`CnvQstEditor.exe` 与 `CnvQstEditor-cli.exe` 命令相同；下文用 `CnvQstEditor-cli.exe`。查看完整用法：
+`GDCnvQstEditor.exe` 与 `GDCnvQstEditor-cli.exe` 命令相同；下文用 `GDCnvQstEditor-cli.exe`。查看完整用法：
 
 ```bash
-CnvQstEditor-cli.exe help
+GDCnvQstEditor-cli.exe help
 ```
 
 ### 13.1 生成
 
 ```bash
-CnvQstEditor-cli.exe convert <spec.json> [-o out.cnv]
+GDCnvQstEditor-cli.exe convert <spec.json> [-o out.cnv]
 ```
 
 - `make` 是 `convert` 的兼容别名，旧脚本仍可用。
@@ -871,8 +871,8 @@ CnvQstEditor-cli.exe convert <spec.json> [-o out.cnv]
 ### 13.2 模板
 
 ```bash
-CnvQstEditor-cli.exe sample cnv                    # 释放内置 cnv_full.json 到当前目录
-CnvQstEditor-cli.exe sample cnv -o D:\mydir        # 释放到指定目录
+GDCnvQstEditor-cli.exe sample cnv                    # 释放内置 cnv_full.json 到当前目录
+GDCnvQstEditor-cli.exe sample cnv -o D:\mydir        # 释放到指定目录
 ```
 
 `sample` 释放的是内置全量示例（cnv_full.json / qst_full.json，含逐字段描述），可直接作为 convert 输入或删改起点。
@@ -880,14 +880,14 @@ CnvQstEditor-cli.exe sample cnv -o D:\mydir        # 释放到指定目录
 ### 13.3 查看与验证
 
 ```bash
-CnvQstEditor-cli.exe view   <file.cnv>       # 编辑器风格树形文本
-CnvQstEditor-cli.exe verify <file或目录>      # 检查文件结构
+GDCnvQstEditor-cli.exe view   <file.cnv>       # 编辑器风格树形文本
+GDCnvQstEditor-cli.exe verify <file或目录>      # 检查文件结构
 ```
 
 ### 13.4 GUI 同名命令
 
 ```bash
-CnvQstEditor.exe convert hello.json -o hello.cnv
+GDCnvQstEditor.exe convert hello.json -o hello.cnv
 ```
 
 无参数启动则进入图形界面。
@@ -943,7 +943,7 @@ CnvQstEditor.exe convert hello.json -o hello.cnv
 1. 工具**不检查** `.qst`、`.dbr`、音频文件是否存在。
 2. `Task` / `Objective` 引用必须与 QST 文件中的持久化 uid 完全一致；随机 uid 无法预先引用。
 3. 路径原样写入，大小写、斜杠方向、扩展名都由你负责。
-4. 要**修改现有文件**，建议直接用 `CnvQstEditor.exe` 打开；手写 JSON 适合从零新建。
+4. 要**修改现有文件**，建议直接用 `GDCnvQstEditor.exe` 打开；手写 JSON 适合从零新建。
 
 ---
 
