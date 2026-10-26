@@ -2,8 +2,8 @@
 
 > 本文整合 [R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility)（MIT）反编译
 > Game.dll 加载器得出的格式结论、官方编辑器的反汇编/枚举证据，以及本项目 447 个本地样本
-> （CNV 199 + QST 248）的验证结果，取代 `CnvQstFormatSpec.md` 中与之冲突的早期推断
-> （勘误对照见 §6）。参考解析器原文存于 `参考资料/gd-utility/`（commit `1d468f5`）。
+> （CNV 199 + QST 248）的验证结果，取代早期格式日志 `CnvQstFormatSpec.md`（本地留档，不随仓库发布）
+> 中与之冲突的推断（勘误对照见 §6）。参考解析器见上游仓库（commit `1d468f5`）。
 >
 > 实现库：`GDCnvQstLib`；CLI：`GDCnvQstEditor-cli`；GUI：`GDCnvQstEditor`（二者共用 `GDCnvQstLib`）。
 > 验证（2026-10-22）：**cnv示例 199/199、qst示例 248/248** —— 记录恰好铺满文件、
@@ -556,7 +556,7 @@ QST 样本（含 `20260928newtask.qst`）未计入本表；类型集合与上表
 
 ---
 
-## 六、对 CnvQstFormatSpec.md 的勘误对照
+## 六、对早期格式日志（CnvQstFormatSpec.md，本地留档）的勘误对照
 
 | 旧结论 | 权威修正 |
 |---|---|

@@ -8,6 +8,7 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 
 namespace GDCnvQstEditor;
 
@@ -57,7 +58,7 @@ internal static class UiEditors
     /// <summary>
     /// 右键菜单：复制 / 全选。复制走 Win32 同步剪贴板（ClipboardHelper），与表格复制同一套实现；
     /// Ctrl+C 同样拦到 Win32 同步剪贴板——AvaloniaEdit 内建 Copy 用 IClipboard.SetTextAsync，
-    /// 该异步路径在本项目实测会静默失效（粘贴出旧内容），故在 TextArea.KeyDown 先行拦截。
+    /// 该异步路径在本项目实测会静默失效（粘贴出旧内容）。
     /// </summary>
     private static void AttachCopyMenu(TextEditor editor)
     {
@@ -67,14 +68,14 @@ internal static class UiEditors
         all.Click += (_, _) => editor.SelectAll();
         editor.TextArea.ContextMenu = new ContextMenu { Items = { copy, all } };
 
-        // 订阅先于 AvaloniaEdit 内部处理器（Build 时 TextArea 尚未挂模板），Handled=true 可阻断内建异步复制
-        editor.TextArea.KeyDown += (_, e) =>
+        // 必须用 Tunnel：Ctrl+C 的 KeyBinding 在 InputElement.OnKeyDown（TextArea 自身、冒泡起点）
+        // 执行并把事件标记为已处理，挂在 KeyDown 上的实例处理器永远收不到。
+        editor.TextArea.AddHandler(InputElement.KeyDownEvent, (_, e) =>
         {
-            if (e.Key != Key.C || e.KeyModifiers != KeyModifiers.Control) return;
-            if (editor.SelectedText.Length == 0) return;
-            ClipboardHelper.SetText(editor.SelectedText);
-            e.Handled = true;
-        };
+            if (e.Key != Key.C || !e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            if (editor.SelectedText.Length > 0) ClipboardHelper.SetText(editor.SelectedText);
+            e.Handled = true;   // 无论有无选区都阻断内建异步复制（无选区时内建会复制整行，同样静默失败）
+        }, RoutingStrategies.Tunnel);
     }
 }
 
