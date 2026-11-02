@@ -302,6 +302,7 @@ internal static class L
     public static string DumpBtn => T("dump");
 
     public static string AboutTitle => T("About");
+    public static string AboutProject => T("Project: https://github.com/zhangqi222/GDCnvQstEditor");
     public static string AboutBody => T(
         "GDCnvQstEditor — Grim Dawn .cnv / .qst editor\n\n" +
         "View, edit, create, import/export and batch-process; the format is based on reverse-engineering the Game.dll loader and 447 verified samples.\n\n" +

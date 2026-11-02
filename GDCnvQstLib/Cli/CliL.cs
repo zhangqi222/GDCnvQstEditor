@@ -108,6 +108,7 @@ internal static class CliL
     {
         _lang = code == "en" ? 1 : 0;
         _en = _lang == 1 ? LoadEnDict() : null;
+        Names.EnglishLabels = _lang == 1;
     }
 
     /// <summary>读 %APPDATA%\GDCnvQstEditor\lang.txt（GUI 共用；新位置不存在时回退旧位置）。</summary>
@@ -167,7 +168,7 @@ internal static class CliL
           verify    <file|dir>                     Validate: structure / languages alignment / byte-identical rewrite (run this first)
                                                    (a directory also checks .cnv, .qst and .json)
           txt       <file|dir> [-o dir] [--flat]   Export official localization TXT (for translation/localization)
-          sample    cnv|qst [-o output]            Extract the built-in full samples (cnv_full.json / qst_full.json, with hints, ready for convert)
+          sample    cnv|qst [-o output]            Extract the built-in full samples (cnv_full_en.json / qst_full_en.json with English comments when --language en; cnv_full.json / qst_full.json otherwise)
           help      [command]                      Show help; "help dev" lists developer tools
           dev       <subcommand>                   Development/analysis tools (most users can ignore)
         Global option: --language cn|en            Output language: cn Chinese (default), en English; an explicit value is written to %APPDATA%\GDCnvQstEditor\lang.txt and shared with the GUI
@@ -180,7 +181,7 @@ internal static class CliL
           Input .cnv / .qst: export the full-fidelity JSON model; edit it, then convert back.
           Input .json     : a .cnv or .qst is generated automatically based on "format" (hand-written spec)
                             or "kind" (full-fidelity model) declared in the JSON. Hand-written JSON must follow
-                            the spec — see JSON转CNV.md / JSON转QST.md; templates: the sample command.
+                            the spec — see JSON_wiki/JSON_to_CNV_EN.md / JSON_wiki/JSON_to_QST_EN.md; templates: the sample command.
           Omitting -o   : output is written next to the input file with the same name and target extension.
           Direction is decided by the input extension; the output format is declared inside the JSON — no --format needed.
           JSON is validated before conversion: every language block must align with nodes/text slots;

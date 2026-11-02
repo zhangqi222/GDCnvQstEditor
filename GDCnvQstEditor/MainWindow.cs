@@ -415,6 +415,7 @@ internal sealed class MainWindow : Window
     private void OnLanguageChanged()
     {
         Title = L.WindowTitle;
+        GDCnvQstLib.Names.EnglishLabels = L.Code != L.BaselineCode;
         foreach (TabItem page in _tabs.Items)
         {
             var view = (DocView)page.Content!;
@@ -427,7 +428,7 @@ internal sealed class MainWindow : Window
 
     private void ShowAbout() =>
         Gui.Info(this, L.AboutBody + "\n\n" + L.F("Version: {0}", AppInfo.Version) + "\n\n" +
-            L.F("Author: {0}", "laozhangggg(老张allif)") + "\n\n" + L.AboutLicense, L.AboutTitle);
+            L.F("Author: {0}", "laozhangggg(老张allif)") + "\n\n" + L.AboutProject + "\n\n" + L.AboutLicense, L.AboutTitle);
 
     private void UpdateStatus()
     {

@@ -5,27 +5,30 @@ namespace GDCnvQstLib;
 /// <summary>编辑器风格的树形文本输出（dump 命令），附 tiling/locOffset 两道完整性检查结果。</summary>
 public static class Dump
 {
-    public static string DumpCnv(CnvFile c, string fileName)
+    /// <summary>dump 内的标签语言：false=中文（基准），true=英文（非中文界面）。</summary>
+    private static string T(bool english, string zh, string en) => english ? en : zh;
+
+    public static string DumpCnv(CnvFile c, string fileName, bool english = false)
     {
         var sb = new StringBuilder();
         if (!c.Valid)
         {
-            sb.AppendLine($"═══ {fileName} ── 解析失败：{c.Error}");
+            sb.AppendLine($"═══ {fileName} ── {T(english, "解析失败：", "parse failed: ")}{c.Error}");
             return sb.ToString();
         }
 
         int records = c.Steps.Sum(s => s.Conditions.Records.Count + s.Actions.Records.Count);
-        sb.AppendLine($"═══ {fileName} ── CNV v{c.Version} ── id 0x{c.Id:X8} ── {c.Steps.Count} steps ── {records} 条件/动作 ── {c.Size} B");
+        sb.AppendLine($"═══ {fileName} ── CNV v{c.Version} ── id 0x{c.Id:X8} ── {c.Steps.Count} steps ── {records} {T(english, "条件/动作", "conditions/actions")} ── {c.Size} B");
         foreach (var lang in c.Languages)
-            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} 条文本  @0x{lang.Offset:X}");
-        sb.AppendLine($"{(c.Tiled ? "✓" : "✗")} 记录恰好铺满文件   {(c.LocOffsetMatches ? "✓" : "✗")} 节点走序落在声明的本地化偏移 (0x{c.LocalizationOffset:X})");
+            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} {T(english, "条文本", "texts")}  @0x{lang.Offset:X}");
+        sb.AppendLine($"{(c.Tiled ? "✓" : "✗")} {T(english, "记录恰好铺满文件", "records tile the file exactly")}   {(c.LocOffsetMatches ? "✓" : "✗")} {T(english, "节点走序落在声明的本地化偏移", "node walk lands at the declared localization offset")} (0x{c.LocalizationOffset:X})");
         sb.AppendLine();
 
-        Walk(sb, c.Root, "", true, c);
+        Walk(sb, c.Root, "", true, c, english);
         return sb.ToString();
     }
 
-    private static void Walk(StringBuilder sb, CnvStep s, string prefix, bool last, CnvFile c)
+    private static void Walk(StringBuilder sb, CnvStep s, string prefix, bool last, CnvFile c, bool english)
     {
         string branch = s.Depth > 0 ? prefix + (last ? "└─ " : "├─ ") : "";
         string pad = prefix + (s.Depth > 0 ? (last ? "   " : "│  ") : "");
@@ -38,7 +41,7 @@ public static class Dump
         if (text.Length > 0) sb.AppendLine($"{pad}    \"{text}\"");
         if (!s.VoPath.IsEmpty) sb.AppendLine($"{pad}    vo: {s.VoPath.Text}");
         if (s.HasLink) sb.AppendLine($"{pad}    -> [{s.LinkId}]");
-        if (s.Unknown != 0) sb.AppendLine($"{pad}    flags = 0x{s.Unknown:X}   <- 仅 speech 步非零，位标志（0x4/0x8/0x10/0x20；编辑器候选 Once Only/Always Show/Unimportant，未经证实）");
+        if (s.Unknown != 0) sb.AppendLine($"{pad}    flags = 0x{s.Unknown:X}   <- {T(english, "仅 speech 步非零，位标志（0x4/0x8/0x10/0x20；编辑器候选 Once Only/Always Show/Unimportant，未经证实）", "non-zero on speech steps only; bit flags (0x4/0x8/0x10/0x20; editor candidates Once Only/Always Show/Unimportant, unverified)")}");
 
         if (s.Conditions.Present)
             WriteList(sb, pad + "    ", "Conditions", s.Conditions);
@@ -46,36 +49,36 @@ public static class Dump
             WriteList(sb, pad + "    ", "Actions", s.Actions);
 
         for (int i = 0; i < s.Children.Count; i++)
-            Walk(sb, s.Children[i], pad, i == s.Children.Count - 1, c);
+            Walk(sb, s.Children[i], pad, i == s.Children.Count - 1, c, english);
     }
 
-    public static string DumpQst(QstFile q, string fileName)
+    public static string DumpQst(QstFile q, string fileName, bool english = false)
     {
         var sb = new StringBuilder();
         if (!q.Valid)
         {
-            sb.AppendLine($"═══ {fileName} ── 解析失败：{q.Error}");
+            sb.AppendLine($"═══ {fileName} ── {T(english, "解析失败：", "parse failed: ")}{q.Error}");
             return sb.ToString();
         }
 
-        sb.AppendLine($"═══ {fileName} ── QST2 v{q.Version} ── uid 0x{q.Id:X8} ── flags {Names.QuestFlagTag(q.Unknown10)} ── {q.Tasks.Count} task ── {q.ObjectiveCount} objective ── {q.RecordCount} 条件/动作 ── {q.Size} B");
+        sb.AppendLine($"═══ {fileName} ── QST2 v{q.Version} ── uid 0x{q.Id:X8} ── flags {Names.QuestFlagTag(q.Unknown10, english)} ── {q.Tasks.Count} task ── {q.ObjectiveCount} objective ── {q.RecordCount} {T(english, "条件/动作", "conditions/actions")} ── {q.Size} B");
         foreach (var lang in q.Languages)
         {
-            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} 条文本  @0x{lang.Offset:X}（公式 2+2T+O+I+E = {q.RequiredTextCount}）");
+            sb.AppendLine($"loc: {lang.Tag.Text}  {lang.Texts.Count} {T(english, "条文本", "texts")}  @0x{lang.Offset:X}{T(english, "（公式 2+2T+O+I+E = " + q.RequiredTextCount + "）", " (formula 2+2T+O+I+E = " + q.RequiredTextCount + ")")}");
             for (int i = 0; i < lang.Texts.Count; i++)
             {
                 if (lang.Texts[i].IsEmpty) continue;
-                sb.AppendLine($"   [{i,2}] {q.DescribeSlot(i),-22} \"{lang.Texts[i].Text}\"");
+                sb.AppendLine($"   [{i,2}] {q.DescribeSlot(i, english),-22} \"{lang.Texts[i].Text}\"");
             }
         }
-        sb.AppendLine($"{(q.Tiled ? "✓" : "✗")} 记录恰好铺满文件   {(q.LocOffsetMatches ? "✓" : "✗")} task 记录落在声明的本地化偏移 (0x{q.LocalizationOffset:X})");
+        sb.AppendLine($"{(q.Tiled ? "✓" : "✗")} {T(english, "记录恰好铺满文件", "records tile the file exactly")}   {(q.LocOffsetMatches ? "✓" : "✗")} {T(english, "task 记录落在声明的本地化偏移", "task records land at the declared localization offset")} (0x{q.LocalizationOffset:X})");
         sb.AppendLine();
 
         foreach (var t in q.Tasks)
         {
             sb.AppendLine($"Task  @0x{t.Offset:X} +{t.Length}   uid=0x{t.UnknownA8:X8} flags={t.UnknownAC}" +
                           $"   isBlocker={(t.Flag8 ? 1 : 0)} dontPropagate={(t.Flag9 ? 1 : 0)}" +
-                          $"   （运行时 uid {t.Uid},{t.Uid2}）");
+                          $"   {T(english, "（运行时 uid ", "(runtime uid ")}{t.Uid},{t.Uid2}{T(english, "）", ")")}");
             WriteEvents(sb, "Incentives", t.Incentives);
             sb.AppendLine($"   Objectives ({t.Objectives.Count})");
             foreach (var o in t.Objectives)

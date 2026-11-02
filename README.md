@@ -89,9 +89,9 @@ GDCnvQstEditor-cli <命令> [参数]
 
 ```bash
 # 批量校验并导出报告
-GDCnvQstEditor-cli.exe verify JSON示例
+GDCnvQstEditor-cli.exe verify JSON_wiki
 # JSON → 二进制，再转回 JSON
-GDCnvQstEditor-cli.exe convert JSON示例/qst_full.json -o qst_full.qst
+GDCnvQstEditor-cli.exe convert JSON_wiki/qst_full.json -o qst_full.qst
 GDCnvQstEditor-cli.exe convert qst_full.qst -o qst_roundtrip.json
 # 导出官方格式本地化文本
 GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
@@ -103,7 +103,7 @@ GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
 ### 由 JSON 生成
 
 `convert` 接受两类 JSON：全保真模型（由二进制导出）与手写 spec（只描述要写什么）。
-手写 spec 支持官方条件 / 动作名，字段表与示例见 [JSON转CNV.md](JSON转CNV.md) / [JSON转QST.md](JSON转QST.md)。
+手写 spec 支持官方条件 / 动作名，字段表与示例见 [JSON_wiki/JSON转CNV.md](JSON_wiki/JSON转CNV.md) / [JSON_wiki/JSON转QST.md](JSON_wiki/JSON转QST.md)。
 
 ```json
 { "format": "cnv", "speaker": "Alex",
@@ -158,7 +158,7 @@ GdAssets/              Grim Dawn 安装目录模型与跨层文件索引
 EditorProbe/           官方编辑器程序集只读探针（格式研究用）
 cnv示例/               官方编辑器字段词表摘录（手工抄录）
 qst示例/               自制最小 QST 示例与字段说明
-JSON示例/              全量 JSON 示例与手写模板
+JSON_wiki/              全量 JSON 示例、中英文手写模板与结构文档
 screenshots/           README 截图（中文 / 英文）
 ```
 
@@ -180,10 +180,12 @@ screenshots/           README 截图（中文 / 英文）
 | 文档 | 内容 |
 |---|---|
 | [CnvQstFormatDecoded.md](CnvQstFormatDecoded.md) | 二进制格式权威文档：结构、字段、条件 / 动作表与证据链 |
-| [JSON转CNV.md](JSON转CNV.md) | 手写 JSON 生成对话：字段表、30 种条件、29 种动作、示例 |
-| [JSON转QST.md](JSON转QST.md) | 手写 JSON 生成任务：task / objective / event 与槽位规则 |
+| [JSON_wiki/JSON转CNV.md](JSON_wiki/JSON转CNV.md) | 手写 JSON 生成对话：字段表、30 种条件、29 种动作、示例 |
+| [JSON_wiki/JSON转QST.md](JSON_wiki/JSON转QST.md) | 手写 JSON 生成任务：task / objective / event 与槽位规则 |
+| [JSON_wiki/JSON_to_CNV_EN.md](JSON_wiki/JSON_to_CNV_EN.md) | 上两份手册的英文版：conversation JSON |
+| [JSON_wiki/JSON_to_QST_EN.md](JSON_wiki/JSON_to_QST_EN.md) | 上两份手册的英文版：quest JSON |
 | [cnvqst-wiki-user.md](cnvqst-wiki-user.md) | 功能总览、条件 / 动作参数全量参考与 CLI 命令清单 |
-| [JSON示例/](JSON示例/) | `cnv_full.json` / `qst_full.json` 全量示例 |
+| [JSON_wiki/](JSON_wiki/) | `cnv_full(_en).json` / `qst_full(_en).json` 全量示例 |
 
 格式结论同时参考了 [R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility)（MIT）对游戏加载器的解析。
 
@@ -218,7 +220,7 @@ screenshots/           README 截图（中文 / 英文）
 - 本项目源代码以 [MIT 许可证](LICENSE) 发布，Copyright © 2026 GDCnvQstEditor contributors。
 - **本项目是非官方第三方工具，与 Grim Dawn 的开发商 / 发行商 Crate Entertainment（玩家常称「板条箱」）没有任何隶属、授权、赞助或背书关系。**
 - Grim Dawn、Crate Entertainment 及相关名称、标识、游戏内容与数据文件归其各自权利人所有。
-- 仓库只包含自制的最小示例（`JSON示例/`、`qst示例/20260928newtask.qst`）与官方编辑器字段词表摘录，
+- 仓库只包含自制的最小示例（`JSON_wiki/`、`qst示例/20260928newtask.qst`）与官方编辑器字段词表摘录，
   不随仓库分发游戏本体或游戏数据文件；截图中的游戏界面与文本仅作功能演示之用。
 - 本项目依赖的第三方组件遵循各自许可证，包括 Avalonia、Semi.Avalonia、AvaloniaEdit（MIT）等；
   `Avalonia.Controls.TreeDataGrid` 固定使用最后的 MIT 版本 11.0.10（12 及以上为商业授权）。

@@ -1,0 +1,498 @@
+// NOTE: AI TRANSLATION -- Comments in this file are AI-translated. If anything is ambiguous, the Chinese version (cnv_full.json) is authoritative.
+// ============================================================================
+// JSON → CNV full example (JSONC: // and /* */ comments allowed, trailing commas allowed)
+//
+// This file covers: every top-level field, every node field, 7 node kinds, 30 conditions,
+// 27 available actions, hints (link/flags/vo), and the languages multi-language block.
+//
+// ----------------------------------------------------------------------------
+// Field overview (each field has a more detailed inline comment below)
+// ----------------------------------------------------------------------------
+// Top level:
+//   format     string  required  "cnv" (produces .cnv) or "qst" (produces .qst, see the other document)
+//   version    u32     optional  >=5; 5=no vo, 6=has vo (recommended)
+//   id         u32     optional  this file's own ID; omitted=computed from speaker via FNV1; writing 0 yields 0
+//   speaker    string  optional  root node text (usually the speaker name), occupies localization slot 0
+//   flags      u32     optional  root node flags (bit0 once only / bit1 always show / bit2 unimportant)
+//   vo         string  optional  root node voice path, written only when version>=6
+//   logic      string  optional  root condition relation "AND"/"OR" (default AND)
+//   cond       array   optional  root condition list
+//   act        array   optional  root action list
+//   languages  array   optional  explicit language block; when present it takes precedence, text/speaker are fallback only
+//   rows       array   required  conversation nodes below the root (depth-first pre-order)
+//
+// languages[] each entry:
+//   tag        string  required  language tag (official 6: enUS/enGB/es/fr/de/it)
+//   texts      array   required  text lines; count must equal "1(root) + number of rows"; missing or extra lines both error
+//
+// rows[] each entry:
+//   level      int     required  >=1; parent node = nearest preceding row with level-1; skipping levels is not allowed
+//   kind       string  required  root/speech/continue/accept/decline/generic/end/link/random(selector), or number 0-8
+//   text       string  optional  node text; an empty string still occupies one localization slot
+//   flags      u32     optional  node flags (same as root node)
+//   vo         string  optional  voice path (same as root node)
+//   link       int     optional  kind=link only: target flattened index; 0=root, 1..rows.Length=row number, omitted=self
+//   logic      string  optional  this node's condition relation "AND"/"OR"
+//   cond       array   optional  this node's condition list
+//   act        array   optional  this node's action list
+//
+// cond[] four forms (may be mixed):
+//   A {"official type name": [positional args…], "cmp": comparison operator}
+//   B {"official type name": {"official field name": value…}, "cmp": comparison operator}
+//   C {"type": type number, "args": [positional args…] or {"field":value…}, "cmp": comparison operator}
+//   D when type and a named type both appear, type wins
+//   comparison operator cmp: 0 "<" / 1 "<=" / 2 "=" (default) / 3 ">=" / 4 ">" / 5 "!="
+//   condition type numbers 0-29; action type numbers 1-28 (0 and 16 unavailable, 27 in total).
+//   Actions have no cmp; actions on the same node run in array order.
+//
+// ----------------------------------------------------------------------------
+// Newline syntax: use the literal {^n} for in-game newlines (the first text line below shows an example).
+// Do not write the JSON-escaped \n — it writes real newline bytes, which the official text convention does not use.
+// ----------------------------------------------------------------------------
+// languages usage notes:
+//   · When an explicit languages block exists, texts take precedence; the speaker/text fields must still be written, but they do not override languages.
+//   · Every text line must align one-to-one with a "node": slot 0 = root (speaker), slot 1 = rows[0], slot 2 = rows[1]…
+//   · link nodes also occupy a line, usually left empty; an empty string is valid text.
+//   · To add more languages, put another { "tag": "enGB", "texts": [ … ] } in languages;
+//     every language block must have the same number of texts lines; you can verify this in the GUI's "Localization" view.
+// ============================================================================
+{
+  "format": "cnv",
+
+  // Version: 5=legacy (no vo field); 6=supports the vo voice path (recommended).
+  "version": 6,
+
+  // Conversation id (u32): omitted computes it automatically as FNV1(speaker); an explicit value (including 0) is used as-is.
+  // For multiple conversations with the same speaker, give each one a distinct explicit id.
+  "id": 0,
+
+  // Root node text (localization slot 0, usually the speaker name).
+  "speaker": "Alex",
+
+  // Root node flags (u32): 0=none; 1=OnceOnly once only; 2=AlwaysShow always show; 4=Unimportant unimportant.
+  // 1/2/4 can be added bitwise; high bits are reserved, write 0 when unknown.
+  "flags": 0,
+
+  // Root node voice path (written only when version>=6): ""=no voice; otherwise a path relative to resources.
+  "vo": "",
+
+  // Root node condition relation: "AND" all satisfied (default, 0); "OR" any satisfied (1).
+  "logic": "AND",
+
+  // Root node condition list: []=no gate for entering the conversation; element forms are described at rows[].cond.
+  "cond": [
+    // HasToken: TokenName (string) + HasToken (bool).
+    { "HasToken": ["MET_ALEX", true] }
+  ],
+
+  // Root node action list: []=nothing runs; the array runs in order.
+  "act": [
+    // GiveToken: TokenName (string).
+    { "GiveToken": ["MET_ALEX"] }
+  ],
+
+  // --------------------------------------------------------------------------
+  // languages: explicit language block. This file demonstrates 1 block (enUS).
+  // Line count = 1(root) + 11(rows) = 12 lines; each comment names the node it maps to.
+  // --------------------------------------------------------------------------
+  "languages": [
+    {
+      "tag": "enUS",
+      "texts": [
+        "Alex",                        // slot 0  = root (speaker)
+        "你终于来了。{^n}路上还顺利吗？", // slot 1  = rows[0] speech
+        "继续",                        // slot 2  = rows[1] continue
+        "我接受。",                    // slot 3  = rows[2] accept
+        "以后再说。",                  // slot 4  = rows[3] decline
+        "结束",                        // slot 5  = rows[4] end
+        "",                            // slot 6  = rows[5] link (jump node, text usually empty)
+        "随机问候",                    // slot 7  = rows[6] random
+        "随机结果 A",                  // slot 8  = rows[7] speech
+        "随机结果 B",                  // slot 9  = rows[8] speech
+        "随机结束",                    // slot 10 = rows[9] end
+        "全类型条件/动作目录"           // slot 11 = rows[10] speech (full table below)
+      ]
+    }
+    // Multi-language example: copy the object above and change tag and texts (every block must have the same number of texts lines).
+    // { "tag": "enGB", "texts": [ "Alex", "You finally arrived.{^n}Was the road kind?", … ] }
+  ],
+
+  // Conversation nodes. Array order = depth-first pre-order in the file = localization slot order (slot 0 is the root).
+  "rows": [
+    // ------------------------------------------------------------------------
+    // rows[0]: direct child of the root, plain dialogue line; demonstrates AND conditions, comparison operators, actions, voice, and the {^n} newline.
+    // ------------------------------------------------------------------------
+    {
+      // level (depth): 1=direct child of the root; 2=child of the preceding level=1 row, and so on.
+      // Parent node = nearest preceding row with level one less; skipping levels is not allowed.
+      "level": 1,
+
+      // kind (node type): speech dialogue / continue continue / accept accept / decline decline /
+      // end end / link jump / random (selector) random / generic generic / root root style (rarely used).
+      // You can also write the number 0-8 directly.
+      "kind": "speech",
+
+      // text (node text): any string; an empty string still occupies one slot. Use {^n} for in-game newlines.
+      "text": "你终于来了。{^n}路上还顺利吗？",
+
+      // flags (node flags): 0 none; 1 once only; 2 always show; 4 unimportant; can be combined (e.g. 3).
+      "flags": 0,
+
+      // vo (voice path, version>=6): ""=no voice; otherwise a path relative to resources.
+      "vo": "conversations/alex_01.ogg",
+
+      // logic (this node's condition relation): "AND" all satisfied (default, 0); "OR" any satisfied (1).
+      "logic": "AND",
+
+      // cond (condition list): []=this node is always available.
+      "cond": [
+        // Form A: named type + positional args. HasFaction: FactionName (string) + Value (number).
+        // cmp sets the numeric comparison direction: ">=" means faction reputation is at least 5000.
+        { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+        // Form B: named type + named args (field names are case-insensitive).
+        // HasQuestObjective: Quest (.qst path) + Task (task uid) + Objective (objective uid) + Satisfied (bool).
+        // Task/Objective must exactly match the uids stored in the target QST file.
+        {
+          "HasQuestObjective": {
+            "Quest": "quests/example.qst",
+            "Task": 305419896,
+            "Objective": 2271560481,
+            "Satisfied": true
+          },
+          "cmp": "="
+        }
+
+        // Forms C/D (raw type numbers, for probing unknown types or when precise control is needed):
+        // { "type": 6, "subType": 1, "args": ["SURVIVORS", 5000], "cmp": ">=" }
+        // subType may be omitted; when omitted the official defaults apply (HasFaction/HasItem/HasQuestObjective/LuaScript/CheckRandomValue=1, all others=0).
+      ],
+
+      // act (action list): runs in order; there is no AND/OR and no cmp.
+      "act": [
+        // GiveMoney: MoneyAmount (u32).
+        { "GiveMoney": [500] },
+
+        // GiveExperience: Experience (u32).
+        { "GiveExperience": [1200] }
+      ]
+    },
+
+    // rows[1]: child of rows[0] (level=2), the player's "continue" option.
+    {
+      "level": 2,
+      "kind": "continue",
+      "text": "继续",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[2]: child of rows[1] (level=3), the player's "accept" option; demonstrates quest and item actions.
+    {
+      "level": 3,
+      "kind": "accept",
+      "text": "我接受。",
+      "flags": 0,
+      "cond": [],
+      "act": [
+        // BeginQuestTask: QuestFile (.qst path) + Task (task uid).
+        { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+        // GiveItem: ItemRecord (.dbr path) + NumItems (u32).
+        { "GiveItem": ["records/items/gear/example.dbr", 1] }
+      ]
+    },
+
+    // rows[3]: another child of rows[1] (level=3), the "decline" option.
+    {
+      "level": 3,
+      "kind": "decline",
+      "text": "以后再说。",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[4]: child of rows[1] (level=3), an end node.
+    {
+      "level": 3,
+      "kind": "end",
+      "text": "结束",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[5]: direct child of the root (level=1), a link jump.
+    // link=5 jumps to the 5th row of rows (the end at rows[4]); 0=root; omitted=self.
+    // Note that the link target is a flattened node index (row number starting at 1), not an array index.
+    {
+      "level": 1,
+      "kind": "link",
+      "text": "",
+      "flags": 0,
+      "link": 5,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[6]: direct child of the root (level=1), a random/selector node; its children are random branches.
+    {
+      "level": 1,
+      "kind": "random",
+      "text": "随机问候",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[7]: child of rows[6] (level=2); demonstrates OR conditions and numeric comparison.
+    {
+      "level": 2,
+      "kind": "speech",
+      "text": "随机结果 A",
+      "flags": 0,
+      "logic": "OR",
+      "cond": [
+        // IsDifficulty: 0 Normal / 1 Epic / 2 Legendary.
+        { "IsDifficulty": [2], "cmp": "=" },
+
+        // HasMoney: MoneyAmount (gold); ">" means greater than 1000.
+        { "HasMoney": [1000], "cmp": ">" }
+      ],
+      "act": []
+    },
+
+    // rows[8]: another child of rows[6] (level=2).
+    {
+      "level": 2,
+      "kind": "speech",
+      "text": "随机结果 B",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // rows[9]: child of rows[6] (level=2), ends the random branch.
+    {
+      "level": 2,
+      "kind": "end",
+      "text": "随机结束",
+      "flags": 0,
+      "cond": [],
+      "act": []
+    },
+
+    // ------------------------------------------------------------------------
+    // rows[10]: full type catalog, writing each of the 30 conditions and 27 available actions once, as a lookup table.
+    // Conditions use logic=OR (any satisfied is enough, demonstration only); actions run in array order.
+    // Each entry's comment gives: type number, official name, field order, and value notes.
+    // ------------------------------------------------------------------------
+    {
+      "level": 1,
+      "kind": "speech",
+      "text": "全类型条件/动作目录",
+      "flags": 0,
+      "logic": "OR",
+
+      "cond": [
+        // type 0 OnQuest: QuestFile (quest file string) + OnQuest (bool).
+        { "OnQuest": ["quests/example.qst", true] },
+
+        // type 1 QuestTaskComplete: QuestFile + Task (task uid) + TaskComplete (bool).
+        { "QuestTaskComplete": ["quests/example.qst", 305419896, true] },
+
+        // type 2 HasExperience: Experience (u32), usually with cmp.
+        { "HasExperience": [10000], "cmp": ">=" },
+
+        // type 3 IsLevel: IsLevel (u32), usually with cmp.
+        { "IsLevel": [10], "cmp": ">=" },
+
+        // type 4 IsDifficulty: 0 Normal / 1 Epic / 2 Legendary.
+        { "IsDifficulty": [2], "cmp": "=" },
+
+        // type 5 IsHardcore: bool.
+        { "IsHardcore": [false] },
+
+        // type 6 HasFaction: FactionName (string) + Value (u32), default bodyVersion=1.
+        { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+        // type 7 HasToken: TokenName (string) + HasToken (bool).
+        { "HasToken": ["TOKEN_A", true] },
+
+        // type 8 HasMoney: MoneyAmount (u32), usually with cmp.
+        { "HasMoney": [1000], "cmp": ">=" },
+
+        // type 9 HasItem: ItemRecord (.dbr) + ItemCount (u32) + CompleteOnly (bool);
+        // default bodyVersion=1, only then is CompleteOnly actually stored.
+        { "HasItem": ["records/items/gear/example.dbr", 1, false], "cmp": ">=" },
+
+        // type 10 HasKilled: MonsterRecords (path list) + KillCount (trailing u32). P form.
+        // You can also write {"paths": [...], "trailing": 3}; the positional array form cannot set KillCount.
+        { "HasKilled": { "MonsterRecords": ["records/monsters/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 11 HasQuestObjective: Quest + Task (u32) + Objective (u32) + Satisfied (bool).
+        // default bodyVersion=1, only then are Task/Objective stored.
+        {
+          "HasQuestObjective": {
+            "Quest": "quests/example.qst",
+            "Task": 305419896,
+            "Objective": 2271560481,
+            "Satisfied": true
+          }
+        },
+
+        // type 12 LuaScript (condition form): call (call name) + args (string array) + tail (Evaluate tail).
+        // tail is raw u32/u32/u8/u32/string and is not fully decoded; when unsure you can omit it entirely.
+        {
+          "LuaScript": {
+            "call": "gd.example.check()",
+            "args": ["arg1", "arg2"],
+            "tail": { "t0": 0, "t1": 0, "t2": 0, "t3": 0, "text": "TRUE" }
+          }
+        },
+
+        // type 13 KnowsPlayer: bool.
+        { "KnowsPlayer": [true] },
+
+        // type 14 OnQuestTask: QuestFile + Task (u32) + OnTask (bool).
+        { "OnQuestTask": ["quests/example.qst", 305419896, true] },
+
+        // type 15 UsedQuestItem: ItemRecord (.dbr) + NumUsed (u32).
+        { "UsedQuestItem": ["records/items/quest/example.dbr", 1], "cmp": ">=" },
+
+        // type 16 HasKilledProxy: ProxyRecords (path list) + KillCount (trailing u32). P form.
+        { "HasKilledProxy": { "ProxyRecords": ["records/proxies/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+        // type 17 WaitForCompletion: no fields; {} / [] / omitting args are all fine.
+        { "WaitForCompletion": {} },
+
+        // type 18 ServerHasToken: TokenName + HasToken (bool).
+        { "ServerHasToken": ["TOKEN_B", true] },
+
+        // type 19 QuestBlocked: QuestFile + bool; the official dialog names both fields QuestBlocked,
+        // so the positional form is clearest (first field is the file string, second is the bool).
+        { "QuestBlocked": ["quests/example.qst", false] },
+
+        // type 20 AnyoneHasToken: TokenName + HasToken (bool).
+        { "AnyoneHasToken": ["TOKEN_C", false] },
+
+        // type 21 CheckRandomValue: Name (string) + Value (u32), default bodyVersion=1.
+        { "CheckRandomValue": ["roll", 50], "cmp": "<=" },
+
+        // type 22 OwnsDLC: DLC_ID (u32).
+        { "OwnsDLC": [1], "cmp": "=" },
+
+        // type 23 HasTribute: TributeAmount (u32).
+        { "HasTribute": [10], "cmp": ">=" },
+
+        // type 24 EarnedDevotion: DevotionAmount (u32).
+        { "EarnedDevotion": [20], "cmp": ">=" },
+
+        // type 25 HasMastery: MasteryName (u32 index 0-29, mapping to SkillClass01-30) + HasMastery (bool).
+        { "HasMastery": [0, true] },
+
+        // type 26 IsChallenge: 0 Normal Veteran / 1 Elite Veteran / 2 Ultimate Veteran.
+        { "IsChallenge": [2], "cmp": ">=" },
+
+        // type 27 HasBuff: BuffName (.dbr path) + HasBuff (bool).
+        { "HasBuff": ["records/buffs/example.dbr", true] },
+
+        // type 28 HasKilledMonsterClass: MonsterClass1 + MonsterClass2 + KillCount (three u32 values).
+        // The first two are enums: 0 Common / 1 Champion / 2 Hero / 3 Boss / 4 Quest / 5 SuperBoss.
+        { "HasKilledMonsterClass": [0, 5, 1], "cmp": ">=" },
+
+        // type 29 HasKilledFaction: Faction1 + Faction2 + KillCount (three u32 values).
+        // Enum: 0 None / 1 Alone / 2 GenericMonster / 3 Player / 4 Survivors / 5 Aetherials /
+        // 6 Cthonians / 7 Outlaws / 8 Beasts / 9 User0… (the official dropdown keeps scrolling).
+        { "HasKilledFaction": [4, 5, 100], "cmp": ">=" }
+      ],
+
+      "act": [
+        // type 1 BeginQuestTask: QuestFile + Task (task uid).
+        { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 2 CompleteQuest: QuestFile.
+        { "CompleteQuest": ["quests/example.qst"] },
+
+        // type 3 CompleteQuestTask: QuestFile + Task (task uid).
+        { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+        // type 4 GiveMoney: MoneyAmount (u32).
+        { "GiveMoney": [500] },
+
+        // type 5 GiveFaction: FactionType (string) + Amount (u32).
+        { "GiveFaction": ["SURVIVORS", 100] },
+
+        // type 6 GiveItem: ItemRecord (.dbr) + NumItems (u32).
+        { "GiveItem": ["records/items/gear/example.dbr", 1] },
+
+        // type 7 GiveLevel: NumLevels (u32).
+        { "GiveLevel": [1] },
+
+        // type 8 GiveExperience: Experience (u32).
+        { "GiveExperience": [1000] },
+
+        // type 9 GiveToken: TokenName (string).
+        { "GiveToken": ["TOKEN_A"] },
+
+        // type 10 RemoveToken: TokenName (string).
+        { "RemoveToken": ["TOKEN_A"] },
+
+        // type 11 LuaScript (action form): call + args; there is no condition-style tail.
+        { "LuaScript": { "call": "gd.example.run()", "args": ["arg1"] } },
+
+        // type 12 DebugPrint: Text (string).
+        { "DebugPrint": ["hello"] },
+
+        // type 13 PlaySound: SoundRecord (.dbr path).
+        { "PlaySound": ["records/sounds/example.dbr"] },
+
+        // type 14 PlayAnimation: AnimationType (u32 enum); in the corpus 9=Chat.
+        { "PlayAnimation": [9] },
+
+        // type 15 GiveSkillPoint: NumSkillpoints (u32).
+        { "GiveSkillPoint": [1] },
+
+        // type 17 Notification: Tag (localization tag string).
+        { "Notification": ["tagExample"] },
+
+        // type 18 GiveAttribPoint: NumAttributePoints (u32).
+        { "GiveAttribPoint": [1] },
+
+        // type 19 ScriptEvent: ScriptEvent (string, usually with an EV_ prefix).
+        { "ScriptEvent": ["EV_EXAMPLE"] },
+
+        // type 20 GiveRandomItem: ItemRecord (.dbr) + NumItems (u32).
+        { "GiveRandomItem": ["records/items/gear/example.dbr", 2] },
+
+        // type 21 GenerateRandomValue: Name + Min (u32) + Max (u32).
+        { "GenerateRandomValue": ["roll", 1, 100] },
+
+        // type 22 CastSkill: SkillRecord (.dbr).
+        { "CastSkill": ["records/skills/example.dbr"] },
+
+        // type 23 UnlockFaction: FactionType (string).
+        { "UnlockFaction": ["SURVIVORS"] },
+
+        // type 24 SetFaction: FactionType (string) + Value (u32).
+        { "SetFaction": ["SURVIVORS", 1000] },
+
+        // type 25 GiveDevotion: NumDevotionPoints (u32).
+        { "GiveDevotion": [1] },
+
+        // type 26 GiveTribute: TributeAmount (u32).
+        { "GiveTribute": [10] },
+
+        // type 27 UnlockTutorial: TutorialPage (u32).
+        { "UnlockTutorial": [1] },
+
+        // type 28 PlayVideo: Video path (path string) + AllowSkip (bool).
+        { "PlayVideo": ["video/intro.ivf", false] }
+
+        // type 0 / 16 are unavailable (the factory returns null); do not write them.
+      ]
+    }
+  ]
+}

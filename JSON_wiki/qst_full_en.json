@@ -1,0 +1,477 @@
+// NOTE: AI TRANSLATION -- Comments in this file are AI-translated. If anything is ambiguous, the Chinese version (qst_full.json) is authoritative.
+// ============================================================================
+// JSON → QST full example (JSONC: // and /* */ comments allowed, trailing commas allowed)
+//
+// This file covers: all top-level fields, all task / incentive / objective / event fields,
+// persistent uid, 30 condition types, 27 available actions, and the languages blocks.
+// ----------------------------------------------------------------------------
+// Field overview (every field listed below also has a more detailed inline comment)
+// ----------------------------------------------------------------------------
+// Top level:
+//   format     string  required  "qst" (emit .qst) or "cnv" (emit .cnv, see the other document)
+//   version    u32     optional  ≥7; 7=task without tail, 8=+flag8, 9=+flag8+flag9 (recommended)
+//   flags      u32     optional  header task flags: 1 main / 2 side / 4 repeatable (can be summed)
+//   id         u32     optional  ID owned by this file; omitted=random non-0; writing 0 gives 0
+//   group      string  optional  quest group name, localization slot 0
+//   name       string  optional  quest name, localization slot 1
+//   languages  array   optional  explicit language blocks; when present they win, group/name/title… are only a fallback
+//   tasks      array   required  task array
+//
+// languages[] item:
+//   tag        string  required  language tag (6 official values: enUS/enGB/es/fr/de/it)
+//   texts      array   required  text lines; the line count must equal the result of §Localization slot formula, too few or too many lines is an error
+//
+// tasks[] item:
+//   uid        u32     optional  persistent task uid; omitted/0=random non-0; used for cross-file references
+//   unknownAC  u32     optional  task header reserved value, keep 0
+//   flag8      bool    optional  version>=8 tail byte; false=0
+//   flag9      bool    optional  version>=9 tail byte; false=0
+//   title      string  optional  task title (localization slot)
+//   desc       string  optional  task description (localization slot)
+//   incentives array   optional  OnAccept events; each element occupies 1 localization slot (official value is an empty line)
+//   objectives array   optional  quest objectives; the text of each objective occupies 1 localization slot
+//   events     array   optional  OnComplete events; each element occupies 1 localization slot (official value is an empty line)
+//
+// incentive / event item:
+//   unknown    u32     optional  event header reserved value, keep 0
+//   logic      string  optional  condition relation "AND"/"OR"
+//   cond       array   optional  condition list (written exactly like CNV)
+//   act        array   optional  action list (executed in order, no cmp / AND / OR)
+//
+// objectives[] item:
+//   uid        u32     optional  persistent objective uid; omitted/0=random; referenced by HasQuestObjective
+//   unknown1   u32     optional  objective reserved value, keep 0
+//   text       string  optional  objective text (localization slot)
+//   logic      string  optional  condition relation "AND"/"OR"
+//   cond       array   optional  conditions that decide completion / interactability
+//   act        array   optional  actions executed when the conditions are met / the objective completes
+//
+// ----------------------------------------------------------------------------
+// Localization slot formula (languages.texts must follow this order with exactly this many lines):
+//   total = 2 (group name, quest name)
+//        + Σ per task [ 2 (title, description) + incentive count + objective count + event count ]
+// Slot order:
+//   0=group name, 1=quest name,
+//   then in tasks order, per task: title, description, each incentive, each objective text, each event.
+//
+// Newline syntax: in-game newlines are written as the literal {^n} (e.g. write "first line{^n}second line" in desc).
+// ----------------------------------------------------------------------------
+// Key points for languages:
+//   · When an explicit languages block exists, texts wins; group/name/title/desc/text must still be written,
+//     but they will not override languages.
+//   · The texts line count of every language block must be identical and must equal the formula result above.
+//   · The official incentive / event slots are always empty strings; this example also leaves them empty, but an empty string still has to occupy a slot.
+// ============================================================================
+{
+  "format": "qst",
+
+  // Version: 7=task without tail; 8=+flag8; 9=+flag8+flag9 (recommended, all sample data uses 9).
+  "version": 9,
+
+  // Header task flags (bit mask): 1 main / 2 side / 4 repeatable; values can be summed (e.g. 5=main+repeatable).
+  "flags": 1,
+
+  // File id (header +0x0C, u32): omitted=random non-0; an explicit value (including 0) is used as-is; unrelated to task uid.
+  "id": 0,
+
+  // Quest group name (localization slot 0): the group heading in the in-game quest list.
+  "group": "EXAMPLE_GROUP",
+
+  // Quest name (localization slot 1): the quest name shown in game.
+  "name": "EXAMPLE_QUEST",
+
+  // --------------------------------------------------------------------------
+  // languages: explicit language blocks. This file demonstrates a single language block (enUS).
+  // Line count = 2 + (2+1+2+1) + (2+0+1+0) + (2+1+1+1) = 16 lines; the comments mark the matching slot.
+  // --------------------------------------------------------------------------
+  "languages": [
+    {
+      "tag": "enUS",
+      "texts": [
+        "EXAMPLE_GROUP",              // slot 0  = group name (group)
+        "EXAMPLE_QUEST",              // slot 1  = quest name (name)
+        "任务标题",                    // slot 2  = task1 title
+        "这是任务描述。",              // slot 3  = task1 description
+        "",                           // slot 4  = task1 incentive#1 (OnAccept slot, empty in official data)
+        "收集 5 个物品",               // slot 5  = task1 objective#1 text
+        "返回交任务",                  // slot 6  = task1 objective#2 text
+        "",                           // slot 7  = task1 event#1 (OnComplete slot, empty in official data)
+        "第二个任务",                  // slot 8  = task2 title
+        "没有 OnAccept / OnComplete 事件。", // slot 9 = task2 description
+        "达到 10 级",                  // slot 10 = task2 objective#1 text
+        "全类型任务",                  // slot 11 = task3 title
+        "演示全部条件与动作。",        // slot 12 = task3 description
+        "",                           // slot 13 = task3 incentive#1
+        "全类型目标",                  // slot 14 = task3 objective#1 text
+        ""                            // slot 15 = task3 event#1
+      ]
+    }
+    // Multi-language example: copy the object above and change tag and texts (the texts line count must be identical for every block).
+    // { "tag": "enGB", "texts": [ "EXAMPLE_GROUP", "EXAMPLE_QUEST", "Quest Title", … ] }
+  ],
+
+  "tasks": [
+    // ------------------------------------------------------------------------
+    // Task 1: complete demonstration of OnAccept / objectives / OnComplete.
+    // ------------------------------------------------------------------------
+    {
+      // task uid (persisted u32): Task references in other CNV/QST files use this value; omitted/0=automatic random non-0.
+      // It is recommended to set it explicitly and keep it unique across the whole project; it is not an array index and is not hashed from the quest name.
+      "uid": 305419896,
+
+      // task unknownAC (persisted u32): keep 0.
+      "unknownAC": 0,
+
+      // flag8 (written only when version>=8): false=0, true=1; reserved / not yet decoded semantics.
+      "flag8": false,
+
+      // flag9 (written only when version>=9): false=0, true=1; reserved / not yet decoded semantics.
+      "flag9": false,
+
+      // Task title (localization slot): any string.
+      "title": "任务标题",
+
+      // Task description (localization slot): any string; write newlines as {^n}.
+      "desc": "这是任务描述。",
+
+      // incentives (editor OnAccept events): []=nothing fires when the quest is accepted; each element occupies one localization slot.
+      "incentives": [
+        {
+          // Event header u32: keep 0.
+          "unknown": 0,
+
+          // Condition relation: "AND" all conditions met (default) / "OR" any condition met.
+          "logic": "AND",
+
+          // Condition list: []=no conditions, the event always fires; syntax identical to CNV.
+          "cond": [],
+
+          // Action list: executed in order; the Tag of Notification is a localization tag.
+          "act": [
+            { "Notification": ["tagQuestAccepted"] }
+          ]
+        }
+      ],
+
+      // objectives (quest objectives): []=no visible objectives; each objective carries a text, conditions and actions.
+      "objectives": [
+        {
+          // objective uid (persisted u32): referenced by the Objective field of HasQuestObjective; omitted/0=random.
+          "uid": 2271560481,
+
+          // objective unknown1 (persisted u32): keep 0.
+          "unknown1": 0,
+
+          // Objective text (localization slot).
+          "text": "收集 5 个物品",
+
+          // Condition relation and condition list: the conditions that decide whether the objective is "complete / interactable".
+          "logic": "AND",
+          "cond": [
+            // HasItem: ItemRecord (.dbr path) + ItemCount (count) + CompleteOnly (bool);
+            // default bodyVersion=1, CompleteOnly is only persisted then.
+            { "HasItem": ["records/items/quest/example.dbr", 5, false], "cmp": ">=" }
+          ],
+
+          // Objective actions: executed when the conditions are met / the objective completes; []=no actions.
+          "act": [
+            { "Notification": ["tagObjectiveComplete"] }
+          ]
+        },
+        {
+          // Second objective: demonstrates WaitForCompletion (a condition without fields).
+          "uid": 286331170,
+          "text": "返回交任务",
+          "cond": [
+            { "WaitForCompletion": {} }
+          ],
+          "act": []
+        }
+      ],
+
+      // events (editor OnComplete events): []=nothing fires when the quest is handed in; each element occupies one localization slot.
+      "events": [
+        {
+          "unknown": 0,
+          "logic": "AND",
+          "cond": [
+            // HasQuestObjective: Quest file + Task uid + Objective uid + Satisfied (bool).
+            // The referenced values must be persistent uids that really exist in this file.
+            {
+              "HasQuestObjective": {
+                "Quest": "quests/example.qst",
+                "Task": 305419896,
+                "Objective": 2271560481,
+                "Satisfied": true
+              }
+            }
+          ],
+          "act": [
+            // CompleteQuestTask: QuestFile + Task (task uid).
+            { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+            // Rewards: experience and money.
+            { "GiveExperience": [2500] },
+            { "GiveMoney": [1000] }
+          ]
+        }
+      ]
+    },
+
+    // ------------------------------------------------------------------------
+    // Task 2: minimal task; demonstrates omitting incentives / events (equivalent to []) and a random uid.
+    // ------------------------------------------------------------------------
+    {
+      // uid omitted: the tool generates a random non-0 value; fill it in explicitly if other files need to reference it.
+      "title": "第二个任务",
+      "desc": "没有 OnAccept / OnComplete 事件。",
+      "objectives": [
+        {
+          "text": "达到 10 级",
+          "cond": [
+            // IsLevel: level; cmp ">=" means at or above.
+            { "IsLevel": [10], "cmp": ">=" }
+          ],
+          "act": []
+        }
+      ]
+    },
+
+    // ------------------------------------------------------------------------
+    // Task 3: full type catalog; writes each of the 30 condition types and the 27 available actions once, for easy lookup.
+    // Condition logic=OR (any condition met, demonstration only); actions run in array order.
+    // The comment on each entry gives: type number, official name, field order, value notes.
+    // ------------------------------------------------------------------------
+    {
+      "uid": 3149642683,
+      "title": "全类型任务",
+      "desc": "演示全部条件与动作。",
+
+      "incentives": [
+        {
+          "unknown": 0,
+          "logic": "AND",
+          "cond": [],
+          "act": [
+            { "Notification": ["tagCatalogAccepted"] }
+          ]
+        }
+      ],
+
+      "objectives": [
+        {
+          "uid": 3405691582,
+          "text": "全类型目标",
+          "logic": "OR",
+
+          "cond": [
+            // type 0 OnQuest: QuestFile (quest file string) + OnQuest (bool).
+            { "OnQuest": ["quests/example.qst", true] },
+
+            // type 1 QuestTaskComplete: QuestFile + Task (task uid) + TaskComplete (bool).
+            { "QuestTaskComplete": ["quests/example.qst", 305419896, true] },
+
+            // type 2 HasExperience: Experience (u32), usually used together with cmp.
+            { "HasExperience": [10000], "cmp": ">=" },
+
+            // type 3 IsLevel: IsLevel (u32), usually used together with cmp.
+            { "IsLevel": [10], "cmp": ">=" },
+
+            // type 4 IsDifficulty: 0 normal / 1 elite / 2 ultimate.
+            { "IsDifficulty": [2], "cmp": "=" },
+
+            // type 5 IsHardcore: bool.
+            { "IsHardcore": [false] },
+
+            // type 6 HasFaction: FactionName (string) + Value (u32), default bodyVersion=1.
+            { "HasFaction": ["SURVIVORS", 5000], "cmp": ">=" },
+
+            // type 7 HasToken: TokenName (string) + HasToken (bool).
+            { "HasToken": ["TOKEN_A", true] },
+
+            // type 8 HasMoney: MoneyAmount (u32), usually used together with cmp.
+            { "HasMoney": [1000], "cmp": ">=" },
+
+            // type 9 HasItem: ItemRecord (.dbr) + ItemCount (u32) + CompleteOnly (bool);
+            // default bodyVersion=1, CompleteOnly is only persisted then.
+            { "HasItem": ["records/items/gear/example.dbr", 1, false], "cmp": ">=" },
+
+            // type 10 HasKilled: MonsterRecords (path list) + KillCount (trailing u32). P form.
+            { "HasKilled": { "MonsterRecords": ["records/monsters/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+            // type 11 HasQuestObjective: Quest + Task (u32) + Objective (u32) + Satisfied (bool).
+            {
+              "HasQuestObjective": {
+                "Quest": "quests/example.qst",
+                "Task": 305419896,
+                "Objective": 2271560481,
+                "Satisfied": true
+              }
+            },
+
+            // type 12 LuaScript (condition form): call + args + tail (Evaluate tail).
+            {
+              "LuaScript": {
+                "call": "gd.example.check()",
+                "args": ["arg1"],
+                "tail": { "t0": 0, "t1": 0, "t2": 0, "t3": 0, "text": "TRUE" }
+              }
+            },
+
+            // type 13 KnowsPlayer: bool.
+            { "KnowsPlayer": [true] },
+
+            // type 14 OnQuestTask: QuestFile + Task (u32) + OnTask (bool).
+            { "OnQuestTask": ["quests/example.qst", 305419896, true] },
+
+            // type 15 UsedQuestItem: ItemRecord (.dbr) + NumUsed (u32).
+            { "UsedQuestItem": ["records/items/quest/example.dbr", 1], "cmp": ">=" },
+
+            // type 16 HasKilledProxy: ProxyRecords (path list) + KillCount (trailing u32). P form.
+            { "HasKilledProxy": { "ProxyRecords": ["records/proxies/example.dbr"], "KillCount": 1 }, "cmp": ">=" },
+
+            // type 17 WaitForCompletion: no fields.
+            { "WaitForCompletion": {} },
+
+            // type 18 ServerHasToken: TokenName + HasToken (bool).
+            { "ServerHasToken": ["TOKEN_B", true] },
+
+            // type 19 QuestBlocked: QuestFile + bool (the positional form is the most direct).
+            { "QuestBlocked": ["quests/example.qst", false] },
+
+            // type 20 AnyoneHasToken: TokenName + HasToken (bool).
+            { "AnyoneHasToken": ["TOKEN_C", false] },
+
+            // type 21 CheckRandomValue: Name (string) + Value (u32), default bodyVersion=1.
+            { "CheckRandomValue": ["roll", 50], "cmp": "<=" },
+
+            // type 22 OwnsDLC: DLC_ID (u32).
+            { "OwnsDLC": [1], "cmp": "=" },
+
+            // type 23 HasTribute: TributeAmount (u32).
+            { "HasTribute": [10], "cmp": ">=" },
+
+            // type 24 EarnedDevotion: DevotionAmount (u32).
+            { "EarnedDevotion": [20], "cmp": ">=" },
+
+            // type 25 HasMastery: MasteryName (u32 index 0-29) + HasMastery (bool).
+            { "HasMastery": [0, true] },
+
+            // type 26 IsChallenge: 0 normal veteran / 1 elite veteran / 2 ultimate veteran.
+            { "IsChallenge": [2], "cmp": ">=" },
+
+            // type 27 HasBuff: BuffName (.dbr path) + HasBuff (bool).
+            { "HasBuff": ["records/buffs/example.dbr", true] },
+
+            // type 28 HasKilledMonsterClass: MonsterClass1 + MonsterClass2 + KillCount (three u32).
+            // The first two values are enums: 0 Common / 1 Champion / 2 Hero / 3 Boss / 4 Quest / 5 SuperBoss.
+            { "HasKilledMonsterClass": [0, 5, 1], "cmp": ">=" },
+
+            // type 29 HasKilledFaction: Faction1 + Faction2 + KillCount (three u32).
+            // Enum: 0 None / 1 Alone / 2 GenericMonster / 3 Player / 4 Survivors / 5 Aetherials /
+            // 6 Cthonians / 7 Outlaws / 8 Beasts / 9 User0… (the official dropdown keeps scrolling).
+            { "HasKilledFaction": [4, 5, 100], "cmp": ">=" }
+          ],
+
+          "act": [
+            // type 1 BeginQuestTask: QuestFile + Task (task uid).
+            { "BeginQuestTask": ["quests/example.qst", 305419896] },
+
+            // type 2 CompleteQuest: QuestFile.
+            { "CompleteQuest": ["quests/example.qst"] },
+
+            // type 3 CompleteQuestTask: QuestFile + Task (task uid).
+            { "CompleteQuestTask": ["quests/example.qst", 305419896] },
+
+            // type 4 GiveMoney: MoneyAmount (u32).
+            { "GiveMoney": [500] },
+
+            // type 5 GiveFaction: FactionType (string) + Amount (u32).
+            { "GiveFaction": ["SURVIVORS", 100] },
+
+            // type 6 GiveItem: ItemRecord (.dbr) + NumItems (u32).
+            { "GiveItem": ["records/items/gear/example.dbr", 1] },
+
+            // type 7 GiveLevel: NumLevels (u32).
+            { "GiveLevel": [1] },
+
+            // type 8 GiveExperience: Experience (u32).
+            { "GiveExperience": [1000] },
+
+            // type 9 GiveToken: TokenName (string).
+            { "GiveToken": ["TOKEN_A"] },
+
+            // type 10 RemoveToken: TokenName (string).
+            { "RemoveToken": ["TOKEN_A"] },
+
+            // type 11 LuaScript (action form): call + args; there is no tail as in the condition form.
+            { "LuaScript": { "call": "gd.example.run()", "args": ["arg1"] } },
+
+            // type 12 DebugPrint: Text (string).
+            { "DebugPrint": ["hello"] },
+
+            // type 13 PlaySound: SoundRecord (.dbr path).
+            { "PlaySound": ["records/sounds/example.dbr"] },
+
+            // type 14 PlayAnimation: AnimationType (u32 enum); 9=Chat in the sample data.
+            { "PlayAnimation": [9] },
+
+            // type 15 GiveSkillPoint: NumSkillpoints (u32).
+            { "GiveSkillPoint": [1] },
+
+            // type 17 Notification: Tag (localization tag string).
+            { "Notification": ["tagExample"] },
+
+            // type 18 GiveAttribPoint: NumAttributePoints (u32).
+            { "GiveAttribPoint": [1] },
+
+            // type 19 ScriptEvent: ScriptEvent (string, usually with the EV_ prefix).
+            { "ScriptEvent": ["EV_EXAMPLE"] },
+
+            // type 20 GiveRandomItem: ItemRecord (.dbr) + NumItems (u32).
+            { "GiveRandomItem": ["records/items/gear/example.dbr", 2] },
+
+            // type 21 GenerateRandomValue: Name + Min (u32) + Max (u32).
+            { "GenerateRandomValue": ["roll", 1, 100] },
+
+            // type 22 CastSkill: SkillRecord (.dbr).
+            { "CastSkill": ["records/skills/example.dbr"] },
+
+            // type 23 UnlockFaction: FactionType (string).
+            { "UnlockFaction": ["SURVIVORS"] },
+
+            // type 24 SetFaction: FactionType (string) + Value (u32).
+            { "SetFaction": ["SURVIVORS", 1000] },
+
+            // type 25 GiveDevotion: NumDevotionPoints (u32).
+            { "GiveDevotion": [1] },
+
+            // type 26 GiveTribute: TributeAmount (u32).
+            { "GiveTribute": [10] },
+
+            // type 27 UnlockTutorial: TutorialPage (u32).
+            { "UnlockTutorial": [1] },
+
+            // type 28 PlayVideo: Video path (path string) + AllowSkip (bool).
+            { "PlayVideo": ["video/intro.ivf", false] }
+
+            // type 0 / 16 are unavailable (the factory returns null), do not write them.
+          ]
+        }
+      ],
+
+      "events": [
+        {
+          "unknown": 0,
+          "logic": "AND",
+          "cond": [],
+          "act": [
+            { "CompleteQuest": ["quests/example.qst"] },
+            { "GiveExperience": [2500] },
+            { "GiveMoney": [1000] }
+          ]
+        }
+      ]
+    }
+  ]
+}

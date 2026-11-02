@@ -106,9 +106,9 @@ Exit codes: `0` success, `1` failures found, `2` usage error.
 
 ```bash
 # Validate a whole folder
-GDCnvQstEditor-cli.exe verify JSON示例
+GDCnvQstEditor-cli.exe verify JSON_wiki
 # JSON -> binary, then convert back
-GDCnvQstEditor-cli.exe convert JSON示例/qst_full.json -o qst_full.qst
+GDCnvQstEditor-cli.exe convert JSON_wiki/qst_full_en.json -o qst_full.qst
 GDCnvQstEditor-cli.exe convert qst_full.qst -o qst_roundtrip.json
 # Export official localization text
 GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
@@ -121,7 +121,7 @@ GDCnvQstEditor-cli.exe txt qst示例 -o out_txt
 
 `convert` accepts two JSON shapes: the lossless model exported from a binary file, and a hand-written spec that
 only describes what to create. Specs accept official condition / action names; see
-[JSON转CNV.md](JSON转CNV.md) and [JSON转QST.md](JSON转QST.md) for field tables and examples.
+[JSON_wiki/JSON_to_CNV_EN.md](JSON_wiki/JSON_to_CNV_EN.md) and [JSON_wiki/JSON_to_QST_EN.md](JSON_wiki/JSON_to_QST_EN.md) for field tables and examples.
 
 ```json
 { "format": "cnv", "speaker": "Alex",
@@ -184,7 +184,7 @@ GdAssets/              Grim Dawn install model and layered file index
 EditorProbe/           Read-only probe for the official editor assemblies (format research)
 cnv示例/               Field vocabulary transcribed from the official editor
 qst示例/               Self-made minimal QST sample and field notes
-JSON示例/              Full JSON examples and hand-written template
+JSON_wiki/              Full JSON examples, hand-written templates and format guides (EN + ZH)
 screenshots/           README screenshots (Chinese / English)
 ```
 
@@ -207,10 +207,10 @@ format research and regression testing.
 | Document | Contents |
 |---|---|
 | [CnvQstFormatDecoded.md](CnvQstFormatDecoded.md) | Authoritative binary format document: structures, fields, condition / action tables and evidence |
-| [JSON转CNV.md](JSON转CNV.md) | Hand-written JSON for conversations: fields, 30 conditions, 29 actions, examples |
-| [JSON转QST.md](JSON转QST.md) | Hand-written JSON for quests: task / objective / event and slot rules |
+| [JSON_wiki/JSON_to_CNV_EN.md](JSON_wiki/JSON_to_CNV_EN.md) | Hand-written JSON for conversations: fields, 30 conditions, 29 actions, examples |
+| [JSON_wiki/JSON_to_QST_EN.md](JSON_wiki/JSON_to_QST_EN.md) | Hand-written JSON for quests: task / objective / event and slot rules |
 | [cnvqst-wiki-user.md](cnvqst-wiki-user.md) | Feature overview, full condition / action parameter reference and CLI list |
-| [JSON示例/](JSON示例/) | `cnv_full.json` / `qst_full.json` full examples |
+| [JSON_wiki/](JSON_wiki/) | `cnv_full(_en).json` / `qst_full(_en).json` full examples (the `_en` files have English comments) |
 
 The format work also draws on [R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility) (MIT),
 which decompiled the game loader.
@@ -250,7 +250,7 @@ sample file and the `verify` output so the issue can be reproduced.
   relationship with Crate Entertainment, the developer / publisher of Grim Dawn.**
 - Grim Dawn, Crate Entertainment and related names, logos, game content and data files belong to their
   respective owners.
-- The repository ships only self-made minimal samples (`JSON示例/`, `qst示例/20260928newtask.qst`) and field
+- The repository ships only self-made minimal samples (`JSON_wiki/`, `qst示例/20260928newtask.qst`) and field
   vocabulary transcribed from the official editor. No game data files are redistributed; game UI and text
   appearing in screenshots are for illustration only.
 - Third-party components keep their own licenses, including Avalonia, Semi.Avalonia and AvaloniaEdit (MIT).

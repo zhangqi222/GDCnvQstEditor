@@ -84,7 +84,8 @@ public sealed class DocSession
     public string DumpText()
     {
         string name = FilePath != null ? Path.GetFileName(FilePath) : Title;
-        return Cnv != null ? Dump.DumpCnv(Cnv, name) : Dump.DumpQst(Qst!, name);
+        bool english = L.Code != L.BaselineCode;
+        return Cnv != null ? Dump.DumpCnv(Cnv, name, english) : Dump.DumpQst(Qst!, name, english);
     }
 
     /// <summary>导出 JSON 文本。</summary>

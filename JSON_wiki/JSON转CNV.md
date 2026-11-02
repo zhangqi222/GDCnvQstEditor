@@ -1,5 +1,7 @@
 # JSON → CNV 用户手册
 
+> English version: [JSON_to_CNV_EN.md](JSON_to_CNV_EN.md)
+
 本文介绍如何**手写 JSON 生成 Grim Dawn `.cnv` 对话文件**。
 
 - 工具：
@@ -7,7 +9,7 @@
   - `GDCnvQstEditor-cli.exe`：纯命令行，适合脚本与批量处理。
   - 两个程序的命令完全一致，下文统一用 `GDCnvQstEditor-cli.exe` 示例。
 - 配套示例：
-  - [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json) —— **单个文件覆盖全部内容**：顶层字段、节点字段、全部节点类型、30 种条件、27 个可用动作、`languages` 语言块、配音、flags、跳转，每个字段都带就地说明。
+  - [`cnv_full.json`](cnv_full.json) —— **单个文件覆盖全部内容**：顶层字段、节点字段、全部节点类型、30 种条件、27 个可用动作、`languages` 语言块、配音、flags、跳转，每个字段都带就地说明。
 - QST 任务文件的写法见 [`JSON转QST.md`](JSON转QST.md)；两种文件共用同一套条件/动作系统。
 
 > 目标：读完本文后，你可以不依赖 GUI，直接写出合法的 CNV JSON，并生成可被游戏/官方 ConversationEditor 读取的 `.cnv`。
@@ -838,10 +840,10 @@ CNV：
 }
 ```
 
-完整示例（覆盖全部字段、全部节点类型、30 种条件、27 个动作与 `languages`）见 [`JSON示例/cnv_full.json`](JSON示例/cnv_full.json)，可直接运行：
+完整示例（覆盖全部字段、全部节点类型、30 种条件、27 个动作与 `languages`）见 [`cnv_full.json`](cnv_full.json)，可直接运行：
 
 ```bash
-GDCnvQstEditor-cli.exe convert JSON示例/cnv_full.json -o demo.cnv
+GDCnvQstEditor-cli.exe convert cnv_full.json -o demo.cnv
 ```
 
 该文件顶部有字段总览，正文每个字段都有就地注释；`languages` 的每一行都标注了对应节点。
@@ -871,11 +873,11 @@ GDCnvQstEditor-cli.exe convert <spec.json> [-o out.cnv]
 ### 13.2 模板
 
 ```bash
-GDCnvQstEditor-cli.exe sample cnv                    # 释放内置 cnv_full.json 到当前目录
+GDCnvQstEditor-cli.exe sample cnv                    # 释放内置 cnv_full.json 到当前目录（--language en 时为 cnv_full_en.json）
 GDCnvQstEditor-cli.exe sample cnv -o D:\mydir        # 释放到指定目录
 ```
 
-`sample` 释放的是内置全量示例（cnv_full.json / qst_full.json，含逐字段描述），可直接作为 convert 输入或删改起点。
+`sample` 按当前语言释放内置全量示例：中文为 cnv_full.json / qst_full.json，英文为 cnv_full_en.json / qst_full_en.json（注释为英文），含逐字段描述，可直接作为 convert 输入或删改起点。
 
 ### 13.3 查看与验证
 

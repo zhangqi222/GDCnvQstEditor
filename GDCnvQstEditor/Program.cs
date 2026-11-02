@@ -57,6 +57,7 @@ internal static class Program
             {
                 ApplyDpiPolicy();   // 禁止缩放开启时须在任何窗口创建前设 DPI unaware
                 L.Load();
+                GDCnvQstLib.Names.EnglishLabels = L.Code != L.BaselineCode;
                 GDCnvQstLib.Names.DisplayNameResolver = name => L.TypePair(name);
                 ClipboardHelper.Install();   // 全局 TextBox 可靠复制（右键菜单 + Ctrl+C 无选区复制全文）
 
@@ -117,6 +118,7 @@ internal static class Program
                 return 1;
             }
             L.Load();
+            GDCnvQstLib.Names.EnglishLabels = L.Code != L.BaselineCode;
             GDCnvQstLib.Names.DisplayNameResolver = name => L.TypePair(name);
             ClipboardHelper.Install();
 

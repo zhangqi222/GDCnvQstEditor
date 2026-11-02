@@ -91,21 +91,26 @@ public sealed class QstFile
     /// 串表槽位的角色说明（供 dump/GUI 显示）。顺序即官方 QuestEditor 的索引顺序：
     /// group、name，然后每个 task 的 [标题, 描述, OnAccept…, 目标…, OnComplete…]。
     /// </summary>
-    public string DescribeSlot(int index)
+    public string DescribeSlot(int index, bool english = false)
     {
-        if (index == 0) return "group 任务组名";
-        if (index == 1) return "name 任务名";
+        string group = english ? "group (quest group)" : "group 任务组名";
+        string name = english ? "name (quest name)" : "name 任务名";
+        string title = english ? "title" : "标题";
+        string desc = english ? "description" : "描述";
+        string objective = english ? "objective" : "目标";
+        if (index == 0) return group;
+        if (index == 1) return name;
         int i = 2;
         for (int ti = 0; ti < Tasks.Count; ti++)
         {
             var t = Tasks[ti];
-            if (index == i++) return $"T{ti + 1} 标题";
-            if (index == i++) return $"T{ti + 1} 描述";
+            if (index == i++) return $"T{ti + 1} {title}";
+            if (index == i++) return $"T{ti + 1} {desc}";
             for (int k = 0; k < t.Incentives.Count; k++) if (index == i++) return $"T{ti + 1} OnAccept #{k + 1}";
-            for (int k = 0; k < t.Objectives.Count; k++) if (index == i++) return $"T{ti + 1} 目标 #{k + 1}";
+            for (int k = 0; k < t.Objectives.Count; k++) if (index == i++) return $"T{ti + 1} {objective} #{k + 1}";
             for (int k = 0; k < t.Events.Count; k++) if (index == i++) return $"T{ti + 1} OnComplete #{k + 1}";
         }
-        return $"（越界槽 {index}）";
+        return english ? $"(slot {index} out of range)" : $"（越界槽 {index}）";
     }
 
     // ------------------------------------------------------------------

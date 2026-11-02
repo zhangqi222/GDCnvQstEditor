@@ -89,7 +89,7 @@ public sealed class ScriptRecord
             if (!Named) return $"Type{Type}";
             string label = Names.DisplayNameResolver?.Invoke(ClassName!) ?? ClassName!;
             bool inferred = IsCondition ? Names.InferredCondition(Type) : Names.InferredAction(Type);
-            return label + (inferred ? "（推断）" : "");
+            return label + (inferred ? Names.InferredTag : "");
         }
     }
 

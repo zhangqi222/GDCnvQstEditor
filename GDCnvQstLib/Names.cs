@@ -194,6 +194,15 @@ public static class Names
     /// </summary>
     public static Func<string, string>? DisplayNameResolver;
 
+    /// <summary>非中文界面下，类型名的附加标记（推断/未命名）改用英文半角写法。</summary>
+    public static bool EnglishLabels;
+
+    public static string InferredTag => EnglishLabels ? "(inferred)" : "（推断）";
+
+    public static string UnnamedTag => EnglishLabels ? "(unnamed)" : "（未命名）";
+
+    public static string HintTag(string hint) => EnglishLabels ? $" ({hint})" : $"（{hint}）";
+
     private static string Display(string label) => DisplayNameResolver?.Invoke(label) ?? label;
 
     /// <summary>下拉/列表用标签：已命名不含推断后缀；未命名带短提示。
@@ -201,15 +210,15 @@ public static class Names
     public static string ConditionLabel(uint type)
     {
         if (ConditionClass(type) is (string n, true))
-            return Display(n) + (InferredCondition(type) ? "（推断）" : "");
+            return Display(n) + (InferredCondition(type) ? InferredTag : "");
         string? hint = ConditionHints.GetValueOrDefault(type);
-        return hint == null ? $"Type{type}（未命名）" : $"Type{type}（{hint}）";
+        return hint == null ? $"Type{type}{UnnamedTag}" : $"Type{type}{HintTag(hint)}";
     }
 
     public static string ActionLabel(uint type) =>
         ActionClass(type) is (string n, true)
-            ? Display(n) + (InferredAction(type) ? "（推断）" : "")
-            : $"Type{type}（未命名）";
+            ? Display(n) + (InferredAction(type) ? InferredTag : "")
+            : $"Type{type}{UnnamedTag}";
 
     public static (string? name, bool named) ConditionClass(uint type) =>
         type < (uint)CondClassTable.Length && CondClassTable[type] is string n ? (n, true)
@@ -247,12 +256,12 @@ public static class Names
     };
 
     /// <summary>QST 头部 flags 的短标记（None/Primary/Secondary/Repeatable → -/主/支/可重复）。</summary>
-    public static string QuestFlagTag(uint flags)
+    public static string QuestFlagTag(uint flags, bool english = false)
     {
         var parts = new List<string>();
-        if ((flags & 1) != 0) parts.Add("Primary/主");
-        if ((flags & 2) != 0) parts.Add("Secondary/支");
-        if ((flags & 4) != 0) parts.Add("Repeatable/可重复");
+        if ((flags & 1) != 0) parts.Add(english ? "Primary" : "Primary/主");
+        if ((flags & 2) != 0) parts.Add(english ? "Secondary" : "Secondary/支");
+        if ((flags & 4) != 0) parts.Add(english ? "Repeatable" : "Repeatable/可重复");
         return parts.Count == 0 ? "None" : string.Join(" | ", parts);
     }
 

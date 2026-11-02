@@ -123,7 +123,7 @@ public static class CliApp
           verify    <文件|目录>                    验证：结构 / languages 对齐 / 读写字节一致（推荐先运行）
                                                    （目录同时校验 .cnv、.qst、.json）
           txt       <文件|目录> [-o 目录] [--flat]  导出官方本地化 TXT（供翻译/本地化使用）
-          sample    cnv|qst [-o 输出]              释放内置全量示例（cnv_full.json / qst_full.json，含描述，可直接 convert 使用）
+          sample    cnv|qst [-o 输出]              按当前语言释放内置全量示例（中文 cnv_full.json / qst_full.json，英文 cnv_full_en.json / qst_full_en.json）
           help      [命令]                         显示帮助；help dev 查看开发工具
           dev       <子命令>                       开发/分析工具（一般用户可忽略）
         全局参数：--language cn|en                   输出语言：cn 中文（默认）、en 英文；显式指定时写入 %APPDATA%\GDCnvQstEditor\lang.txt 供 GUI 共用
@@ -136,7 +136,7 @@ public static class CliApp
           输入 .cnv / .qst：导出全保真 JSON 模型；修改后再 convert 即可转回。
           输入 .json     ：按 JSON 内的 format（手写 spec）或 kind（全保真模型）
                            自动生成 .cnv 或 .qst。手写 JSON 需遵循规范，
-                           详见 JSON转CNV.md / JSON转QST.md，模板见 sample 命令。
+                           详见 JSON_wiki/JSON转CNV.md / JSON_wiki/JSON转QST.md，模板见 sample 命令。
           省略 -o 时：输出到输入文件同目录，按目标格式生成同名文件。
           转换方向由输入扩展名决定，输出格式由 JSON 声明决定，无需 --format。
           转换前先校验 JSON：languages 的每个语言块必须与节点/文本槽数对齐，
@@ -176,8 +176,8 @@ public static class CliApp
         string name = Path.GetFileName(args[1]);
         @out.Write(model switch
         {
-            CnvFile c => Dump.DumpCnv(c, name),
-            QstFile q => Dump.DumpQst(q, name),
+            CnvFile c => Dump.DumpCnv(c, name, CliL.IsEnglish),
+            QstFile q => Dump.DumpQst(q, name, CliL.IsEnglish),
             _ => throw new InvalidOperationException(),
         });
         return 0;
@@ -496,21 +496,22 @@ public static class CliApp
     }
 
     // ---- 内置示例 / 开发探针 ----
-    //   sample cnv|qst [-o 输出]                 释放内置全量示例（cnv_full.json / qst_full.json，含描述，可直接 convert 使用）
+    //   sample cnv|qst [-o 输出]                 按当前语言释放内置全量示例（cnv_full(_en).json / qst_full(_en).json，含描述，可直接 convert 使用）
     //   dev probe <cond|act|cmp|flags|qst|all> [-o 目录] [--type N]
     //       批量生成最小文件，交给官方编辑器"自报"类型名/比较符/开关/文本槽位
 
-    /// <summary>sample：释放程序集内嵌的全量示例 JSON（源文件在 JSON示例\，编译时以内嵌资源打入；恒写文件，不再输出到 stdout）。</summary>
+    /// <summary>sample：释放程序集内嵌的全量示例 JSON（源文件在 JSON_wiki\；中文用基础版，英文用 _en 版；编译时以内嵌资源打入）。</summary>
     static int CmdSample(string[] args, TextWriter @out)
     {
         if (args.Length < 2) { @out.WriteLine(CliL.UsageText); return 2; }
-        string file = args[1].ToLowerInvariant() switch
+        string baseName = args[1].ToLowerInvariant() switch
         {
-            "cnv" => "cnv_full.json",
-            "qst" => "qst_full.json",
+            "cnv" => "cnv_full",
+            "qst" => "qst_full",
             _ => "",
         };
-        if (file.Length == 0) { @out.WriteLine(CliL.UsageText); return 2; }
+        if (baseName.Length == 0) { @out.WriteLine(CliL.UsageText); return 2; }
+        string file = baseName + (CliL.IsEnglish ? "_en" : "") + ".json";
 
         // 读取内嵌资源全文（缺失属于发布遗漏，给出明确错误）
         string text;

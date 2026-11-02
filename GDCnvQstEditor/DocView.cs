@@ -355,8 +355,8 @@ internal sealed class DocView : UserControl
         try
         {
             _dumpEditor.Text = Doc.Cnv != null
-                ? Dump.DumpCnv(Doc.Cnv, Doc.Title)
-                : Doc.Qst != null ? Dump.DumpQst(Doc.Qst, Doc.Title) : "";
+                ? Dump.DumpCnv(Doc.Cnv, Doc.Title, L.Code != L.BaselineCode)
+                : Doc.Qst != null ? Dump.DumpQst(Doc.Qst, Doc.Title, L.Code != L.BaselineCode) : "";
         }
         catch (Exception ex)
         {

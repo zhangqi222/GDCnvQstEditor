@@ -177,7 +177,7 @@
 | convert <file> [-o 输出] | JSON ↔ QST/CNV 互转；按输入扩展名判断方向，省略 `-o` 输出到同目录；转换成功后打印**槽位明细**（总行数 / 建议填写 / 可为空 / 必须为空，逐行 `行 槽位名 描述 建议 内容`） |
 | txt <file\|dir> [-o dir] [--flat] | 官方本地化 TXT 导出（支持目录批量） |
 | verify <file\|dir> | 解析 + tiling + locOffset + round-trip + 语言行数对齐校验；单文件通过时附带槽位明细（`行 槽位名 描述 建议 内容`；行数不足时缺失行显示**（缺行）**，与合法空槽的（空）区分），PASS 行显示"建议填写 N 行" |
-| sample cnv\|qst [-o 目录] | 释放内置全量示例（cnv_full.json / qst_full.json，含逐字段描述），可直接 convert 使用 |
+| sample cnv\|qst [-o 目录] | 按当前语言释放内置全量示例（中文 cnv_full.json / qst_full.json，英文 cnv_full_en.json / qst_full_en.json，含逐字段描述），可直接 convert 使用 |
 | help [命令] | 命令帮助；`help convert` 查看转换说明 |
 
 全局参数：`--language cn|en` 切换 CLI 输出语言（默认 cn），与 GUI 语言设置共用同一配置，

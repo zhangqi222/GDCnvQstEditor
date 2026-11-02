@@ -12,8 +12,10 @@
     <!-- CLI 英文词典（CliL 按资源名结尾 cli_en.json 匹配加载） -->
     <EmbeddedResource Include="Cli\cli_en.json" />
     <!-- sample 命令释放的内置全量示例（源文件在项目目录外，用 LogicalName 固定资源名） -->
-    <EmbeddedResource Include="..\JSON示例\cnv_full.json" LogicalName="GDCnvQstLib.Cli.sample_cnv_full.json" />
-    <EmbeddedResource Include="..\JSON示例\qst_full.json" LogicalName="GDCnvQstLib.Cli.sample_qst_full.json" />
+    <EmbeddedResource Include="..\JSON_wiki\cnv_full.json" LogicalName="GDCnvQstLib.Cli.sample_cnv_full.json" />
+    <EmbeddedResource Include="..\JSON_wiki\qst_full.json" LogicalName="GDCnvQstLib.Cli.sample_qst_full.json" />
+    <EmbeddedResource Include="..\JSON_wiki\cnv_full_en.json" LogicalName="GDCnvQstLib.Cli.sample_cnv_full_en.json" />
+    <EmbeddedResource Include="..\JSON_wiki\qst_full_en.json" LogicalName="GDCnvQstLib.Cli.sample_qst_full_en.json" />
   </ItemGroup>
 
 </Project>
