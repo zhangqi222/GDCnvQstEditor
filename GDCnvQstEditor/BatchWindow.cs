@@ -3,11 +3,13 @@ using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Notifications;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using GDCnvQstLib;
 using GDCnvQstLib.Cli;
 
@@ -21,23 +23,35 @@ internal sealed class BatchWindow : Window
 {
     private readonly TextBox _path = new();
     private readonly TextBox _outPath = new();
-    private readonly CheckBox _subDirs = new() { Content = L.T("Include subfolders"), IsChecked = true };
-    private readonly RadioButton _keepStructure = new() { Content = L.T("Keep original folder structure"), IsChecked = true, GroupName = "out" };
-    private readonly RadioButton _flatten = new() { Content = L.T("Put all in one folder"), GroupName = "out" };
+    private readonly CheckBox _subDirs = new() { Content = L.T("Include subfolders"), IsChecked = true, FontWeight = FontWeight.Normal };
+    private readonly RadioButton _keepStructure = new() { Content = L.T("Keep original folder structure"), IsChecked = true, GroupName = "out", FontWeight = FontWeight.Normal };
+    private readonly RadioButton _flatten = new() { Content = L.T("Put all in one folder"), GroupName = "out", FontWeight = FontWeight.Normal };
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
-        CanUserSortColumns = false,
+        CanUserSortColumns = true,
         CanUserResizeColumns = true,
         HeadersVisibility = DataGridHeadersVisibility.Column,
+        RowHeight = 28,   // 表格区限高 10 行（见 tableHost.MaxHeight）
     };
-    private readonly TextBlock _status = new() { Foreground = UiTheme.MutedBrush, Margin = new Thickness(14, 2, 14, 6), TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _status = new() { Foreground = UiTheme.MutedBrush, Margin = new Thickness(14, 2, 14, 4), TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _failText = new() { TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.DangerBrush, FontSize = 12 };
+    private readonly Border _failPanel = new();
+    private readonly Border _scanOverlay = new();
+    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private WindowNotificationManager? _notify;
     private List<BatchItem> _items = new();
+    private int _scanVersion;    // 只采用最后一次自动扫描的结果
+    private bool _bulkSelect;    // 批量勾选期间抑制逐行状态刷新
+    private bool _updatingOut;   // 正在程序化填写生成目录，不算用户编辑
+    private bool _outEdited;     // 用户手动改过生成目录；清空后恢复自动跟随
+
+    private const string OutSubdirKeep = "CnvQstToTxtKeepLevel";
+    private const string OutSubdirFlat = "CnvQstToTxtNoLevel";
 
     public BatchWindow()
     {
-        DialogChrome.Init(this, L.T("Batch"), 1080, 680);
+        DialogChrome.Init(this, L.T("Batch"), 1080, 620);
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = true;
 
@@ -50,24 +64,25 @@ internal sealed class BatchWindow : Window
                 new Setter(Layoutable.MarginProperty, new Thickness(0, 2, 0, 0)),
             },
         });
+        // 批量面板统一不加粗（Semi 的按钮 / 单选 / 表头默认加粗）
+        Styles.Add(new Style(x => x.OfType<DataGridColumnHeader>())
+        {
+            Setters = { new Setter(TemplatedControl.FontWeightProperty, FontWeight.Normal) },
+        });
 
         var browse = MkBtn(L.T("Browse"), () => _ = Browse());
-        var scan = MkBtn(L.T("Scan"), Scan);
         var pathRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "BatchPathLabel" });
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var lbl = DialogChrome.Label(L.T("Source folder") + L.Colon);
         lbl.SetValue(Grid.ColumnProperty, 0);
         _path.SetValue(Grid.ColumnProperty, 1);
         browse.SetValue(Grid.ColumnProperty, 2);
-        scan.SetValue(Grid.ColumnProperty, 3);
-        browse.Margin = new Thickness(6, 0, 6, 0);
+        browse.Margin = new Thickness(6, 0, 0, 0);
         pathRow.Children.Add(lbl);
         pathRow.Children.Add(_path);
         pathRow.Children.Add(browse);
-        pathRow.Children.Add(scan);
 
         var outRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
         outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "BatchPathLabel" });
@@ -90,13 +105,71 @@ internal sealed class BatchWindow : Window
 
         var actRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 8) };
         actRow.Children.Add(MkBtn(L.T("Select all"), () => SetAllSelected(true)));
+        actRow.Children.Add(MkBtn(L.T("Select QST only"), () => SelectKind("QST")));
+        actRow.Children.Add(MkBtn(L.T("Select CNV only"), () => SelectKind("CNV")));
         actRow.Children.Add(MkBtn(L.T("Select none"), () => SetAllSelected(false)));
-        actRow.Children.Add(MkBtn(L.T("Export TXT"), () => Export(ExportKind.Txt)));
-        actRow.Children.Add(MkBtn(L.T("Export JSON"), () => Export(ExportKind.Json)));
-        actRow.Children.Add(MkBtn(L.T("Verify selected"), VerifySelected));
         actRow.Children.Add(MkBtn(L.T("Export CSV report"), () => _ = ExportCsv()));
 
         BuildColumns();
+
+        // 校验失败项：有失败时在表格上方显示（最多 5 条，可滚动）
+        _failPanel.Background = new SolidColorBrush(Color.FromArgb(0x14, 0xD5, 0x25, 0x15));
+        _failPanel.BorderBrush = UiTheme.DangerBrush;
+        _failPanel.BorderThickness = new Thickness(0, 0, 0, 1);
+        _failPanel.Padding = new Thickness(14, 6);
+        _failPanel.Child = new ScrollViewer
+        {
+            Content = _failText,
+            MaxHeight = 90,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        _failPanel.IsVisible = false;
+
+        // 扫描进度遮罩：覆盖表格区域
+        var overlayStack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 6,
+        };
+        overlayStack.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 260 });
+        overlayStack.Children.Add(new TextBlock
+        {
+            Text = L.T("Scanning…"),
+            Foreground = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        });
+        _scanOverlay.Background = new SolidColorBrush(Color.FromArgb(0x66, 0, 0, 0));
+        _scanOverlay.Child = overlayStack;
+        _scanOverlay.IsVisible = false;
+
+        var tableHost = new Grid { MaxHeight = 320, VerticalAlignment = VerticalAlignment.Top };
+        tableHost.Children.Add(_grid);
+        tableHost.Children.Add(_scanOverlay);
+
+        // 底部主按钮：TXT 为主色，突出本地化工作流
+        var verifyBtn = MkBtn(L.T("Verify"), VerifySelected);
+        var txtBtn = MkBtn(L.T("Export TXT"), () => Export(ExportKind.Txt));
+        // Semi 实心主色按钮：TXT 是本地化主流程，需要明显突出
+        if (UiTheme.FindTheme("SolidButton") is { } solid) txtBtn.Theme = solid;
+        txtBtn.Classes.Add("Primary");
+        var jsonBtn = MkBtn(L.T("Export JSON"), () => Export(ExportKind.Json));
+        var bottomBar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(14, 8, 14, 10),
+        };
+        bottomBar.Children.Add(verifyBtn);
+        bottomBar.Children.Add(txtBtn);
+        bottomBar.Children.Add(jsonBtn);
+        var bottomBorder = new Border
+        {
+            BorderBrush = UiTheme.GridLineBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Child = bottomBar,
+        };
 
         var head = new StackPanel { Margin = new Thickness(14, 12, 14, 4) };
         Grid.SetIsSharedSizeScope(head, true);   // 两行标签按内容取宽，并保持一致
@@ -105,24 +178,76 @@ internal sealed class BatchWindow : Window
         head.Children.Add(optRow);
         head.Children.Add(actRow);
 
+        var center = new DockPanel();
+        DockPanel.SetDock(_failPanel, Dock.Top);
+        center.Children.Add(_failPanel);
+        DockPanel.SetDock(_status, Dock.Bottom);   // 状态栏贴在表格下方
+        center.Children.Add(_status);
+        center.Children.Add(tableHost);
+
         var root = new DockPanel();
         DockPanel.SetDock(head, Dock.Top);
         root.Children.Add(head);
-        var bottom = new DockPanel();
-        DockPanel.SetDock(_status, Dock.Bottom);
-        bottom.Children.Add(_status);
-        bottom.Children.Add(_grid);
-        root.Children.Add(bottom);
+        DockPanel.SetDock(bottomBorder, Dock.Bottom);
+        root.Children.Add(bottomBorder);
+        root.Children.Add(center);
         Content = root;
 
-        SetStatus(L.T("Ready. Pick a source folder, then click Scan."));
+        // 源目录变化 → 自动扫描（防抖）；生成目录随之自动填充
+        _path.TextChanged += (_, _) =>
+        {
+            UpdateDefaultOutDir();
+            ScheduleScan();
+        };
+        _outPath.TextChanged += (_, _) =>
+        {
+            if (!_updatingOut) _outEdited = !string.IsNullOrWhiteSpace(_outPath.Text);
+        };
+        _keepStructure.IsCheckedChanged += (_, _) => UpdateDefaultOutDir();
+        _flatten.IsCheckedChanged += (_, _) => UpdateDefaultOutDir();
+        _scanTimer.Tick += (_, _) =>
+        {
+            _scanTimer.Stop();
+            _ = ScanAsync();
+        };
+
+        SetStatus(L.T("Ready. Pick a source folder; scanning starts automatically."));
+    }
+
+    /// <summary>
+    /// 生成目录留空（或用户清空）时，自动填成 源目录\CnvQstToTxtKeepLevel /
+    /// 源目录\CnvQstToTxtNoLevel；源路径是文件时取所在目录。
+    /// </summary>
+    private void UpdateDefaultOutDir()
+    {
+        if (_outEdited) return;
+        string input = _path.Text?.Trim() ?? "";
+        if (input.Length == 0) { SetOutText(""); return; }
+
+        string full;
+        try { full = Path.GetFullPath(input); } catch { return; }
+        string baseDir = Directory.Exists(full) ? full
+            : File.Exists(full) ? Path.GetDirectoryName(full) ?? ""
+            : "";
+        if (baseDir.Length == 0) return;   // 路径还没输完整：等下一次变化
+
+        string sub = _keepStructure.IsChecked == true ? OutSubdirKeep : OutSubdirFlat;
+        SetOutText(Path.Combine(baseDir, sub));
+    }
+
+    private void SetOutText(string text)
+    {
+        if (_outPath.Text == text) return;
+        _updatingOut = true;
+        try { _outPath.Text = text; }
+        finally { _updatingOut = false; }
     }
 
     private enum ExportKind { Txt, Json }
 
     private static Button MkBtn(string text, Action onClick)
     {
-        var b = new Button { Content = text, Padding = new Thickness(10, 2, 10, 2) };
+        var b = new Button { Content = text, Padding = new Thickness(10, 2, 10, 2), FontWeight = FontWeight.Normal };
         b.Click += (_, _) => onClick();
         return b;
     }
@@ -130,12 +255,19 @@ internal sealed class BatchWindow : Window
     private void BuildColumns()
     {
         _grid.Columns.Add(MkCheckColumn(L.T("Sel"), nameof(BatchRow.Sel)));
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("File"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.File)), IsReadOnly = true, Width = new DataGridLength(3, DataGridLengthUnitType.Star) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Kind"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Kind)), IsReadOnly = true, Width = new DataGridLength(80) });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("File"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.File)),
+            SortMemberPath = nameof(BatchRow.FileName),   // 文件列按文件名排序，而非相对路径
+            IsReadOnly = true,
+            Width = new DataGridLength(3, DataGridLengthUnitType.Star),
+        });
+        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Kind"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Kind)), SortMemberPath = nameof(BatchRow.Kind), IsReadOnly = true, Width = new DataGridLength(80) });
         _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Ver"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ver)), IsReadOnly = true, Width = new DataGridLength(64) });
         _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Steps / tasks"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Count)), IsReadOnly = true, Width = new DataGridLength(120) });
         _grid.Columns.Add(new DataGridTextColumn { Header = L.T("TXT lines"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Lines)), IsReadOnly = true, Width = new DataGridLength(96) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Check"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ok)), IsReadOnly = true, Width = new DataGridLength(64) });
+        _grid.Columns.Add(MkOkColumn(L.T("Check")));
         _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Failure reason"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Err)), IsReadOnly = true, Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
     }
 
@@ -148,7 +280,30 @@ internal sealed class BatchWindow : Window
             cb.Bind(CheckBox.IsCheckedProperty, new Avalonia.Data.Binding(propertyName) { Mode = Avalonia.Data.BindingMode.TwoWay });
             return cb;
         });
-        return new DataGridTemplateColumn { Header = header, CellTemplate = template, Width = new DataGridLength(48) };
+        return new DataGridTemplateColumn { Header = header, CellTemplate = template, Width = new DataGridLength(48), CanUserSort = false };
+    }
+
+    /// <summary>校验列：通过为绿色 ✓，失败为红色 ✗。</summary>
+    private static DataGridTemplateColumn MkOkColumn(string header)
+    {
+        var template = new FuncDataTemplate<object?>((_, _) =>
+        {
+            var tb = new TextBlock
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            tb.Bind(TextBlock.TextProperty, new Avalonia.Data.Binding(nameof(BatchRow.Ok)));
+            tb.Bind(TextBlock.ForegroundProperty, new Avalonia.Data.Binding(nameof(BatchRow.OkBrush)));
+            return tb;
+        });
+        return new DataGridTemplateColumn
+        {
+            Header = header,
+            CellTemplate = template,
+            Width = new DataGridLength(64),
+            SortMemberPath = nameof(BatchRow.Ok),
+        };
     }
 
     private sealed class BatchRow : INotifyPropertyChanged
@@ -169,11 +324,14 @@ internal sealed class BatchWindow : Window
             }
         }
         public string File => _it.Rel;
+        /// <summary>文件列的排序键：只按文件名，忽略子目录。</summary>
+        public string FileName => System.IO.Path.GetFileName(_it.Rel);
         public string Kind => _it.Kind;
         public string Ver => _it.Version == 0 ? "" : "v" + _it.Version;
         public string Count => _it.StepsOrTasks.ToString();
         public string Lines => _it.TxtLines.ToString();
         public string Ok => _it.AllOk ? "✓" : "✗";
+        public IBrush OkBrush => _it.AllOk ? UiTheme.OkBrush : UiTheme.DangerBrush;
         public string Err => _it.FailReason;
     }
 
@@ -181,7 +339,8 @@ internal sealed class BatchWindow : Window
     public void PresetDirectory(string dir)
     {
         _path.Text = dir;
-        Scan();
+        _scanTimer.Stop();   // 拖入目录时立即扫描，不等防抖
+        _ = ScanAsync();
     }
 
     private void SetStatus(string text) => _status.Text = text;
@@ -189,13 +348,33 @@ internal sealed class BatchWindow : Window
     private void UpdateCounts()
     {
         var sel = SelectedFiles().Count;
-        SetStatus(L.F("Scanned {0} files, {1} selected.", _items.Count, sel));
+        SetStatus(L.F("Scanned {0} files: {1} passed, {2} failed, {3} selected.",
+            _items.Count, _items.Count(i => i.AllOk), _items.Count(i => !i.AllOk), sel));
     }
 
     private void SetAllSelected(bool selected)
     {
         if (_grid.ItemsSource is not IEnumerable<BatchRow> rows) return;
-        foreach (var row in rows) row.Sel = selected;
+        BulkSelect(() => { foreach (var row in rows) row.Sel = selected; });
+    }
+
+    /// <summary>按类型勾选：QST 同时覆盖 QST2，CNV 覆盖 CNV / CNV-JSON。</summary>
+    private void SelectKind(string kind)
+    {
+        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows) return;
+        BulkSelect(() =>
+        {
+            foreach (var row in rows)
+                row.Sel = row.Kind.StartsWith(kind, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// <summary>整批勾选后只刷新一次状态栏，避免逐行 O(n²) 统计。</summary>
+    private void BulkSelect(Action apply)
+    {
+        _bulkSelect = true;
+        try { apply(); }
+        finally { _bulkSelect = false; }
         UpdateCounts();
     }
 
@@ -224,7 +403,12 @@ internal sealed class BatchWindow : Window
             Title = L.T("Select source folder"),
             AllowMultiple = false,
         });
-        if (folders.Count > 0) _path.Text = folders[0].Path.LocalPath;
+        if (folders.Count > 0)
+        {
+            _path.Text = folders[0].Path.LocalPath;
+            _scanTimer.Stop();
+            _ = ScanAsync();
+        }
     }
 
     private async Task BrowseOut()
@@ -237,31 +421,74 @@ internal sealed class BatchWindow : Window
         if (folders.Count > 0) _outPath.Text = folders[0].Path.LocalPath;
     }
 
-    private void Scan()
+    /// <summary>源目录变化后自动扫描；400ms 防抖，连续输入只扫最后一次。</summary>
+    private void ScheduleScan()
+    {
+        _scanTimer.Stop();
+        _scanTimer.Start();
+    }
+
+    private async Task ScanAsync()
     {
         string path = _path.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path) && !File.Exists(path))
+        if (path.Length == 0 || (!Directory.Exists(path) && !File.Exists(path)))
         {
-            Gui.Warn(this, L.T("Pick an existing file or folder first."), Title ?? "");
+            _scanVersion++;              // 使进行中的扫描结果失效
+            _items = new();
+            _grid.ItemsSource = null;
+            _failPanel.IsVisible = false;
+            SetScanning(false);
+            SetStatus(path.Length == 0
+                ? L.T("Ready. Pick a source folder; scanning starts automatically.")
+                : L.T("Pick an existing file or folder first."));
             return;
         }
+
+        int version = ++_scanVersion;
+        SetScanning(true);
         try
         {
-            _items = BatchOps.Scan(path);
-            var rows = _items.Select(i => new BatchRow(i)).ToList();
+            var items = await Task.Run(() => BatchOps.Scan(path));
+            if (version != _scanVersion) return;
+            _items = items;
+            var rows = items.Select(i => new BatchRow(i)).ToList();
             foreach (var row in rows)
                 row.PropertyChanged += (_, e) =>
                 {
-                    if (e.PropertyName == nameof(BatchRow.Sel)) UpdateCounts();
+                    if (!_bulkSelect && e.PropertyName == nameof(BatchRow.Sel)) UpdateCounts();
                 };
             _grid.ItemsSource = rows;
-            SetStatus(L.F("Scanned {0} files: {1} passed, {2} failed.", _items.Count,
-                _items.Count(i => i.AllOk), _items.Count(i => !i.AllOk)));
+            ShowFailures(items);
+            UpdateCounts();
         }
         catch (Exception e)
         {
+            if (version != _scanVersion) return;
+            SetStatus(L.F("Scan failed: {0}", e.Message));
             Gui.Warn(this, L.F("Scan failed: {0}", e.Message), Title ?? "");
         }
+        finally
+        {
+            if (version == _scanVersion) SetScanning(false);
+        }
+    }
+
+    private void SetScanning(bool on)
+    {
+        _scanOverlay.IsVisible = on;
+        _grid.IsEnabled = !on;
+    }
+
+    /// <summary>顶部失败摘要：最多列 5 条（原因内换行压成一行），其余只提示总数。</summary>
+    private void ShowFailures(List<BatchItem> items)
+    {
+        var failed = items.Where(i => !i.AllOk).ToList();
+        _failPanel.IsVisible = failed.Count > 0;
+        if (failed.Count == 0) return;
+        var lines = failed.Take(5).Select(i =>
+            i.Rel + L.Colon + " " + i.FailReason.ReplaceLineEndings(" "));
+        _failText.Text = L.T("Failed checks") + L.Colon + Environment.NewLine + string.Join(Environment.NewLine, lines)
+            + (failed.Count > 5 ? Environment.NewLine + L.F("…{0} total", failed.Count) : "");
     }
 
     private List<string> SelectedFiles()

@@ -32,7 +32,10 @@ batch localization export, and structure validation for scripted pipelines.
 - **Lossless JSON round-trip**: export `.cnv/.qst` to JSON, edit, and convert back byte-for-byte.
 - **Localization workflow**: export official-format localization TXT, with per-slot guidance
   ("should fill / may be empty / must be empty").
-- **Batch processing**: scan folders, select files, export TXT / JSON in bulk, validate and write a CSV report.
+- **Batch processing**: picking or typing a source folder scans automatically; filter by kind and sort by clicking
+  a column header, then validate or export TXT / JSON from the main buttons at the bottom (CSV report is also
+  available). The output folder defaults to a source subfolder (`CnvQstToTxtKeepLevel` for mirrored structure,
+  `CnvQstToTxtNoLevel` for flat) and remains editable.
 - **Safe writes**: re-parse and verify structure, localization offset and round-trip before saving; refuse to
   write when checks fail, and keep a `.bak` copy of the previous file.
 - **Game folder integration**: configure the game root, GDX1/2/3 and MOD folders, then browse `database` /
