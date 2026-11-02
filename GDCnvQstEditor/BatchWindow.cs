@@ -54,11 +54,11 @@ internal sealed class BatchWindow : Window
         var browse = MkBtn(L.T("Browse"), () => _ = Browse());
         var scan = MkBtn(L.T("Scan"), Scan);
         var pathRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-        pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "BatchPathLabel" });
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         pathRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var lbl = DialogChrome.Label(L.T("Source folder"));
+        var lbl = DialogChrome.Label(L.T("Source folder") + L.Colon);
         lbl.SetValue(Grid.ColumnProperty, 0);
         _path.SetValue(Grid.ColumnProperty, 1);
         browse.SetValue(Grid.ColumnProperty, 2);
@@ -70,10 +70,10 @@ internal sealed class BatchWindow : Window
         pathRow.Children.Add(scan);
 
         var outRow = new Grid { Margin = new Thickness(0, 0, 0, 8) };
-        outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "BatchPathLabel" });
         outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         outRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var lblOut = DialogChrome.Label(L.T("Output folder"));
+        var lblOut = DialogChrome.Label(L.T("Output folder") + L.Colon);
         lblOut.SetValue(Grid.ColumnProperty, 0);
         _outPath.SetValue(Grid.ColumnProperty, 1);
         var outBrowse = MkBtn(L.T("Browse"), () => _ = BrowseOut());
@@ -99,6 +99,7 @@ internal sealed class BatchWindow : Window
         BuildColumns();
 
         var head = new StackPanel { Margin = new Thickness(14, 12, 14, 4) };
+        Grid.SetIsSharedSizeScope(head, true);   // 两行标签按内容取宽，并保持一致
         head.Children.Add(pathRow);
         head.Children.Add(outRow);
         head.Children.Add(optRow);
