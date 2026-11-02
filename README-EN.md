@@ -215,10 +215,11 @@ format research and regression testing.
 The format work also draws on [R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility) (MIT),
 which decompiled the game loader.
 
-## UI Language Packs
+## UI localization guide
 
-Language packs are `lang/*.json` next to the executable (releases embed Chinese and English; a same-named file
-on disk takes precedence):
+The UI text is entirely language-pack driven: packs are `lang/*.json` next to the executable (releases embed
+Chinese and English; a same-named file on disk takes precedence), so adding a language requires **no code changes
+and no rebuild**.
 
 ```json
 { "code": "zh-CN", "name": "简体中文",
@@ -226,9 +227,21 @@ on disk takes precedence):
   "types":   { "HasFaction": "阵营声望" } }
 ```
 
-- Missing keys fall back to the English key; action / condition / node type names stay as fixed terms.
-- To add a language, copy a JSON file, change `code` / `name` and the translations, and drop it into `lang/`;
-  it appears in the Language menu automatically.
+- Missing keys fall back to the English key, so translations can be submitted in batches without blank labels;
+- action / condition / node type names are fixed terms: put them in `types`, not `strings`.
+
+New languages are very welcome! You can open a pull request directly, or try the pack locally first:
+
+1. **Submit a pull request**: add the translated `<language-code>.json` to
+   [`GDCnvQstEditor/lang/`](GDCnvQstEditor/lang/); it is embedded into the binaries at build time. Mention the
+   language name in the PR; translator credit is optional. Feel free to submit — no prior approval needed.
+2. **Try it locally / distribute yourself**: copy [`GDCnvQstEditor/lang/en.json`](GDCnvQstEditor/lang/en.json) —
+   the English key list is the anchor template (the keys are the anchors) — using
+   [`zh-CN.json`](GDCnvQstEditor/lang/zh-CN.json) as a reference for translation granularity, and rename it to
+   `<language-code>.json` (e.g. `de.json`, `ja.json`, `ru.json`). Change `code` and `name` at the top
+   (`name` is what the Language menu displays), translate only the values in `strings` and `types`, and keep the
+   English keys unchanged. Put the file in the `lang/` folder next to the executable and restart; the Language
+   menu in the menu bar picks it up automatically — no menu item to add.
 
 ## Known Issues
 

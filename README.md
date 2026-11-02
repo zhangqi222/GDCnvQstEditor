@@ -189,9 +189,9 @@ screenshots/           README 截图（中文 / 英文）
 
 格式结论同时参考了 [R-Hidayatullah/gd-utility](https://github.com/R-Hidayatullah/gd-utility)（MIT）对游戏加载器的解析。
 
-## 界面语言包
+## UI 本地化指南
 
-语言包是 EXE 旁 `lang/*.json`（发布版已内嵌中英文，磁盘同名文件优先）：
+界面文字完全由语言包驱动：语言包是 EXE 旁 `lang/*.json`（发布版已内嵌中英文，磁盘同名文件优先），新增语言**不需要改代码、不需要重新编译**。
 
 ```json
 { "code": "zh-CN", "name": "简体中文",
@@ -199,8 +199,13 @@ screenshots/           README 截图（中文 / 英文）
   "types":   { "HasFaction": "阵营声望" } }
 ```
 
-- 缺 key 时回退英文 key；动作 / 条件 / 节点类型等固定术语不进入 `strings` 字典；
-- 新增语言：复制一份 JSON，修改 `code` / `name` 与译文，放入 `lang/` 即出现在「语言」菜单。
+- 缺 key 时回退英文 key，因此可以分批翻译，不会出现空白标签；
+- 动作 / 条件 / 节点类型等固定术语不进入 `strings` 字典，写进 `types`。
+
+非常欢迎为本项目补充新语言！你可以直接提交合并请求，也可以先在本地试用：
+
+1. **提交合并请求**：把翻译好的 `<语言代码>.json` 提交到仓库的 [`GDCnvQstEditor/lang/`](GDCnvQstEditor/lang/) 目录（构建时会内嵌进程序），并在 PR 中注明语言名称，译者署名可选。欢迎直接提交，不必事先征得同意。
+2. **本地试用 / 自行分发**：以 [`GDCnvQstEditor/lang/en.json`](GDCnvQstEditor/lang/en.json) 为锚定模板（英文 key 清单，键名即锚点），可对照 [`zh-CN.json`](GDCnvQstEditor/lang/zh-CN.json) 的译文粒度，复制为 `<语言代码>.json`（如 `de.json`、`ja.json`、`ru.json`）。修改开头的 `code`（语言代码）与 `name`（菜单显示名），只翻译 `strings` 与 `types` 两段的值，英文 key 保持不动。把文件放到程序目录的 `lang/` 下（与 exe 同级）并重启，菜单栏的「语言」菜单会自动出现该选项，无需手工添加菜单项。
 
 ## 已知事项
 
