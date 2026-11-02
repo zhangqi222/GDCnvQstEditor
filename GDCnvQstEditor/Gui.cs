@@ -53,7 +53,9 @@ internal enum MsgResult { Ok, Yes, No, Cancel }
 /// <summary>轻量消息框（Avalonia 无内置 MessageBox）：可选中复制正文。</summary>
 internal static class MsgBox
 {
-    public static async Task<MsgResult> Show(Window? owner, string text, string title, MsgButtons buttons, bool warning = false)
+    /// <param name="openFolder">非空时在按钮行左侧加「打开输出目录」，点击后调用系统外壳打开该目录。</param>
+    public static async Task<MsgResult> Show(Window? owner, string text, string title, MsgButtons buttons,
+        bool warning = false, string? openFolder = null)
     {
         var dlg = new Window
         {
@@ -84,10 +86,27 @@ internal static class MsgBox
             btnRow.Children.Add(b);
         }
 
+        if (!string.IsNullOrWhiteSpace(openFolder))
+        {
+            var open = new Button { Content = L.T("Open output folder"), MinWidth = 120, MinHeight = 30 };
+            UiTheme.MakePrimary(open);
+            open.Click += (_, _) =>
+            {
+                try { AppSettings.OpenInShell(openFolder); }
+                catch (Exception e)
+                {
+                    Gui.Warn(dlg, L.F("Could not open output folder: {0}", e.Message), L.T("Open output folder"));
+                    return;
+                }
+                dlg.Close(MsgResult.Ok);
+            };
+            btnRow.Children.Add(open);
+        }
+
         switch (buttons)
         {
             case MsgButtons.Ok:
-                MakeBtn(L.T("OK"), MsgResult.Ok, true);
+                MakeBtn(L.T("OK"), MsgResult.Ok, openFolder == null);
                 break;
             case MsgButtons.OkCancel:
                 MakeBtn(L.T("OK"), MsgResult.Ok, true);

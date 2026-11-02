@@ -25,7 +25,7 @@ GDCnvQstEditor 是一个面向任务作者、翻译者与格式研究者的开�
   - **DUMP**：编辑器风格树形文本，便于排查格式细节。
 - **JSON 双向互转**：`.cnv/.qst → JSON` 全保真导出；手写 JSON → `.cnv/.qst`，适合批量生成与版本管理。
 - **本地化工作流**：导出与官方格式一致的本地化 TXT；内置槽位明细，明确「建议填写 / 可为空 / 必须为空」。
-- **批量处理**：选择或输入源目录后自动扫描，可按类型筛选、点击列头排序；底部主按钮批量校验与导出 TXT / JSON，另可导出 CSV 报告。生成目录默认跟随源目录（保持结构用 `CnvQstToTxtKeepLevel`，平铺用 `CnvQstToTxtNoLevel`），仍可手动修改。
+- **批量处理**：选择或输入源目录后自动扫描，也可点底部「重新扫描」；可按类型筛选、点击列头按完整单元格内容排序（文件按文件名、版本/数量/行数按数值）。扫描、校验与导出 TXT / JSON 时表格区显示圆形进度与「当前/总数」；底部主按钮批量校验与导出 TXT / JSON，导出完成的提示框可直接「打开输出目录」，另可导出 CSV 报告。生成目录默认跟随源目录与结构选项（保持结构用 `CnvQstToTxtKeepLevel`，平铺用 `CnvQstToTxtNoLevel`），未手动修改时切换选项立即更新，仍可手动修改。
 - **安全写盘**：保存前自动重解析并校验结构、本地化偏移与 round-trip；校验不过拒绝落盘，已有文件先备份 `.bak`。
 - **游戏目录集成**：设置游戏根目录与 GDX1/2/3、MOD 目录后，可按叠加覆盖规则浏览 `database` / `resources` 文件。
 - **中英界面**：默认中文，可即时切换英文；语言包为 `lang/*.json`，新增语言无需改代码。
@@ -139,7 +139,7 @@ dotnet build GDCnvQstEditor.sln        # 默认 Debug，输出到各工程 bin/D
 
 发布由 [`.github/workflows/release.yml`](.github/workflows/release.yml) 完成，只响应手动运行（`workflow_dispatch`），提交、标签、定时任务都不会自动触发：
 
-1. 同步修改 `GDCnvQstEditor/GDCnvQstEditor.csproj` 与 `GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj` 的 `<Version>`，提交并推送；版本号即标签名（`2.0.24` → `v2.0.24`）。
+1. 同步修改 `GDCnvQstEditor/GDCnvQstEditor.csproj` 与 `GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj` 的 `<Version>`，提交并推送；版本号即标签名（`2.0.25` → `v2.0.25`）。
 2. 仓库 **Actions → Release → Run workflow**，可勾选草稿 / 预发布。
 3. 工作流读取版本号并校验两个工程一致、标签未被其他提交占用（发布中断后可在同一提交重跑），按上一版本标签到当前提交生成更新日志（没有上一版本时写「首次发布」），调用 `publish.ps1` 打包，创建 `vX.Y.Z` 标签与 Release，上传两个 EXE 与 `SHA256SUMS.txt`。
 

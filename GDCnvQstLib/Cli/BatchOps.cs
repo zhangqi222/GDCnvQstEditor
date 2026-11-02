@@ -186,16 +186,23 @@ public static class BatchOps
                 : throw new GdParseException(CliL.F("无法按扩展名识别格式：{0}（仅支持 .cnv/.qst）", file));
 
     /// <summary>扫描目录（或单文件）并逐个检查。</summary>
-    public static List<BatchItem> Scan(string path)
+    public static List<BatchItem> Scan(string path) => Scan(path, null);
+
+    /// <summary>扫描并逐文件回报进度（done, total）；GUI 进度遮罩用，CLI 忽略。</summary>
+    public static List<BatchItem> Scan(string path, Action<int, int>? progress)
     {
-        var items = new List<BatchItem>();
-        foreach (string f in EnumerateFiles(path))
+        List<string> files = EnumerateFiles(path);
+        var items = new List<BatchItem>(files.Count);
+        progress?.Invoke(0, files.Count);
+        int done = 0;
+        foreach (string f in files)
         {
             try { items.Add(Inspect(f, path)); }
             catch (Exception e)
             {
                 items.Add(new BatchItem { Path = f, Rel = Path.GetFileName(f), Error = e.Message });
             }
+            progress?.Invoke(++done, files.Count);
         }
         return items;
     }

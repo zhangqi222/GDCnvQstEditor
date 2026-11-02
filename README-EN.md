@@ -32,10 +32,13 @@ batch localization export, and structure validation for scripted pipelines.
 - **Lossless JSON round-trip**: export `.cnv/.qst` to JSON, edit, and convert back byte-for-byte.
 - **Localization workflow**: export official-format localization TXT, with per-slot guidance
   ("should fill / may be empty / must be empty").
-- **Batch processing**: picking or typing a source folder scans automatically; filter by kind and sort by clicking
-  a column header, then validate or export TXT / JSON from the main buttons at the bottom (CSV report is also
-  available). The output folder defaults to a source subfolder (`CnvQstToTxtKeepLevel` for mirrored structure,
-  `CnvQstToTxtNoLevel` for flat) and remains editable.
+- **Batch processing**: picking or typing a source folder scans automatically, and a Rescan button is available at
+  the bottom. Filter by kind and sort by clicking a column header — the full cell content is compared (file name
+  for files, numeric order for version / counts / lines). Scanning, validating and exporting TXT / JSON show a
+  circular progress ring with "processed / total" over the table. The bottom main buttons validate or export
+  TXT / JSON, and the completion dialog offers an "Open output folder" button (a CSV report is also available). The output folder follows the source folder and structure option
+  (`CnvQstToTxtKeepLevel` for mirrored structure, `CnvQstToTxtNoLevel` for flat); changing the option updates it
+  immediately unless you edited the path manually, and it always remains editable.
 - **Safe writes**: re-parse and verify structure, localization offset and round-trip before saving; refuse to
   write when checks fail, and keep a `.bak` copy of the previous file.
 - **Game folder integration**: configure the game root, GDX1/2/3 and MOD folders, then browse `database` /
@@ -164,7 +167,7 @@ manual dispatch (`workflow_dispatch`) — pushes, tags and schedules never trigg
 
 1. Set the same `<Version>` in `GDCnvQstEditor/GDCnvQstEditor.csproj` and
    `GDCnvQstEditor-cli/GDCnvQstEditor-cli.csproj`, commit and push. The version becomes the tag
-   (`2.0.24` → `v2.0.24`).
+   (`2.0.25` → `v2.0.25`).
 2. In the repository, open **Actions → Release → Run workflow**; optionally mark the release as draft or
    pre-release.
 3. The workflow reads the version, verifies both projects agree, refuses a tag already used by another commit

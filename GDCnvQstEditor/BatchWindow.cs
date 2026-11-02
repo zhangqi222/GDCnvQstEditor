@@ -1,3 +1,4 @@
+using System.Collections;
 using System.ComponentModel;
 using System.Text;
 using Avalonia;
@@ -37,14 +38,37 @@ internal sealed class BatchWindow : Window
     private readonly TextBlock _status = new() { Foreground = UiTheme.MutedBrush, Margin = new Thickness(14, 2, 14, 4), TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _failText = new() { TextWrapping = TextWrapping.Wrap, Foreground = UiTheme.DangerBrush, FontSize = 12 };
     private readonly Border _failPanel = new();
-    private readonly Border _scanOverlay = new();
+    private readonly Border _progressOverlay = new();
+    private readonly ProgressBar _progressRing = new()
+    {
+        Width = 84,
+        Height = 84,
+        BorderThickness = new Thickness(8),
+        Minimum = 0,
+        Maximum = 1,
+        ShowProgressText = false,
+    };
+    private readonly TextBlock _progressTitle = new()
+    {
+        Foreground = Brushes.White,
+        FontSize = 14,
+        HorizontalAlignment = HorizontalAlignment.Center,
+    };
+    private readonly TextBlock _progressCount = new()
+    {
+        Foreground = Brushes.White,
+        FontSize = 12,
+        HorizontalAlignment = HorizontalAlignment.Center,
+    };
     private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private WindowNotificationManager? _notify;
     private List<BatchItem> _items = new();
     private int _scanVersion;    // 只采用最后一次自动扫描的结果
     private bool _bulkSelect;    // 批量勾选期间抑制逐行状态刷新
-    private bool _updatingOut;   // 正在程序化填写生成目录，不算用户编辑
-    private bool _outEdited;     // 用户手动改过生成目录；清空后恢复自动跟随
+    private string? _autoOut;    // 最近一次自动生成的目录，用于区分用户自定义目录
+    private bool _busy;          // 扫描 / 校验 / 导出进行中
+    private bool _scanning;      // 其中扫描单独标记，处理扫描期间源路径变化
+    private bool _pendingScan;   // 忙时收到扫描请求，结束后补扫
 
     private const string OutSubdirKeep = "CnvQstToTxtKeepLevel";
     private const string OutSubdirFlat = "CnvQstToTxtNoLevel";
@@ -125,35 +149,33 @@ internal sealed class BatchWindow : Window
         };
         _failPanel.IsVisible = false;
 
-        // 扫描进度遮罩：覆盖表格区域
+        // 进度遮罩：覆盖表格区域（扫描 / 校验 / 导出共用，圆形进度环 + 当前/总数）
+        if (UiTheme.FindTheme("ProgressRing") is { } ringTheme) _progressRing.Theme = ringTheme;
         var overlayStack = new StackPanel
         {
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 6,
+            Spacing = 8,
         };
-        overlayStack.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 260 });
-        overlayStack.Children.Add(new TextBlock
-        {
-            Text = L.T("Scanning…"),
-            Foreground = Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Center,
-        });
-        _scanOverlay.Background = new SolidColorBrush(Color.FromArgb(0x66, 0, 0, 0));
-        _scanOverlay.Child = overlayStack;
-        _scanOverlay.IsVisible = false;
+        overlayStack.Children.Add(_progressRing);
+        overlayStack.Children.Add(_progressTitle);
+        overlayStack.Children.Add(_progressCount);
+        _progressOverlay.Background = new SolidColorBrush(Color.FromArgb(0x66, 0, 0, 0));
+        _progressOverlay.Child = overlayStack;
+        _progressOverlay.IsVisible = false;
 
         var tableHost = new Grid { MaxHeight = 320, VerticalAlignment = VerticalAlignment.Top };
         tableHost.Children.Add(_grid);
-        tableHost.Children.Add(_scanOverlay);
+        tableHost.Children.Add(_progressOverlay);
 
-        // 底部主按钮：TXT 为主色，突出本地化工作流
-        var verifyBtn = MkBtn(L.T("Verify"), VerifySelected);
-        var txtBtn = MkBtn(L.T("Export TXT"), () => Export(ExportKind.Txt));
+        // 底部主按钮：TXT 为主色，突出本地化工作流；重新扫描保留冗余入口
+        var rescanBtn = MkBtn(L.T("Rescan"), () => _ = ScanAsync());
+        var verifyBtn = MkBtn(L.T("Verify"), () => _ = VerifyAsync());
+        var txtBtn = MkBtn(L.T("Export TXT"), () => _ = ExportAsync(ExportKind.Txt));
         // Semi 实心主色按钮：TXT 是本地化主流程，需要明显突出
         if (UiTheme.FindTheme("SolidButton") is { } solid) txtBtn.Theme = solid;
         txtBtn.Classes.Add("Primary");
-        var jsonBtn = MkBtn(L.T("Export JSON"), () => Export(ExportKind.Json));
+        var jsonBtn = MkBtn(L.T("Export JSON"), () => _ = ExportAsync(ExportKind.Json));
         var bottomBar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -161,6 +183,7 @@ internal sealed class BatchWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(14, 8, 14, 10),
         };
+        bottomBar.Children.Add(rescanBtn);
         bottomBar.Children.Add(verifyBtn);
         bottomBar.Children.Add(txtBtn);
         bottomBar.Children.Add(jsonBtn);
@@ -199,12 +222,13 @@ internal sealed class BatchWindow : Window
             UpdateDefaultOutDir();
             ScheduleScan();
         };
-        _outPath.TextChanged += (_, _) =>
-        {
-            if (!_updatingOut) _outEdited = !string.IsNullOrWhiteSpace(_outPath.Text);
-        };
         _keepStructure.IsCheckedChanged += (_, _) => UpdateDefaultOutDir();
         _flatten.IsCheckedChanged += (_, _) => UpdateDefaultOutDir();
+        // 用户清空生成目录后立即恢复自动跟随（改为填其他目录时保持自定义）
+        _outPath.TextChanged += (_, _) =>
+        {
+            if (string.IsNullOrWhiteSpace(_outPath.Text)) UpdateDefaultOutDir();
+        };
         _scanTimer.Tick += (_, _) =>
         {
             _scanTimer.Stop();
@@ -215,14 +239,18 @@ internal sealed class BatchWindow : Window
     }
 
     /// <summary>
-    /// 生成目录留空（或用户清空）时，自动填成 源目录\CnvQstToTxtKeepLevel /
-    /// 源目录\CnvQstToTxtNoLevel；源路径是文件时取所在目录。
+    /// 生成目录为空或仍等于上次自动生成值（即用户没改过）时，自动跟随源目录与结构选项：
+    /// 源目录\CnvQstToTxtKeepLevel / 源目录\CnvQstToTxtNoLevel；源路径是文件时取所在目录。
+    /// 用户手动改过的目录会保留，清空后恢复自动跟随。
     /// </summary>
     private void UpdateDefaultOutDir()
     {
-        if (_outEdited) return;
         string input = _path.Text?.Trim() ?? "";
-        if (input.Length == 0) { SetOutText(""); return; }
+        if (input.Length == 0)
+        {
+            if ((_outPath.Text ?? "").Length == 0 || _outPath.Text == _autoOut) SetOutText("");
+            return;
+        }
 
         string full;
         try { full = Path.GetFullPath(input); } catch { return; }
@@ -232,15 +260,17 @@ internal sealed class BatchWindow : Window
         if (baseDir.Length == 0) return;   // 路径还没输完整：等下一次变化
 
         string sub = _keepStructure.IsChecked == true ? OutSubdirKeep : OutSubdirFlat;
-        SetOutText(Path.Combine(baseDir, sub));
+        string desired = Path.Combine(baseDir, sub);
+        string current = _outPath.Text?.Trim() ?? "";
+        // 非空且不是自动生成值（也不是目标值）→ 用户自定义，保留
+        if (current.Length > 0 && current != _autoOut && current != desired) return;
+        SetOutText(desired);
     }
 
     private void SetOutText(string text)
     {
-        if (_outPath.Text == text) return;
-        _updatingOut = true;
-        try { _outPath.Text = text; }
-        finally { _updatingOut = false; }
+        _autoOut = text;
+        if (_outPath.Text != text) _outPath.Text = text;
     }
 
     private enum ExportKind { Txt, Json }
@@ -259,16 +289,74 @@ internal sealed class BatchWindow : Window
         {
             Header = L.T("File"),
             Binding = new Avalonia.Data.Binding(nameof(BatchRow.File)),
-            SortMemberPath = nameof(BatchRow.FileName),   // 文件列按文件名排序，而非相对路径
+            // 按完整文件名排序（同名列再用相对路径分胜负），不只看首个字符
+            CustomSortComparer = RowBy((a, b) =>
+                string.Compare(a.FileName, b.FileName, StringComparison.CurrentCultureIgnoreCase)),
             IsReadOnly = true,
             Width = new DataGridLength(3, DataGridLengthUnitType.Star),
         });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Kind"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Kind)), SortMemberPath = nameof(BatchRow.Kind), IsReadOnly = true, Width = new DataGridLength(80) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Ver"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ver)), IsReadOnly = true, Width = new DataGridLength(64) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Steps / tasks"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Count)), IsReadOnly = true, Width = new DataGridLength(120) });
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("TXT lines"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Lines)), IsReadOnly = true, Width = new DataGridLength(96) });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("Kind"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.Kind)),
+            CustomSortComparer = RowBy((a, b) =>
+                string.Compare(a.Kind, b.Kind, StringComparison.CurrentCultureIgnoreCase)),
+            IsReadOnly = true,
+            Width = new DataGridLength(80),
+        });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("Ver"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.Ver)),
+            CustomSortComparer = RowBy((a, b) => a.VersionNum.CompareTo(b.VersionNum)),
+            IsReadOnly = true,
+            Width = new DataGridLength(64),
+        });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("Steps / tasks"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.Count)),
+            CustomSortComparer = RowBy((a, b) => a.CountNum.CompareTo(b.CountNum)),
+            IsReadOnly = true,
+            Width = new DataGridLength(120),
+        });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("TXT lines"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.Lines)),
+            CustomSortComparer = RowBy((a, b) => a.LinesNum.CompareTo(b.LinesNum)),
+            IsReadOnly = true,
+            Width = new DataGridLength(96),
+        });
         _grid.Columns.Add(MkOkColumn(L.T("Check")));
-        _grid.Columns.Add(new DataGridTextColumn { Header = L.T("Failure reason"), Binding = new Avalonia.Data.Binding(nameof(BatchRow.Err)), IsReadOnly = true, Width = new DataGridLength(2, DataGridLengthUnitType.Star) });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = L.T("Failure reason"),
+            Binding = new Avalonia.Data.Binding(nameof(BatchRow.Err)),
+            CustomSortComparer = RowBy((a, b) =>
+                string.Compare(a.Err, b.Err, StringComparison.CurrentCultureIgnoreCase)),
+            IsReadOnly = true,
+            Width = new DataGridLength(2, DataGridLengthUnitType.Star),
+        });
+    }
+
+    /// <summary>DataGrid 的自定义排序比较器按整行对象比较，这里统一转成 BatchRow 间比较。</summary>
+    private static IComparer RowBy(Comparison<BatchRow> compare) => new RowComparer(compare);
+
+    private sealed class RowComparer : IComparer
+    {
+        private readonly Comparison<BatchRow> _compare;
+        public RowComparer(Comparison<BatchRow> compare) => _compare = compare;
+
+        public int Compare(object? x, object? y)
+        {
+            if (ReferenceEquals(x, y)) return 0;
+            if (x is not BatchRow a) return -1;
+            if (y is not BatchRow b) return 1;
+            int result = _compare(a, b);
+            // 同值时按完整相对路径兜底，保证排序稳定且可复现
+            return result != 0 ? result : string.Compare(a.File, b.File, StringComparison.CurrentCultureIgnoreCase);
+        }
     }
 
     /// <summary>勾选列（CheckBox 双向绑定直接写回模型）。</summary>
@@ -302,7 +390,7 @@ internal sealed class BatchWindow : Window
             Header = header,
             CellTemplate = template,
             Width = new DataGridLength(64),
-            SortMemberPath = nameof(BatchRow.Ok),
+            CustomSortComparer = RowBy((a, b) => string.CompareOrdinal(a.Ok, b.Ok)),
         };
     }
 
@@ -328,8 +416,11 @@ internal sealed class BatchWindow : Window
         public string FileName => System.IO.Path.GetFileName(_it.Rel);
         public string Kind => _it.Kind;
         public string Ver => _it.Version == 0 ? "" : "v" + _it.Version;
+        public int VersionNum => (int)_it.Version;
         public string Count => _it.StepsOrTasks.ToString();
+        public int CountNum => _it.StepsOrTasks;
         public string Lines => _it.TxtLines.ToString();
+        public int LinesNum => _it.TxtLines;
         public string Ok => _it.AllOk ? "✓" : "✗";
         public IBrush OkBrush => _it.AllOk ? UiTheme.OkBrush : UiTheme.DangerBrush;
         public string Err => _it.FailReason;
@@ -430,6 +521,12 @@ internal sealed class BatchWindow : Window
 
     private async Task ScanAsync()
     {
+        if (_busy)
+        {
+            _pendingScan = true;
+            if (_scanning) _scanVersion++;   // 扫描中源路径又变了：丢弃本次结果，结束后补扫
+            return;
+        }
         string path = _path.Text?.Trim() ?? "";
         if (path.Length == 0 || (!Directory.Exists(path) && !File.Exists(path)))
         {
@@ -437,7 +534,6 @@ internal sealed class BatchWindow : Window
             _items = new();
             _grid.ItemsSource = null;
             _failPanel.IsVisible = false;
-            SetScanning(false);
             SetStatus(path.Length == 0
                 ? L.T("Ready. Pick a source folder; scanning starts automatically.")
                 : L.T("Pick an existing file or folder first."));
@@ -445,10 +541,12 @@ internal sealed class BatchWindow : Window
         }
 
         int version = ++_scanVersion;
-        SetScanning(true);
+        BeginBusy(L.T("Scanning…"), 0);
+        _scanning = true;
         try
         {
-            var items = await Task.Run(() => BatchOps.Scan(path));
+            IProgress<(int Done, int Total)> progress = new Progress<(int Done, int Total)>(p => ReportProgress(p.Done, p.Total));
+            var items = await Task.Run(() => BatchOps.Scan(path, (done, total) => progress.Report((done, total))));
             if (version != _scanVersion) return;
             _items = items;
             var rows = items.Select(i => new BatchRow(i)).ToList();
@@ -469,14 +567,43 @@ internal sealed class BatchWindow : Window
         }
         finally
         {
-            if (version == _scanVersion) SetScanning(false);
+            _scanning = false;
+            EndBusy();
         }
     }
 
-    private void SetScanning(bool on)
+    /// <summary>开始遮罩表格并显示进度；total 未知时先显示无限旋转的圆环。</summary>
+    private void BeginBusy(string title, int total)
     {
-        _scanOverlay.IsVisible = on;
-        _grid.IsEnabled = !on;
+        _busy = true;
+        _scanTimer.Stop();
+        _progressTitle.Text = title;
+        _progressCount.Text = total > 0 ? $"0 / {total}" : "";
+        _progressRing.IsIndeterminate = total <= 0;
+        _progressRing.Maximum = Math.Max(total, 1);
+        _progressRing.Value = 0;
+        _progressOverlay.IsVisible = true;
+        _grid.IsEnabled = false;
+    }
+
+    /// <summary>更新圆形进度与「当前处理数 / 总数」。</summary>
+    private void ReportProgress(int done, int total)
+    {
+        if (total <= 0) return;
+        _progressRing.IsIndeterminate = false;
+        _progressRing.Maximum = total;
+        _progressRing.Value = done;
+        _progressCount.Text = $"{done} / {total}";
+    }
+
+    private void EndBusy()
+    {
+        _busy = false;
+        _progressOverlay.IsVisible = false;
+        _grid.IsEnabled = true;
+        if (!_pendingScan) return;
+        _pendingScan = false;
+        _ = ScanAsync();
     }
 
     /// <summary>顶部失败摘要：最多列 5 条（原因内换行压成一行），其余只提示总数。</summary>
@@ -497,65 +624,99 @@ internal sealed class BatchWindow : Window
         return rows.Where(r => r.Sel).Select(r => r.Path).ToList();
     }
 
-    private void Export(ExportKind kind)
+    private async Task ExportAsync(ExportKind kind)
     {
-        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("Scan and select files first."), Title ?? ""); return; }
+        if (_busy) return;
+        var files = SelectedFiles();
+        if (files.Count == 0) { Gui.Warn(this, L.T("Scan and select files first."), Title ?? ""); return; }
         string outDir = _outPath.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(outDir)) { Gui.Warn(this, L.T("Choose an output folder first."), Title ?? ""); return; }
         try { Directory.CreateDirectory(outDir); }
         catch (Exception e) { Gui.Warn(this, L.F("Cannot create output folder: {0}", e.Message), Title ?? ""); return; }
 
+        string baseDir = _path.Text!.Trim();
+        bool flat = _flatten.IsChecked == true;
+        string title = kind == ExportKind.Txt ? L.T("Export TXT") : L.T("Export JSON");
         int ok = 0, fail = 0;
-        foreach (string file in SelectedFiles())
+        BeginBusy(title, files.Count);
+        try
         {
-            try
+            IProgress<int> progress = new Progress<int>(done => ReportProgress(done, files.Count));
+            await Task.Run(() =>
             {
-                byte[] data = File.ReadAllBytes(file);
-                var model = BatchOps.Load(file, data);
-                string target = BatchOps.TargetPath(file, _path.Text!.Trim(), outDir, _flatten.IsChecked == true,
-                    kind == ExportKind.Txt ? ".txt" : ".json");
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                if (kind == ExportKind.Txt)
+                int done = 0;
+                foreach (string file in files)
                 {
-                    string txt = model switch
+                    try
                     {
-                        CnvFile c => TextExport.CnvTxt(c),
-                        QstFile q => TextExport.QstTxt(q),
-                        _ => throw new GdParseException(L.T("Unknown model")),
-                    };
-                    File.WriteAllText(target, txt, new UTF8Encoding(false));
+                        byte[] data = File.ReadAllBytes(file);
+                        var model = BatchOps.Load(file, data);
+                        string target = BatchOps.TargetPath(file, baseDir, outDir, flat,
+                            kind == ExportKind.Txt ? ".txt" : ".json");
+                        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                        if (kind == ExportKind.Txt)
+                        {
+                            string txt = model switch
+                            {
+                                CnvFile c => TextExport.CnvTxt(c),
+                                QstFile q => TextExport.QstTxt(q),
+                                _ => throw new GdParseException(L.T("Unknown model")),
+                            };
+                            File.WriteAllText(target, txt, new UTF8Encoding(false));
+                        }
+                        else
+                        {
+                            string name = Path.GetFileName(file);
+                            string json = model switch
+                            {
+                                CnvFile c => JsonIO.Export(c, name),
+                                QstFile q => JsonIO.Export(q, name),
+                                _ => throw new GdParseException(L.T("Unknown model")),
+                            };
+                            File.WriteAllText(target, json, new UTF8Encoding(false));
+                        }
+                        ok++;
+                    }
+                    catch { fail++; }
+                    progress.Report(++done);
                 }
-                else
-                {
-                    string name = Path.GetFileName(file);
-                    string json = model switch
-                    {
-                        CnvFile c => JsonIO.Export(c, name),
-                        QstFile q => JsonIO.Export(q, name),
-                        _ => throw new GdParseException(L.T("Unknown model")),
-                    };
-                    File.WriteAllText(target, json, new UTF8Encoding(false));
-                }
-                ok++;
-            }
-            catch { fail++; }
+            });
         }
+        finally { EndBusy(); }
         string msg = L.F("Exported: {0} ok, {1} failed. Output: {2}", ok, fail, outDir);
         SetStatus(msg);
-        Notify(kind == ExportKind.Txt ? L.T("Export TXT") : L.T("Export JSON"), msg, ResultType(ok, fail));
+        if (ok > 0)
+            await MsgBox.Show(this, msg, title, MsgButtons.Ok, openFolder: outDir);
+        else
+            Notify(title, msg, NotificationType.Error);
     }
 
-    private void VerifySelected()
+    private async Task VerifyAsync()
     {
-        if (_grid.ItemsSource is not IEnumerable<BatchRow> rows || !rows.Any(r => r.Sel)) { Gui.Warn(this, L.T("Scan and select files first."), Title ?? ""); return; }
+        if (_busy) return;
+        var files = SelectedFiles();
+        if (files.Count == 0) { Gui.Warn(this, L.T("Scan and select files first."), Title ?? ""); return; }
+
+        string baseDir = _path.Text!.Trim();
         int pass = 0, fail = 0;
         var errors = new List<string>();
-        foreach (string file in SelectedFiles())
+        BeginBusy(L.T("Verifying…"), files.Count);
+        try
         {
-            var item = BatchOps.Inspect(file, _path.Text!.Trim());
-            if (item.AllOk) pass++;
-            else { fail++; errors.Add($"{item.Rel}：{item.FailReason}"); }
+            IProgress<int> progress = new Progress<int>(done => ReportProgress(done, files.Count));
+            await Task.Run(() =>
+            {
+                int done = 0;
+                foreach (string file in files)
+                {
+                    var item = BatchOps.Inspect(file, baseDir);
+                    if (item.AllOk) pass++;
+                    else { fail++; errors.Add(item.Rel + L.Colon + " " + item.FailReason); }
+                    progress.Report(++done);
+                }
+            });
         }
+        finally { EndBusy(); }
         string msg = L.F("Verified: {0} passed, {1} failed.", pass, fail);
         SetStatus(msg);
         Notify(L.T("Verify selected"), msg, ResultType(pass, fail));
@@ -587,7 +748,8 @@ internal sealed class BatchWindow : Window
             await File.WriteAllTextAsync(file.Path.LocalPath, "\uFEFF" + sb, new UTF8Encoding(false));
             string msg = L.F("Report written to {0}", file.Path.LocalPath);
             SetStatus(msg);
-            Notify(L.T("Export CSV report"), msg, NotificationType.Success);
+            await MsgBox.Show(this, msg, L.T("Export CSV report"), MsgButtons.Ok,
+                openFolder: Path.GetDirectoryName(file.Path.LocalPath));
         }
         catch (Exception e)
         {
